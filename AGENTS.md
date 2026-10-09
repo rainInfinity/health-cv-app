@@ -58,10 +58,14 @@
 
 ## 项目约束
 
+### Git 规范
+
 - Git commit 类型仅使用 `doc`、`spec`、`feat`、`fix`，说明使用中文，格式为 `<type>: <说明>`，例如 `feat: 登录页面`。
 - `spec`：用于 OpenSpec 相关文件的修改，包括提案、设计、任务和规格等；即使文件是 Markdown，也归为 `spec`。
 - `doc`：用于 OpenSpec 之外的文档修改，例如 `README.md`、`AGENTS.md`、使用说明和开发文档。
 - 仅在用户明确要求时提交或推送；提交只包含本次任务相关改动。
+
+### 环境规范
+
 - Typescript 项目使用 `pnpm` 而不是 `npm` 管理依赖
 - Python 项目使用 `uv` 管理依赖
-
