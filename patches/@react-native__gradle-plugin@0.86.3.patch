@@ -1,0 +1,28 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 80021f061fb738f0b075a4ff56ec5dcfbd50b9ab..f174cab03637fd79ff9983abe135da499a04f2f9 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -49,3 +49,9 @@ tasks.named("ktfmtFormat") {
+ // We intentionally disable the `ktfmtCheck` tasks as the formatting is primarly handled inside
+ // fbsource
+ allprojects { tasks.withType<com.ncorti.ktfmt.gradle.tasks.KtfmtCheckTask>() { enabled = false } }
++allprojects {
++  repositories {
++    maven { url = uri("https://maven.aliyun.com/repository/google") }
++    maven { url = uri("https://maven.aliyun.com/repository/public") }
++  }
++}
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 14f1e9c2063ef10ca3f2ecbb2336b8a4aacfcc9c..9333b885d28f308d5bc66cd89b83275fe631e683 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -7,6 +7,9 @@
+ 
+ pluginManagement {
+   repositories {
++    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
++    maven { url = uri("https://maven.aliyun.com/repository/google") }
++    maven { url = uri("https://maven.aliyun.com/repository/public") }
+     mavenCentral()
+     google()
+     gradlePluginPortal()

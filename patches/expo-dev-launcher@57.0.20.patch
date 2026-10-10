@@ -1,0 +1,13 @@
+diff --git a/expo-dev-launcher-gradle-plugin/build.gradle.kts b/expo-dev-launcher-gradle-plugin/build.gradle.kts
+index 0b097aa696610583416048eddfb2fbef2c6db869..2cfcfa63aa11e388ae53a9775ed36e90c881b7d1 100644
+--- a/expo-dev-launcher-gradle-plugin/build.gradle.kts
++++ b/expo-dev-launcher-gradle-plugin/build.gradle.kts
+@@ -7,6 +7,8 @@ plugins {
+ }
+ 
+ repositories {
++  maven { url = uri("https://maven.aliyun.com/repository/google") }
++  maven { url = uri("https://maven.aliyun.com/repository/public") }
+   google()
+   mavenCentral()
+ }

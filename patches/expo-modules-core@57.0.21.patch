@@ -1,0 +1,13 @@
+diff --git a/expo-module-gradle-plugin/build.gradle.kts b/expo-module-gradle-plugin/build.gradle.kts
+index 837bb4ff6a6ea984c7f78f90cf131be46d3e92fa..a3d2cdfef7ae76586f8b7a23afb532fc130f9ee0 100644
+--- a/expo-module-gradle-plugin/build.gradle.kts
++++ b/expo-module-gradle-plugin/build.gradle.kts
+@@ -8,6 +8,8 @@ plugins {
+ }
+ 
+ repositories {
++  maven { url = uri("https://maven.aliyun.com/repository/google") }
++  maven { url = uri("https://maven.aliyun.com/repository/public") }
+   google()
+   mavenCentral()
+ }

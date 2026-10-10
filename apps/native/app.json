@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "health-cv-app",
+    "slug": "health-cv-app",
+    "version": "1.0.0",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "plugins": [
+      "expo-dev-client",
+      "./plugins/with-aliyun-gradle-repositories"
+    ],
+    "android": {
+      "package": "com.healthcvapp.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    }
+  }
+}

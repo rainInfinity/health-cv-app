@@ -1,0 +1,35 @@
+{
+  "name": "@health-cv-app/native",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@nanostores/i18n": "^1.3.3",
+    "@nanostores/persistent": "^1.3.5",
+    "@nanostores/react": "^2.0.1",
+    "@react-navigation/native": "^7.5.0",
+    "@react-navigation/native-stack": "^7.20.0",
+    "@tanstack/react-query": "^5.104.1",
+    "axios": "^1.20.0",
+    "expo": "~57.0.27",
+    "expo-dev-client": "~57.0.19",
+    "expo-status-bar": "~57.0.1",
+    "nanostores": "^1.5.5",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-file-access": "^4.0.4",
+    "react-native-mmkv": "^4.3.2",
+    "react-native-nitro-modules": "^0.37.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.2",
+    "styled-components": "^6.5.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android"
+  },
+  "private": true
+}
