@@ -1,5 +1,8 @@
 packages:
   - "apps/*"
+  - "packages/*"
+allowBuilds:
+  esbuild: set this to true or false
 patchedDependencies:
   '@react-native/gradle-plugin@0.86.3': patches/@react-native__gradle-plugin@0.86.3.patch
   expo-dev-launcher@57.0.20: patches/expo-dev-launcher@57.0.20.patch
