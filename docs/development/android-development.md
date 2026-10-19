@@ -51,3 +51,20 @@ adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo
 - Android 运行时用短暂的入口代码对 MMKV 执行字符串写入、读回与删除，并对缓存目录文件执行创建、写入、读取和清理；读回匹配。临时代码已移除，应用重新启动后仍显示 `Hello World`。
 - 本机当时无法解析 `dl.google.com`。`apps/native/plugins/with-aliyun-gradle-repositories.js` 与 `patches/` 中的 Gradle 插件补丁为 included build、插件和子项目依赖添加 Aliyun Maven 仓库；官方仓库仍保留为后备。若网络可访问 Google Maven，这些镜像配置仍作为前置仓库。
 - 仅验证了 Android arm64 模拟器。未验证实体设备、iOS、自研 Nitro 采集模块（Spec／Nitrogen 绑定及 Kotlin/Swift 实现），也未实现或验证测量、采集和上传业务。安装 Nitro Modules 与第三方 MMKV 只证明其进入 Android 构建，不代表自研采集能力已可用。
+
+### `add-cloud-client-and-auth` 跨模块验证
+
+- 环境：`Pixel_5` Android 17 / API 37 / arm64 模拟器；测试服务根地址 `https://test-backend.myhealthyclub.com`，显式渠道 `android-cn`。使用获授权测试账号，不在记录中保存凭据。
+- 重建命令：`env -u CI NODE_OPTIONS=--dns-result-order=ipv4first EXPO_PUBLIC_API_BASE_URL=https://test-backend.myhealthyclub.com EXPO_PUBLIC_CHANNEL=android-cn pnpm --dir apps/native exec expo run:android`。Gradle 返回 `BUILD SUCCESSFUL` 并安装 APK；`expo-secure-store`、`react-native-file-access` 原生依赖均已纳入 Android development build。
+- `run:android` 首次自动启动曾将开发客户端指向不可达的 `198.18.0.1:8081`，界面显示 Metro 流读取错误。按本机网络边界改用 ADB 反向转发后成功启动：
+
+  ```sh
+  adb reverse tcp:8082 tcp:8082
+  adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082' com.healthcvapp.mobile
+  ```
+
+- 最终 APK 启动后实际显示 `Hello World`；按 Android 返回键后回到模拟器主页。`apps/native/index.ts` 在注册根组件前导入 bootstrap，已恢复的基线页面不承担会话恢复。
+- 使用受控账号完成登录与跨启动恢复、本人资料读取/更新并恢复原值、模型目录读取、草稿创建、输入文件上传/下载、提交及详情读取。任务状态为 `SUBMITTED`，详情没有 `output_files`；未能验证成功输出文件下载。文件字节、错误和进度结果见 [普通渠道云端请求接口](./cloud-client-api.md)。
+- 本次最终回归：cloud-client 类型检查与 11 项测试通过；Native 类型检查与 25 项测试通过。Native 覆盖认证状态、刷新/退出竞态、缓存隔离、迟到查询/变更和文件边界。
+- 未验证 iOS、实体设备或可成功下载的输出文件；未发布模型、切换渠道或添加任务轮询。此验证仅覆盖指定 Android 模拟器和 `android-cn` 测试环境。
+

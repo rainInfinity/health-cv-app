@@ -15,7 +15,7 @@
 - 摄像头帧处理、高频运动传感器采集、缓冲和数据写入由采集模块的原生实现负责。
 - 自建相机与运动传感器采集模块，使用 Nitro 对外接入；前后摄像头不同时采集。
 - 业务状态使用 Nano Stores，React 绑定只用于应用端；服务端查询与离散请求使用 React Query，真实 HTTP 通信使用 Axios。
-- 当前只实现信号文件保存与多文件上传，不上传原始图像或视频，不实现实时网络传输。
+- 云端接口按普通渠道 JSON API 和单文件传输组织；不接入实时网络传输或原始图像/视频上传。
 
 本文描述目标结构，不代表这些目录、接口或功能已经实现。目录和文件在对应功能实际实现时创建，不预建空目录、占位实现或没有使用方的公共模块。
 
@@ -25,7 +25,6 @@
 - 采样率、分辨率、曝光、采集时长、区域、通道及平均规则。
 - 信号精度、时间协议、批次与文件格式，以及覆盖检测指标和阈值。
 - 缓冲池容量、回收与背压规则，以及各环节延迟目标。
-- 云端接口、认证、多文件提交方式和结果返回协议。
 - 产物具体目录、保留时长、删除条件及网络和应用中断时的业务行为。
 
 已明确的技术选型与待定的版本、协议和行为分别记录；目录示意不代表已经接入或验证。
@@ -40,6 +39,7 @@ health-cv-app/
 │       │   ├── app/
 │       │   │   ├── App.tsx
 │       │   │   ├── bootstrap.ts
+│       │   │   ├── auth/
 │       │   │   ├── providers/
 │       │   │   ├── navigation/
 │       │   │   ├── query/
@@ -105,13 +105,21 @@ health-cv-app/
 │   └── cloud-client/
 │       ├── src/
 │       │   ├── http/
-│       │   │   └── client.ts
-│       │   ├── measurement/
-│       │   │   ├── api.ts
-│       │   │   ├── dto.ts
-│       │   │   └── mapping.ts
+│       │   │   ├── client.ts
+│       │   │   └── types.ts
+│       │   ├── apis/
+│       │   │   ├── auth.ts
+│       │   │   ├── user.ts
+│       │   │   ├── model.ts
+│       │   │   └── task.ts
 │       │   ├── errors.ts
-│       │   └── index.ts
+│       │   ├── index.ts
+│       │   └── types/
+│       │       ├── dto/
+│       │       │   ├── index.ts
+│       │       │   ├── request.ts
+│       │       │   └── response.ts
+│       │       └── index.ts
 │       ├── package.json
 │       └── tsconfig.json
 ├── docs/
@@ -135,13 +143,15 @@ health-cv-app/
 
 负责应用入口、导航、应用级 Provider、运行环境配置和依赖组装。
 
-`bootstrap.ts` 负责创建真实采集客户端、云端客户端和使用它们的测量业务对象。真实依赖在应用组装层连接，不由页面 Hook 创建一套 Controller、Bridge 和基础设施端口。
+`bootstrap.ts` 使用 `EXPO_PUBLIC_API_BASE_URL` 与 `EXPO_PUBLIC_CHANNEL` 显式组装云端客户端、认证会话服务、安全凭据适配器和 QueryClient；应用模块初始化时启动一次恢复，不依赖页面挂载。配置缺失时不推断服务地址或渠道。
 
 组装层只连接依赖，不实现测量流程，也不集中承载所有模块的初始化细节。模块自己的初始化逻辑仍由模块负责。
 
 `providers/` 接入 React Query 和 styled-components/native 的 ThemeProvider。`navigation/` 使用 React Navigation 承载路由。
 
-`query/` 承载应用端查询键、QueryClient 配置和必要的请求接入。测量命令与服务器数据查询分开组织，不将页面挂载或界面回调作为业务状态推进的前提。
+`query/` 承载 QueryClient、服务端资源查询键和必要的请求接入。受保护缓存按服务地址、渠道和会话代次隔离；认证状态不复制账号或资料，也不让页面挂载成为会话恢复的前提。
+
+`auth/` 管理注册、登录、启动恢复、受保护请求的共享刷新及本地退出。只读 Nano Stores 状态不保存令牌或密码；凭据适配器把令牌对作为单条记录存入 `expo-secure-store`，键按规范化服务地址和普通渠道隔离。认证请求不经过通用 Query/Mutation 缓存。
 
 `i18n/` 管理语言来源、翻译与格式化；`preferences/` 管理持久化的用户偏好；`storage/` 只接入偏好存储引擎，不演变为包罗信号文件和网络的基础设施层。注册存储引擎后才创建 persistent Store，避免顶层导入造成初始化顺序错误。
 
@@ -312,23 +322,23 @@ Android 使用 Kotlin、CameraX 和 SensorManager；iOS 使用 Swift、AVFoundat
 
 ## 6. 云端通信：`packages/cloud-client`
 
-该包负责将采集产物交给服务器，以及取得服务器返回的数据。
+该包封装普通渠道的认证、本人账号与资料、模型目录、任务及文件接口；不承载应用认证状态、服务端缓存或业务流程编排。
 
 ### 6.1 通信基础能力：`src/http`
 
-使用 Axios 承载服务器地址、请求执行、超时、取消和 HTTP 错误处理等必要能力。取消信号传到实际请求，不提前引入通用重试框架、复杂缓存或多层请求插件。
+Axios 负责请求执行、超时、取消和 HTTP/JSON 边界。调用方提供不含 `/api/v1` 的 HTTP(S) 服务根地址及普通渠道；客户端统一追加 `/api/v1/{channel}`。请求拦截器从外部回调读取当前 Access Token 并发送 Bearer，认证入口不读取 Access；响应拦截器解包成功 JSON 并映射结构化错误。传输层不刷新、重试、轮询或保存缓存。
+JSON 请求仅在 HTTP 成功、`code=OK` 且包装包含 `data` 时返回 `data`，保留合法 `null`。业务 DTO 字段不执行运行时校验；失败通过 `CloudClientError` reject，并分别提供错误类别、HTTP 状态、业务码、请求标识和 `Retry-After`；不保留 Axios 请求配置或原始响应。
 
-### 6.2 测量接口：`src/measurement`
+### 6.2 普通渠道资源：`auth`、`users`、`models`、`tasks`
 
-- `api.ts`：真实多文件上传和处理结果相关接口。
-- `dto.ts`：服务器请求、响应数据结构。
-- `mapping.ts`：外部响应解析与通信数据转换。
+资源实现集中在 `src/apis/auth.ts`、`src/apis/user.ts`、`src/apis/model.ts`、`src/apis/task.ts`；每个公开方法只执行一个对应的后端请求。`auth` 提供注册、登录、刷新和登出；`users` 提供本人账号和资料读写；`models` 提供普通渠道目录；`tasks` 提供草稿、列表、详情、单文件上传、提交及输入/输出下载。
+请求/响应 DTO 集中定义在 `types/dto/request.ts` 和 `types/dto/response.ts`，由包根 `Req`、`Rsp` 命名空间导出；资源 API 按职责分组，不复制局部 DTO 或业务字段解析器。
 
-多文件一次提交还是分次提交、上传后直接返回结果还是返回任务再查询，由真实服务器协议决定，不为目录完整提前建立任务系统。若采用 multipart，按 React Native FormData 文件引用契约上传，由运行时处理 boundary；不先把完整文件读成字符串或 Base64，也不使用文件库自带网络功能另建上传路径。
+文件上传一次只发送一个 `logicalName` 与一个文件引用，由 React Native 运行时生成 multipart boundary。多输入任务由调用方逐文件调用，不在通信包内串联创建、上传、提交或查询。
 
-该包确认传输成功和响应有效，但不决定整个测量业务何时成功，不处理页面跳转或界面提示。它不管理摄像头、传感器或采集文件的业务保留期限。
+通信包确认传输和响应协议，不决定任务何时成功，不处理页面提示、路由或文件保留策略。文件下载返回二进制载荷和可取得的响应元信息，不负责落盘。
 
-React Query 的查询缓存与 React 绑定留在应用端，调用本包公开接口。测量流程不因请求库而转移到页面，Query Cache 不保存完整信号序列。未来流式传输也归本包，但不在当前实现范围内。
+React Query、Nano Stores 和 React 绑定留在应用端。云端包不依赖 React、Store 或 Query Cache，也不保存完整信号序列。
 
 ## 7. 依赖方向与公开接口
 
@@ -354,7 +364,7 @@ flowchart TD
 
 类型跟随拥有该概念的包：业务定义属于 `measurement`，采集配置和产物属于 `acquisition`，通信 DTO 属于 `cloud-client`，展示属性属于应用端。不建立中央类型仓库，也不重复定义同一个业务概念。
 
-国际化、偏好持久化及其原生存储接入属于应用端，不再独立建立 i18n 或 storage 公共包。文件管理、Nitro 和生成接口归采集包，Axios 归云端包；具体选型状态与版本边界以技术选型文档为准。
+国际化与偏好持久化属于应用端；Nano Stores 管理可订阅的认证状态，React Query 管理按会话隔离的服务端资源，`expo-secure-store` 保存按服务地址/渠道作用域划分的令牌对，MMKV 仅用于普通偏好。文件管理、Nitro 和生成接口归采集包，Axios 归云端包。
 
 目录边界优先。只有存在独立复用、发布或构建需求时才继续拆包，代码量增加本身不构成拆包理由。
 
