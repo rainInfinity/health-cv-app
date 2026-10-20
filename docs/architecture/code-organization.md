@@ -12,22 +12,21 @@
 - 使用 pnpm workspace，应用目录为 `apps/native`，暂不加入 WeApp。
 - 设置 `measurement`、`acquisition`、`cloud-client` 三个功能包。
 - 测量定义、流程编排和业务状态放在同一个业务包中，不独立建立 `domain`、`state`、`data` 或 `contracts` 包。
-- 摄像头帧处理、高频运动传感器采集、缓冲和数据写入由采集模块的原生实现负责。
-- 自建相机与运动传感器采集模块，使用 Nitro 对外接入；前后摄像头不同时采集。
+- Android 后置相机帧处理、PPG 记录、有界批处理和文件写入由采集包的 Kotlin 实现；运动传感器和 iOS 仍未实施。
+- 自建 Android 相机采集模块通过 Nitro 接入；当前只实现后摄，前后摄像头不同时采集。
 - 业务状态使用 Nano Stores，React 绑定只用于应用端；服务端查询与离散请求使用 React Query，真实 HTTP 通信使用 Axios。
 - 云端接口按普通渠道 JSON API 和单文件传输组织；不接入实时网络传输或原始图像/视频上传。
 
-本文描述目标结构，不代表这些目录、接口或功能已经实现。目录和文件在对应功能实际实现时创建，不预建空目录、占位实现或没有使用方的公共模块。
+目录图描述目标边界和部分实际模块的位置，不表示所有列出的目录或平台都已实现；当前能力与未实现范围按下文明确区分。
 
-以下内容尚未确定，不能从目录结构推断其选型或行为：
+以下内容待验证或待定，不能从目录结构推断其已具备生产能力：
 
-- 已选技术的具体版本与兼容组合、最低系统版本和设备能力基线。
-- 采样率、分辨率、曝光、采集时长、区域、通道及平均规则。
-- 信号精度、时间协议、批次与文件格式，以及覆盖检测指标和阈值。
-- 缓冲池容量、回收与背压规则，以及各环节延迟目标。
-- 产物具体目录、保留时长、删除条件及网络和应用中断时的业务行为。
+- Nitro 0.37.1、匹配的 Nitrogen 0.37.1 与 CameraX 1.6.2 已锁定；整体兼容性、最低系统版本和生产设备基线仍需验证。
+- 本次 Android 后摄候选尺寸／帧率、PPG 八列字段、时间单位和经验提示阈值已确定；目标帧率、信号质量和提示准确性尚未验证。
+- 除本次 PPG 外的采样参数、信号类型、颜色空间处理和跨传感器时钟映射。
+- PPG 文件保留期限、应用异常退出后的处理方式和其它数据流需求。
 
-已明确的技术选型与待定的版本、协议和行为分别记录；目录示意不代表已经接入或验证。
+已锁定的依赖版本、尚待确认的兼容性与未实施方向分别记录；目录示意不代表每个条目都已经接入或验证。
 
 ## 2. 整体目录
 
@@ -39,6 +38,7 @@ health-cv-app/
 │       │   ├── app/
 │       │   │   ├── App.tsx
 │       │   │   ├── bootstrap.ts
+│       │   │   ├── acquisition.ts
 │       │   │   ├── auth/
 │       │   │   ├── providers/
 │       │   │   ├── navigation/
@@ -47,6 +47,8 @@ health-cv-app/
 │       │   │   ├── preferences/
 │       │   │   └── storage/
 │       │   ├── features/
+│       │   │   ├── acquisition/
+│       │   │   │   └── AcquisitionScreen.tsx
 │       │   │   └── measurement/
 │       │   │       ├── screens/
 │       │   │       ├── components/
@@ -81,25 +83,24 @@ health-cv-app/
 │   ├── acquisition/
 │   │   ├── src/
 │   │   │   ├── client.ts
-│   │   │   ├── types/
-│   │   │   │   ├── config.ts
-│   │   │   │   ├── capability.ts
-│   │   │   │   ├── samples.ts
-│   │   │   │   ├── coverage.ts
-│   │   │   │   └── artifact.ts
+│   │   │   ├── index.ts
 │   │   │   ├── native/
-│   │   │   │   └── Acquisition.nitro.ts
-│   │   │   ├── react/
-│   │   │   │   └── CameraPreview.tsx
-│   │   │   ├── artifacts/
-│   │   │   │   └── files.ts
-│   │   │   ├── errors.ts
-│   │   │   └── index.ts
-│   │   ├── android/
-│   │   ├── ios/
+│   │   │   │   ├── Acquisition.nitro.ts
+│   │   │   │   └── CameraPreview.nitro.ts
+│   │   │   └── react/
+│   │   │       └── CameraPreview.tsx
+│   │   ├── android/src/main/java/com/healthcvapp/acquisition/
+│   │   │   ├── bridge/
+│   │   │   ├── camera/
+│   │   │   ├── pixels/
+│   │   │   ├── pipeline/
+│   │   │   ├── processing/
+│   │   │   ├── runtime/
+│   │   │   ├── session/
+│   │   │   └── writers/
+│   │   ├── nitrogen/generated/
 │   │   ├── nitro.json
-│   │   ├── nitrogen/
-│   │   │   └── generated/
+│   │   ├── react-native.config.js
 │   │   ├── package.json
 │   │   └── tsconfig.json
 │   └── cloud-client/
@@ -135,7 +136,7 @@ health-cv-app/
 └── tsconfig.base.json
 ```
 
-上图是目标职责布局，不要求手工创建所有目录和文件。构建配置、宿主工程和 Nitro 生成代码按实际工具链管理；已选定的配套库只规定其应归属的位置，不代表已经接入。
+上述目录图体现当前已实现的 Android 采集界面和包结构，以及其它模块的目标职责；iOS、运动传感器和测量业务流程未因目录示意而被视为已实现。
 
 ## 3. 应用端：`apps/native`
 
@@ -143,7 +144,7 @@ health-cv-app/
 
 负责应用入口、导航、应用级 Provider、运行环境配置和依赖组装。
 
-`bootstrap.ts` 使用 `EXPO_PUBLIC_API_BASE_URL` 与 `EXPO_PUBLIC_CHANNEL` 显式组装云端客户端、认证会话服务、安全凭据适配器和 QueryClient；应用模块初始化时启动一次恢复，不依赖页面挂载。配置缺失时不推断服务地址或渠道。
+`bootstrap.ts` 使用显式云端配置组装云端客户端、认证会话和 QueryClient；缺少配置时只禁用云端服务，独立的采集入口仍可启动。
 
 组装层只连接依赖，不实现测量流程，也不集中承载所有模块的初始化细节。模块自己的初始化逻辑仍由模块负责。
 
@@ -243,58 +244,55 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 ## 5. 设备采集：`packages/acquisition`
 
-该包负责设备能力、采集执行、时间语义、数据缓冲和产物生成，同时包含 TypeScript 接口与 iOS、Android 原生实现。
+该包负责设备能力、Android 后摄执行、像素处理、Camera2 逐帧元数据关联、低频反馈、有界数据消费和 PPG／frame 双 CSV 产物；本次实现仍仅含 Android 相机，不含运动传感器或 iOS 代码。
 
 不另建一个只有采集协议的包，再把实际采集代码分散放入应用端。
 
 ### 5.1 调用入口：`src/client.ts`
 
-封装能力探测、权限操作、配置、开始、停止和取消等必要采集操作。原生桥接细节不暴露给业务流程。
+`AcquisitionClient` 封装状态查询、权限申请、打开后摄、开始、停止、关闭和完成产物查询。当前没有运动传感器配置或取消接口；原生桥接细节不暴露给应用流程。
 
-不在此重建完整的测量业务状态机或通用事件框架。
+### 5.2 数据语义：Nitro 低频接口
 
-### 5.2 数据语义：`src/types`
+当前公开类型由 `src/native/Acquisition.nitro.ts` 定义：
 
-- `config.ts`：采集源、相机和运动传感器配置。
-- `capability.ts`：设备支持的能力及限制。
-- `samples.ts`：图像提取数据、运动样本及其时间和单位。
-- `artifact.ts`：采集文件、清单与统计信息。
-- `coverage.ts`：实时手指覆盖反馈的指标与状态，具体含义和阈值待定。
+- `AcquisitionState`：后摄与正式会话阶段。
+- `AcquisitionSnapshot`：结构化错误、实际帧尺寸／帧率、torch 能力、nullable 经验提示和最近完成产物。
+- `AcquisitionArtifact`：会话标识、`files[]` 双文件引用（kind、path、sizeBytes）及单调起止时间。
+- Nitro 控制接口仅提供异步命令、低频快照和状态监听，不定义或传输像素、PPG 样本、逐帧元数据或记录批次。
 
-采集数据必须明确颜色通道、区域或分块含义、坐标轴、单位、时间基准及缺失字段语义，不能仅用无法解释的 `number[]` 表示。
+若以后新增外部采集数据，必须明确通道、区域、单位、时间基准和缺失字段语义；不能仅用无法解释的 `number[]` 表示。
 
-请求帧率和实际帧率分开记录。数据结构有效不等于信号质量合格；尚未评估的质量明确表示未评估，不填固定高分或伪造通过状态。
+请求帧率和实际测量帧率分开记录。数据结构有效不等于信号质量合格；尚未评估的提示明确为 `null`，不填固定高分或伪造通过状态。
 
-### 5.3 原生实现：`android/` 与 `ios/`
+### 5.3 原生实现：`android/`
 
-Android 使用 Kotlin、CameraX 和 SensorManager；iOS 使用 Swift、AVFoundation 和 Core Motion。前后摄像头分阶段使用，不采用 VisionCamera 作为本阶段采集实现。两端按相同职责组织，平台实现不强行统一：
+本次仅实现 Android 后置相机采集。原生源码留在 `packages/acquisition/android`，由 Nitro 对象和原生预览视图接入；CNG 宿主工程只维护应用权限和模块自动链接。
 
-- camera：相机选择、参数控制、帧回调与帧数据提取。
-- motion：加速度计等运动传感器采集。
-- session：设备启动、停止和运行资源管理。
-- pipeline：缓冲、批处理与数据写入。
-- time：时间戳与时钟映射。
-- bridge：原生实现与 TypeScript 接口连接。
+- `camera/`：CameraX 后摄能力、预览、实际格式／帧率协商与串行帧分析。
+- `pixels/`、`processing/`：只读 YUV 帧借用、共享统计、PPG 记录和独立经验提示。
+- `pipeline/`：不依赖相机或 PPG 类型的有界 `DataHub<T>`；本次只实例化 PPG 数据流。
+- `session/`、`writers/`：配对会话收尾、PPG 与 frame UTF-8 CSV 文件写入。
+- `runtime/`、`bridge/`：原生服务、Nitro 控制对象和预览视图连接。
 
-这些是职责边界，不要求每个职责形成独立库。`src/native` 维护 Nitro Spec 和接入代码，Nitrogen 生成的绑定归本包按构建要求管理。生成的 C++ 绑定不等于手写公共 C++ 处理层，暂不为使用 Nitro 提前迁移全部处理代码。
+`src/native` 维护 Nitro Spec，Nitrogen 生成绑定归本包按构建要求管理。运动传感器与 iOS 尚未实现；本次不加入空模块或占位入口。
 
 ### 5.4 高频数据与时间
 
-高频采集、帧处理、缓冲和文件写入在原生侧执行。帧信号逐帧或按多行平均后输出，具体规则待定；JS 接收信号批次、低频进度、统计、预览和产物引用，不接收原样图像，也不承担全量样本的长期缓存和最终文件序列化。
+高频相机帧、像素处理、PPG 记录、Camera2 元数据关联和文件写入都在 Android 原生侧。JavaScript 只接收控制结果、低频设备状态、经验提示、结构化错误及双文件完成产物引用，不接收像素、PPG 记录、逐帧元数据或批次，也不长期缓存样本。
 
-缓冲容量按当前待处理数据计算，累计采集统计不能代替缓冲占用。停止时处理尾批数据；会话结束后的迟到回调不能进入下一次采集。
+`DataHub<T>` 按采集数据流／会话独立实例化，容量包含等待消费和正在消费的记录；数量与时间阈值只触发单个后台消费者，不在相机回调中执行文件 I/O。容量不足、处理或写入失败会终止采集成功路径，不能静默丢记录。
 
-信号批次通过异步回调传递，明确会话、顺序和采集时间。使用共享缓冲时，在消费者释放前不得覆盖数据；回调返回不等于缓冲可回收。容量、触发条件、回收协议和池满行为后续确定，不能以静默丢样本掩盖消费积压。
+当前每帧一个全帧 PPG 块，`blockIndex=0`。`timestamp` 是处理帧时的 `elapsedRealtimeNanos`，`timestampFrame` 是 CameraX 帧时间，`timestampSystem` 是 `System.nanoTime()`；均以毫秒小数写入，`timestampSystem` 不是 Unix 日期。正式会话以处理帧的单调接收边界排除开始前帧。
 
-采集时间与回调接收时间分开。信号对齐使用经过确认和映射的单调时间轴；墙上时间用于记录采集发生的日期和时间，不用于代替原始样本时间。
+相机时间与运动传感器时钟尚未对齐；本次不采集运动数据，也不宣称跨源同步。经验提示复用当前全帧 Y/U/V 统计，使用旧算法阈值，但完整像素仍由同步处理作用域提供给后续处理器；提示不表示覆盖面积、信号质量或医学结论。
 
-摄像头与运动传感器都使用单调时钟，不代表已经同步。时钟关系需要验证；帧数据与逐帧元数据通过明确的帧标识或采集时间关联，不依赖批次到达顺序。
+#### Camera2 元数据配对与双文件
 
-预览可以降采样，但不能因此改变保存和上传的数据。
+预览阶段，`AcquisitionService` 在原生侧最多保留 64 条含 `SENSOR_TIMESTAMP` 的 Camera2 数值结果，并在正式会话启用时交接，用于匹配回调先到、图像仍在途的帧。`FrameMetadataCorrelator` 只按 `SENSOR_TIMESTAMP == ImageProxy.imageInfo.timestamp` 精确关联，按正式帧序交付，并在容量溢出、时间戳缺失或正式帧无法匹配时失败。关联等待有界，不延长 `ImageProxy` 生命周期。
 
-手指覆盖检测在原生侧产生反馈，独立于信号批次和文件完成通知，不等待缓存池填满。检测在必要空间信息丢失前进行，可复用同一次帧处理中的区域统计，但不能假定平均值足以推断覆盖面积。覆盖通知可合并最新状态，不积压历史提示；算法和阈值需后续真机验证。
+`frame.csv` 沿用旧八列表头：`timestamp`、`timestampFrame`、`timestampSystem` 以毫秒小数记录，三项相机时长保持纳秒，ISO 和白平衡模式保留整数。可选结果缺失时写 `0`，因此无法区分缺失与真实零值；缺少用于配对的传感器时间戳则失败。
 
-方法调用延迟、帧处理延迟和界面反馈延迟分别验证。Nitro 的低调用开销不替代正确的队列调度，不能从相机线程强行同步调用主 JS 逻辑。
 
 ### 5.5 React 视图接入：`src/react`
 
@@ -306,7 +304,7 @@ Android 使用 Kotlin、CameraX 和 SensorManager；iOS 使用 Swift、AVFoundat
 
 停止采集、释放运行资源和删除采集产物是不同操作：
 
-- 停止采集后处理尾批数据，完成并关闭文件，生成可上传的产物。
+- 停止采集后等待帧关联和 DataHub 尾批完成，排空并关闭两个写入器，提升 `ppg.csv` 与 `frame.csv` 后生成双文件产物引用。
 - 释放摄像头、传感器和队列等运行资源。
 - 根据业务明确的保留策略删除采集文件。
 
@@ -314,7 +312,9 @@ Android 使用 Kotlin、CameraX 和 SensorManager；iOS 使用 Swift、AVFoundat
 
 ### 5.7 文件管理与扩展边界
 
-连续写入使用平台原生文件 API，直接消费原生信号缓冲；具体格式和实现后续确定。`src/artifacts/files.ts` 负责产物相关的低频文件管理，使用 react-native-file-access 接入目录、查询、移动和删除操作，不把文件依赖散落到页面。
+Android `PpgCsvWriter` 和 `FrameCsvWriter` 分别只负责 UTF-8 CSV 编码与文件 I/O；`CaptureSession` 在应用私有会话目录写入两份 `.part` 文件，正常排空并关闭后才提升完成路径并交付产物。任一侧失败都不返回成功引用。
+
+Nitro `listArtifacts()` 返回当前进程中已完成的双文件引用；文件在关闭相机或卸载界面后仍保留，但进程重启后的目录扫描和清理策略尚未实现。当前页面展示引用，不直接读写或删除会话文件，也不接入上传 URI。
 
 待上传或仍需保留的文件放应用私有持久目录，不默认依赖可能被系统清理的缓存目录。正在写入或上传的文件不得清理。文件系统路径与上传 URI 分开处理，删除时机由测量业务决定。
 

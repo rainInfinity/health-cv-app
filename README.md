@@ -10,8 +10,17 @@
 pnpm install --frozen-lockfile
 cd apps/native
 pnpm expo prebuild --platform android --clean
-pnpm expo run:android
+pnpm android
 ```
+`pnpm android` 会先运行采集包的 Nitrogen 代码生成，再调用 Expo `run:android`。
+
+内部测试 release APK（先确保 Android 宿主已生成）：
+
+```sh
+pnpm android:release
+```
+
+产物位于 `apps/native/android/app/build/outputs/apk/release/app-release.apk`。该包使用调试签名，仅供内部测试。
 
 后续启动 Metro（在 `apps/native` 执行）：
 

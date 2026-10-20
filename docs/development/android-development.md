@@ -10,10 +10,34 @@ pnpm install --frozen-lockfile
 
 # apps/native
 pnpm expo prebuild --platform android --clean
-pnpm expo run:android
+pnpm android
 ```
 
-`prebuild --clean` 会删除并重建生成的 `apps/native/android`。原生宿主配置应维护在 `app.json` 和 Expo config plugin 中，不要把生成目录里的手工改动当作唯一配置来源。`run:android` 使用已启动的 Android 模拟器或已连接设备。
+`prebuild --clean` 会删除并重建生成的 `apps/native/android`。`pnpm android` 会先生成采集包的 Nitrogen 绑定，再调用 Expo `run:android`；该命令使用已启动的 Android 模拟器或已连接设备。原生宿主配置应维护在 `app.json` 和 Expo config plugin 中，不要把生成目录里的手工改动当作唯一配置来源。
+
+## 内部测试 Release APK
+
+在 `apps/native` 执行：
+
+```sh
+pnpm android:release
+```
+
+脚本先运行采集包的 Nitrogen 代码生成，再执行 Gradle `assembleRelease`。若 `apps/native/android` 尚未生成，先执行 `pnpm expo prebuild --platform android`。APK 输出到 `apps/native/android/app/build/outputs/apk/release/app-release.apk`。
+
+当前 release variant 使用 `debug.keystore` 签名，适合内部安装测试，不是正式发布签名包。
+
+## Nitrogen 生成目录
+
+根目录 `.gitignore` 忽略 `packages/acquisition/nitrogen/generated/`。在 `apps/native` 执行 `pnpm android` 或 `pnpm android:release` 都会先运行 Nitrogen，再启动 Android 构建；若 Android 宿主尚未生成，Release 仍需先按上节执行 Expo prebuild。
+
+直接从 Android Studio 同步/构建，或手动执行 `./gradlew` 时，需先在仓库根目录运行：
+
+```sh
+pnpm --filter @health-cv-app/acquisition run nitrogen
+```
+
+采集包的 Gradle/CMake 配置会在构建配置阶段加载生成文件；绕过项目脚本时，Gradle 不会自动运行 Nitrogen。Expo prebuild 生成 Android 宿主，不会替代上述绑定生成步骤。
 
 ## 后续启动 Metro
 
@@ -44,8 +68,10 @@ adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo
 | 验证设备 | `Pixel_5` Android Virtual Device，Android 17 / API 37，arm64 模拟器 |
 
 应用锁文件解析出的关键依赖版本：Expo 57.0.27、`expo-dev-client` 57.0.19、React 19.2.3、React Native 0.86.3、`react-native-mmkv` 4.3.2、`react-native-nitro-modules` 0.37.1、`react-native-file-access` 4.0.4、React Navigation 7.5.0、native-stack 7.20.0、Nano Stores 1.5.5（React 绑定 2.0.1、persistent 1.3.5、i18n 1.3.3）、React Query 5.104.1、Axios 1.20.0、styled-components 6.5.3、TypeScript 6.0.3。精确依赖树以 `pnpm-lock.yaml` 为准。
+采集模块另外固定 Nitrogen 0.37.1 与 AndroidX CameraX 1.6.2，分别由 `packages/acquisition/package.json` 和 `packages/acquisition/android/build.gradle` 管理。
 
 ## 验证记录与边界
+以下内容记载早期 Android foundation 与 cloud-client/auth 的历史验证，不代表本次 PPG 采集实现的验证状态。
 
 - 已执行锁文件干净安装、Android `prebuild --clean`、`pnpm expo run:android`，并在 `Pixel_5` 模拟器安装、启动 development build。APK 中包含 MMKV 与 Nitro 相关原生库；Gradle 也编译了 `react-native-file-access`。
 - Android 运行时用短暂的入口代码对 MMKV 执行字符串写入、读回与删除，并对缓存目录文件执行创建、写入、读取和清理；读回匹配。临时代码已移除，应用重新启动后仍显示 `Hello World`。
@@ -68,3 +94,83 @@ adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo
 - 本次最终回归：cloud-client 类型检查与 11 项测试通过；Native 类型检查与 25 项测试通过。Native 覆盖认证状态、刷新/退出竞态、缓存隔离、迟到查询/变更和文件边界。
 - 未验证 iOS、实体设备或可成功下载的输出文件；未发布模型、切换渠道或添加任务轮询。此验证仅覆盖指定 Android 模拟器和 `android-cn` 测试环境。
 
+## Android 后置相机 PPG 采集
+
+当前默认页面是可手动操作的 `AcquisitionScreen`，不再是 Hello World。启动应用不会自动打开相机或保存数据；采集入口不要求登录、服务地址或渠道配置。
+
+### 模拟器与构建
+
+仓库当前的 `Pixel_5` AVD 后置相机配置为 `virtualscene`，可提供 Android 模拟器的虚拟场景输入。其它 AVD 可在 Android Studio Device Manager 的高级设置中将后摄设为 Virtual Scene 或可用的主机摄像头；不要手工修改生成的宿主工程来配置采集模块。检查 AVD 和连接状态：
+
+```sh
+emulator -list-avds
+adb devices -l
+```
+
+从仓库根目录安装锁文件依赖，在 `apps/native` 生成 Android 宿主并安装 development build：
+
+```sh
+# 仓库根目录
+pnpm install --frozen-lockfile
+
+# apps/native
+pnpm expo prebuild --platform android --clean
+env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm android
+```
+
+`prebuild --clean` 会重建生成的 `apps/native/android`；采集源码和自动链接配置保留在 `packages/acquisition`，相机权限由 `apps/native/app.json` 声明。该链路必须使用 development build，不使用 Expo Go。
+
+**端口冲突：** 如果 `run:android` 发现 8081 已被占用并跳过 Metro，development build 可能仍指向旧服务器。在 `apps/native` 另开终端，用本机回环地址启动 Metro 并打开 Android：
+
+```sh
+adb reverse tcp:8082 tcp:8082
+env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo start --localhost --port 8082 --android
+```
+
+### 本次模拟器运行记录（2026-10-20）
+
+- 设备：`Pixel_5` AVD，Android 17 / API 37 / arm64，后摄输入为 `virtualscene`；`emulator -list-avds` 和 `adb devices -l` 分别确认 AVD 与 `emulator-5554`。未配置服务地址／渠道，也未登录。
+- 构建：`pnpm install --frozen-lockfile`、`pnpm expo prebuild --platform android --clean` 均成功；`env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo run:android` 的 Gradle 构建为 `BUILD SUCCESSFUL` 并安装 development build。此次 8081 已占用，首次打开时未加载项目；按上面的 8082 本地 Metro 步骤启动后，`AcquisitionScreen` 正常加载。
+- 实际操作：手动打开后摄、开始并停止采集；预览显示 `1280 × 960` 虚拟场景。`dumpsys media.camera` 显示 `SurfaceView` 预览和 `ImageReader` 分析输出；关闭后 `Active Camera Clients` 为空，再打开后两路输出恢复。停止后页面返回预览状态。
+- 文件结果：两次采集分别产生 `files/acquisition/33a17cda-c834-450a-87a6-c16fe96a6f35/ppg.csv`（12990 bytes）和 `files/acquisition/7a496e07-b683-4eb0-a3f2-42f852b3196b/ppg.csv`（11669 bytes），路径不同、互不覆盖。文档中的 `run-as find` 命令实际列出这两个文件。
+- 回归：`./gradlew :health-cv-app_acquisition:testDebugUnitTest` 成功；Native 测试 25/25、cloud-client 测试 11/11；`@health-cv-app/native`、`@health-cv-app/cloud-client`、`@health-cv-app/acquisition` 类型检查成功。
+- 边界：`virtualscene` 只验证模拟器相机输入、处理和文件写入链路，不是生理 PPG。未验证实体设备信号、目标 FPS、覆盖准确率或发热表现；这些不是本次变更的待办验收项。
+
+### 预览生命周期注意事项
+
+预览使用 `PreviewView.ImplementationMode.PERFORMANCE` 的 `SurfaceView` 实现。验证关闭后在同一页面重新打开时，应确认预览画面和图像分析流都恢复；仅凭页面状态不能证明 CameraX 已重新输出帧。
+
+### 手动操作与文件查询
+
+在应用中按顺序手动打开后置相机、开始采集、停止并保存，再关闭相机并重新打开完成第二次采集。预览期间不创建 CSV；正常停止完成后，页面在会话下分别显示 `ppg.csv` 与 `frame.csv` 路径和大小。关闭相机不会删除已完成文件。
+
+验证权限拒绝时，可先撤销模拟器中的权限，再从应用里请求并拒绝：
+
+```sh
+adb shell pm revoke com.healthcvapp.mobile android.permission.CAMERA
+```
+
+拒绝后页面应保持关闭状态并显示错误；该次请求不新增采集会话或完成文件。需要再次允许时，从 Android 应用权限设置授予相机权限。
+
+用 `run-as` 检查应用私有目录中的两个完成产物；停止返回的路径以 `/files/` 后的相对部分对应 `files/acquisition/<sessionId>/`：
+
+```sh
+adb shell run-as com.healthcvapp.mobile find files/acquisition -type f \( -name ppg.csv -o -name frame.csv \) -print
+```
+检查同一会话中的文件表头及对应记录时，把 `<会话ID>` 替换为查询结果中的目录名：
+
+```sh
+SESSION_ID=替换为会话ID
+adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/ppg.csv"
+adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/frame.csv"
+```
+
+按行比较两份 CSV 的 `timestampFrame`；每行必须与 Camera2 的 `SENSOR_TIMESTAMP` 精确配对。旧协议对可选 Camera2 字段以 `0` 兜底，因此文件本身不能区分字段缺失和实际零值。
+
+只有正常停止并完成逐帧关联、DataHub 排空和两个文件关闭后，`ppg.csv` 与 `frame.csv` 才作为同一会话的成功产物出现；失败中的 `.part` 不属于成功产物。该验证不要求上传、CSV 数值证明真实 PPG，也不证明目标 FPS、覆盖准确率、实体设备兼容或发热表现。
+
+### Pixel_5 模拟器实测（2026-10-20）
+
+在 Pixel_5 AVD 中手动打开后置相机、开始采集并正常停止。会话 `f6202159-ec77-4001-ae78-f698656107e2` 返回预览状态，页面显示 `ppg.csv` 为 25,008 bytes、`frame.csv` 为 17,880 bytes。两份文件各 239 行（含表头），共 238 条数据；逐行 `timestampFrame` 完全一致且递增，PPG `frameIndex` 从 0 连续至 237。
+
+该结果验证模拟器中的相机回调、精确关联、双文件落盘和页面产物引用；模拟器画面不代表真实 PPG，未验证实体设备、传感器信号质量或性能。
