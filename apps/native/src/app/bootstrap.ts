@@ -55,7 +55,7 @@ export function createAppServices(config: RuntimeConfig): AppServices {
 
 const runtimeConfig = readRuntimeConfig();
 
-/** 环境配置缺失时保留可启动的 Hello World，不推断服务端作用域。 */
+/** 云端配置缺失时仅禁用云端服务；本地采集入口仍可启动。 */
 export const appServices = runtimeConfig ? createAppServices(runtimeConfig) : null;
 
 if (appServices) {

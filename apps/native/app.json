@@ -12,6 +12,7 @@
       "./plugins/with-aliyun-gradle-repositories"
     ],
     "android": {
+      "permissions": ["CAMERA"],
       "package": "com.healthcvapp.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

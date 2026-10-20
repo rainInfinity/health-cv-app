@@ -1,0 +1,41 @@
+{
+  "name": "@health-cv-app/acquisition",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "react-native": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "react-native": "./src/react/index.ts",
+      "default": "./src/react/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "android",
+    "nitro.json",
+    "nitrogen/generated",
+    "react-native.config.js"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "nitrogen": "nitrogen"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "^0.37.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "nitrogen": "0.37.1",
+    "typescript": "~6.0.3"
+  }
+}

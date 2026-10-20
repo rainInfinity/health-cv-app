@@ -2,3 +2,22 @@
 **/.env
 **/.env.*
 !**/.env.template
+
+# macOS 系统文件
+.DS_Store
+
+# Android / Gradle 构建产物
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/build/
+**/local.properties
+
+# Nitrogen 生成代码
+/packages/acquisition/nitrogen/generated/
+
+# TypeScript 缓存
+*.tsbuildinfo
+
+# pnpm 调试日志
+pnpm-debug.log*

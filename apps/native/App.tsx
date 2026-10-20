@@ -1,23 +1,8 @@
-/** 保留 Hello World 基线界面；启动入口在挂载前初始化应用服务。 */
+/** 提供默认的 Android 原生采集验证界面。 */
 
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { AcquisitionScreen } from './src/features/acquisition/AcquisitionScreen'
 
-/** 呈现用于验证 Native 宿主的最小页面。 */
+/** 挂载手动采集界面；云端服务配置不会阻止启动。 */
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Hello World</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
+  return <AcquisitionScreen />
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
