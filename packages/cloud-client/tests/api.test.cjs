@@ -341,6 +341,61 @@ test('任务详情支持后端质量拒绝判别联合', async (t) => {
   assert.equal(ordinaryFailure.qualityFailure, null);
 });
 
+test('任务提交可发送客户端元数据并保留无请求体兼容', async (t) => {
+  const requests = [];
+  const taskSummary = {
+    taskId: 42,
+    modelId: 7,
+    modelCode: 'example-model',
+    modelName: '示例模型',
+    versionId: 3,
+    version: '1.0',
+    status: 'SUBMITTED',
+    isExample: true,
+    createdAt: '2026-10-19 08:12:13',
+    submittedAt: '2026-10-19 08:13:00',
+    startedAt: null,
+    finishedAt: null,
+  };
+  const { server, baseUrl } = await startServer(async (request, response) => {
+    requests.push({
+      method: request.method,
+      url: request.url,
+      body: await readRequestBody(request),
+    });
+    sendJson(response, 200, { code: 'OK', data: taskSummary });
+  });
+  t.after(() => closeServer(server));
+
+  const client = createCloudClient({
+    baseUrl,
+    channel: 'ios-cn',
+    getAccessToken: () => 'access-token',
+  });
+  const metadata = {
+    deviceModel: 'Pixel 9',
+    custom: { appBuild: 42 },
+  };
+
+  const submitted = await client.tasks.submit(42, { clientMetadata: metadata });
+  const legacySubmitted = await client.tasks.submit(42);
+
+  assert.deepEqual(submitted, taskSummary);
+  assert.deepEqual(legacySubmitted, taskSummary);
+  assert.deepEqual(requests, [
+    {
+      method: 'POST',
+      url: '/api/v1/ios-cn/tasks/42/submit',
+      body: JSON.stringify({ clientMetadata: metadata }),
+    },
+    {
+      method: 'POST',
+      url: '/api/v1/ios-cn/tasks/42/submit',
+      body: '',
+    },
+  ]);
+});
+
 
 test('验证模拟 React Native 文件引用上传的 multipart 请求和回执', async (t) => {
   const syntheticFileContent = 'synthetic-rn-file-content';

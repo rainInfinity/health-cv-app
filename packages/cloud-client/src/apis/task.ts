@@ -44,8 +44,12 @@ export interface TasksApi {
   list(query?: Req.Tasks.TaskListParams, options?: CloudRequestOptions): Promise<Rsp.Tasks.TaskPage>;
   /** 按任务主键读取摘要和详情。 */
   getById(taskId: number, options?: CloudRequestOptions): Promise<Rsp.Tasks.TaskDetail>;
-  /** 提交草稿；后端契约不要求请求体。 */
-  submit(taskId: number, options?: CloudRequestOptions): Promise<Rsp.Tasks.TaskSummary>;
+  /** 提交草稿；可选附带客户端元数据，不传请求体也受支持。 */
+  submit(
+    taskId: number,
+    request?: Req.Tasks.SubmitTaskRequest,
+    options?: CloudRequestOptions,
+  ): Promise<Rsp.Tasks.TaskSummary>;
   /** 上传一个任务输入文件并返回服务端登记元数据。 */
   uploadFile(
     taskId: number,
@@ -88,10 +92,11 @@ export function createTasksApi(http: HttpClient): TasksApi {
         requiresAccessToken: true,
         options,
       }),
-    submit: (taskId, options) =>
+    submit: (taskId, request, options) =>
       http.request<Rsp.Tasks.TaskSummary>({
         method: 'POST',
         path: `tasks/${taskId}/submit`,
+        data: request,
         requiresAccessToken: true,
         options,
       }),

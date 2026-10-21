@@ -74,6 +74,13 @@ export namespace Req {
       modelId: number;
     }
 
+    /** 草稿最终提交请求；后端兼容不传请求体。 */
+    export interface SubmitTaskRequest {
+      /** 客户端自报的任务留档元数据；null 或缺席表示未提供。 */
+      clientMetadata?: Record<string, unknown> | null;
+    }
+
+
     /** React Native 本地文件引用；不把文件内容读入 JavaScript 字符串。 */
     export interface TaskInputFileReference {
       /** 文件 URI 或本地绝对路径。 */

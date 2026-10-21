@@ -37,7 +37,7 @@ export namespace Rsp {
       /** 姓名；未填写时通常为 null，字段可能缺席。 */
       name?: string | null;
       /** 性别原始整数：0 未知、1 男、2 女。 */
-      gender?: number;
+      gender?: 0 | 1 | 2;
       /** 出生日期原字符串；未填写时为 null。 */
       birthDate?: string | null;
       /** 身高，单位 cm；后端以十进制字符串或 null 返回。 */

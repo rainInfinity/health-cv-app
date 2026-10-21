@@ -20,7 +20,7 @@ const client = createCloudClient({
 
 下表路径相对于客户端内部构造的 `/api/v1/{channel}` 前缀。JSON 成功响应必须包含 `code: "OK"` 和 `data`；SDK 只返回 `data`，合法的 `data: null` 保持为 `null`。SDK 校验 HTTP 状态、JSON 语法和响应封套，不校验或改写业务 DTO 字段。
 
-请求/响应 DTO 集中定义在包内 `types/dto/request.ts` 和 `types/dto/response.ts`，由包根的 `Req`、`Rsp` 命名空间导出，例如 `Req.Users.ProfilePatchRequest` 与 `Rsp.Tasks.TaskDetail`。DTO 提供 TypeScript 编译期类型，不执行业务字段运行时校验。
+请求/响应 DTO 集中定义在包内 `types/dto/request.ts` 和 `types/dto/response.ts`，由包根的 `Req`、`Rsp` 命名空间导出，例如 `Req.Users.ProfilePatchRequest`、`Req.Tasks.SubmitTaskRequest` 与 `Rsp.Tasks.TaskDetail`。DTO 提供 TypeScript 编译期类型，不执行业务字段运行时校验。
 
 | SDK 方法 | 请求 | 认证 | 请求与返回语义 |
 | --- | --- | --- | --- |
@@ -35,7 +35,24 @@ const client = createCloudClient({
 | `tasks.create` | `POST /tasks` | Bearer | 请求体只含 `{ modelId }`；返回固定模型版本的草稿摘要。 |
 | `tasks.list` | `GET /tasks` | Bearer | 返回当前账号任务摘要分页。 |
 | `tasks.getById` | `GET /tasks/{task_id}` | Bearer | 返回任务详情；`FAILED` 是成功取得的业务状态，不是请求异常。 |
-| `tasks.submit` | `POST /tasks/{task_id}/submit` | Bearer | 不发送请求体；返回提交后的任务摘要。 |
+| `tasks.submit` | `POST /tasks/{task_id}/submit` | Bearer | 可不传请求体；也可传 `Req.Tasks.SubmitTaskRequest`；返回提交后的任务摘要。 |
+
+提交请求示例：
+
+```json
+{
+  "clientMetadata": {
+    "deviceModel": "Pixel 9",
+    "brand": "Google",
+    "appVersion": "2.4.1",
+    "custom": {
+      "appBuild": 42
+    }
+  }
+}
+```
+
+提交接口兼容不传请求体。省略整个请求体、发送 `{}` 或将 `clientMetadata` 设为 `null`，均表示未提供元数据；`clientMetadata: {}` 是有效的空对象。`clientMetadata` 必须是 JSON 对象或 `null`，其他类型会被拒绝。服务端将其作为独立任务快照保存，不返回给普通用户查询；它是客户端自报信息，不证明设备身份。不要提交密码、令牌或其他敏感信息。SDK 调用形式为 `tasks.submit(taskId, request?, options?)`。
 
 任务详情的 `qualityFailure` 仅表示算法质量拒绝：`LOW_SCORE` 携带 `{ score, threshold }`，`NO_VALID_SIGNAL` 的 `details` 为 `null`。成功任务、普通失败，以及没有有效历史质量明细的任务均为 `null`；任务摘要和列表项不包含 `qualityFailure`。`FAILED` 仍是正常取得的业务状态，不代表 HTTP 或请求失败。
 
