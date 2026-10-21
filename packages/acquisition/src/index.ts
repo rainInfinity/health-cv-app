@@ -11,6 +11,11 @@ export {
   PassiveCaptureError,
   createPassiveCaptureClient,
 } from './passive/client'
+export {
+  SensorCaptureError,
+  SensorClient,
+  createSensorClient,
+} from './sensors/client'
 export type {
   AcquisitionArtifact,
   AcquisitionArtifactFile,
@@ -27,3 +32,13 @@ export type {
   PassiveCaptureSnapshot,
   PassiveCaptureState,
 } from './native/PassiveCapture.nitro'
+export type {
+  SensorArtifact,
+  SensorCapabilities,
+  SensorCaptureCommandResult,
+  SensorCaptureConfig,
+  SensorCapturePhase,
+  SensorKind,
+  SensorSnapshot,
+  SensorStopCaptureResult,
+} from './native/SensorCapture.nitro'

@@ -26,6 +26,12 @@
         "language": "kotlin",
         "implementationClassName": "HybridPassiveCapture"
       }
+    },
+    "SensorCapture": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridSensorCapture"
+      }
     }
   },
   "ignorePaths": ["**/node_modules", "nitrogen/generated"],

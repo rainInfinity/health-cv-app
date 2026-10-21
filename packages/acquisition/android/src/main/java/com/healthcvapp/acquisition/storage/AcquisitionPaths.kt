@@ -4,6 +4,7 @@ package com.healthcvapp.acquisition.storage
 
 import java.io.File
 import java.util.UUID
+import com.healthcvapp.acquisition.sensors.model.SensorKind
 
 /** 从应用私有根目录解析现有采集目录与文件名。 */
 internal class AcquisitionPaths(private val filesDirectory: File) {
@@ -37,6 +38,19 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
   /** 返回被动视频完成路径。 */
   fun passiveVideoCompletedFile(sessionId: String): File =
     File(passiveVideoSessionDirectory(sessionId), PASSIVE_VIDEO_COMPLETED_FILE)
+  /** 返回按类型和会话隔离的传感器目录。 */
+  fun sensorSessionDirectory(kind: SensorKind, sessionId: String): File {
+    require(SENSOR_SESSION_ID_PATTERN.matches(sessionId)) { "sessionId must be a safe path component" }
+    return File(File(File(filesDirectory, ACQUISITION_DIRECTORY), SENSOR_DIRECTORY), "${kind.wireName}/$sessionId")
+  }
+
+  /** 返回传感器尚未完成的 CSV 路径。 */
+  fun sensorPartialFile(kind: SensorKind, sessionId: String): File =
+    File(sensorSessionDirectory(kind, sessionId), "${kind.wireName}.csv.part")
+
+  /** 返回传感器已完成的 CSV 路径。 */
+  fun sensorCompletedFile(kind: SensorKind, sessionId: String): File =
+    File(sensorSessionDirectory(kind, sessionId), "${kind.wireName}.csv")
 
   /** 校验并返回符合历史主动采集规则的会话标识。 */
   private fun requirePpgSessionId(sessionId: String): String {
@@ -62,5 +76,7 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
     const val PASSIVE_VIDEO_PARTIAL_FILE = "video.mp4.part"
     const val PASSIVE_VIDEO_COMPLETED_FILE = "video.mp4"
     val PPG_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
+    const val SENSOR_DIRECTORY = "sensors"
+    val SENSOR_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
   }
 }

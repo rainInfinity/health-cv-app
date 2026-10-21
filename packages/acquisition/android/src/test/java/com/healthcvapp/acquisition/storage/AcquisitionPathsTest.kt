@@ -4,6 +4,7 @@ package com.healthcvapp.acquisition.storage
 
 import java.io.File
 import java.nio.file.Files
+import com.healthcvapp.acquisition.sensors.model.SensorKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
@@ -36,6 +37,23 @@ class AcquisitionPathsTest {
     assertNotEquals(ppgSession, otherPpgSession)
     assertTrue(ppgSession.isDirectory)
     assertTrue(passiveSession.isDirectory)
+  }
+
+  @Test
+  fun `sensor paths isolate types and sessions below the shared acquisition root`() = withTemporaryDirectory { root ->
+    val paths = AcquisitionPaths(root)
+    val accelerometer = paths.sensorSessionDirectory(SensorKind.ACCELEROMETER, "session-1")
+    val gyroscope = paths.sensorSessionDirectory(SensorKind.GYROSCOPE, "session-1")
+    val nextSession = paths.sensorSessionDirectory(SensorKind.ACCELEROMETER, "session-2")
+
+    assertEquals(File(root, "acquisition/sensors/accelerometer/session-1"), accelerometer)
+    assertEquals(File(accelerometer, "accelerometer.csv.part"), paths.sensorPartialFile(SensorKind.ACCELEROMETER, "session-1"))
+    assertEquals(File(accelerometer, "accelerometer.csv"), paths.sensorCompletedFile(SensorKind.ACCELEROMETER, "session-1"))
+    assertNotEquals(accelerometer, gyroscope)
+    assertNotEquals(accelerometer, nextSession)
+    assertThrows(IllegalArgumentException::class.java) {
+      paths.sensorSessionDirectory(SensorKind.GRAVITY, "../outside")
+    }
   }
 
   @Test
