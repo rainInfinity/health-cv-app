@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.view.PreviewView
-import com.healthcvapp.acquisition.runtime.AcquisitionRuntime
+import com.healthcvapp.acquisition.ppg.runtime.PPGRuntime
 import com.margelo.nitro.NitroModules
 
 /** 在 React Native 容器中同步 CameraX 预览视图的延迟布局。 */
@@ -62,16 +62,16 @@ class HybridCameraPreview private constructor(context: Context, @Suppress("UNUSE
     scaleType = PreviewView.ScaleType.FILL_CENTER
   }
   private val previewContainer = CameraPreviewContainer(context, previewView)
-  private val service = AcquisitionRuntime.get(context)
+  private val controller = PPGRuntime.get(context)
 
   override val view: View = previewContainer
 
   init {
-    service.attachPreview(previewView)
+    controller.attachPreview(previewView)
   }
 
   /** 释放旧页面持有的预览 Surface 引用。 */
   override fun onDropView() {
-    service.detachPreview(previewView)
+    controller.detachPreview(previewView)
   }
 }

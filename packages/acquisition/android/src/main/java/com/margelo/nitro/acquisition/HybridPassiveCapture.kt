@@ -4,7 +4,7 @@ package com.margelo.nitro.acquisition
 
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
-import com.healthcvapp.acquisition.passive.PassiveCaptureRuntimes
+import com.healthcvapp.acquisition.passive.runtime.PassiveCaptureRuntimes
 
 /** 暴露被动服务控制、真实快照、低频状态与持久视频查询。 */
 class HybridPassiveCapture : HybridPassiveCaptureSpec() {

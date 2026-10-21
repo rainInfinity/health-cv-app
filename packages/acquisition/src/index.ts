@@ -4,13 +4,13 @@ export {
   AcquisitionClient,
   AcquisitionError,
   createAcquisitionClient,
-} from './client'
+} from './ppg/client'
 
 export {
   PassiveCaptureClient,
   PassiveCaptureError,
   createPassiveCaptureClient,
-} from './passive-client'
+} from './passive/client'
 export type {
   AcquisitionArtifact,
   AcquisitionArtifactFile,

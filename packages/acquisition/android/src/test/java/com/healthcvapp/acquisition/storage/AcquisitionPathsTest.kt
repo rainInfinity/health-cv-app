@@ -1,0 +1,61 @@
+/** 验证统一路径策略保持既有目录、文件名与会话隔离。 */
+
+package com.healthcvapp.acquisition.storage
+
+import java.io.File
+import java.nio.file.Files
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** 使用临时目录验证主动和被动产物的路径布局。 */
+class AcquisitionPathsTest {
+  @Test
+  fun `ppg and passive sessions keep legacy paths and isolate session files`() = withTemporaryDirectory { root ->
+    val paths = AcquisitionPaths(root)
+    val ppgSession = paths.ppgSessionDirectory("legacy_session-01")
+    val passiveSessionId = "7f4ca24c-27cc-4d88-86e5-153d76f90123"
+    val passiveSession = paths.passiveVideoSessionDirectory(passiveSessionId)
+
+    assertEquals(File(root, "acquisition/legacy_session-01"), ppgSession)
+    assertEquals(File(ppgSession, "ppg.csv.part"), paths.ppgPartialFile("legacy_session-01"))
+    assertEquals(File(ppgSession, "ppg.csv"), paths.ppgCompletedFile("legacy_session-01"))
+    assertEquals(File(ppgSession, "frame.csv.part"), paths.framePartialFile("legacy_session-01"))
+    assertEquals(File(ppgSession, "frame.csv"), paths.frameCompletedFile("legacy_session-01"))
+    assertEquals(File(root, "passive-capture"), paths.passiveVideoRootDirectory())
+    assertEquals(File(root, "passive-capture/$passiveSessionId"), passiveSession)
+    assertEquals(File(passiveSession, "video.mp4.part"), paths.passiveVideoPartialFile(passiveSessionId))
+    assertEquals(File(passiveSession, "video.mp4"), paths.passiveVideoCompletedFile(passiveSessionId))
+
+    assertTrue(ppgSession.mkdirs())
+    assertTrue(passiveSession.mkdirs())
+    val otherPpgSession = paths.ppgSessionDirectory("another-session")
+    assertTrue(otherPpgSession.mkdirs())
+    assertNotEquals(ppgSession, otherPpgSession)
+    assertTrue(ppgSession.isDirectory)
+    assertTrue(passiveSession.isDirectory)
+  }
+
+  @Test
+  fun `session identifiers retain their capability specific constraints`() = withTemporaryDirectory { root ->
+    val paths = AcquisitionPaths(root)
+
+    assertThrows(IllegalArgumentException::class.java) { paths.ppgSessionDirectory("../outside") }
+    assertThrows(IllegalArgumentException::class.java) { paths.ppgSessionDirectory("") }
+    assertThrows(IllegalArgumentException::class.java) {
+      paths.passiveVideoSessionDirectory("not-a-uuid")
+    }
+  }
+
+  /** 在临时根目录中运行路径断言并清理测试数据。 */
+  private inline fun withTemporaryDirectory(block: (File) -> Unit) {
+    val root = Files.createTempDirectory("acquisition-paths").toFile()
+    try {
+      block(root)
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+}

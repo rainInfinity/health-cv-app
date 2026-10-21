@@ -5,7 +5,7 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <application>
     <service
-      android:name="com.healthcvapp.acquisition.passive.PassiveCaptureService"
+      android:name="com.healthcvapp.acquisition.passive.service.PassiveCaptureService"
       android:exported="false"
       android:stopWithTask="false"
       android:foregroundServiceType="camera" />
