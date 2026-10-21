@@ -14,6 +14,10 @@
 
 被动视频与主动 PPG 采集是不同的会话和产物类型。视频不进入 `files/acquisition/`，也不会作为 `ppg.csv`、`frame.csv` 或 PPG 记录对外提供。
 
+### 原生文件职责
+
+`AcquisitionPaths` 集中定义 `filesDir/passive-capture/<sessionId>/video.mp4.part` 与 `video.mp4`；`AcquisitionFileStore` 负责目录创建、拒覆盖预分配和同目录提升。媒体轨检查、被取消片段删除及完成目录扫描仍由 `PassiveVideoArtifactStore` 执行，重构不改变视频位置或保留策略。
+
 ## Pixel_5 AVD 模拟器实测（2026-10-20）
 
 设备为 `Pixel_5` AVD（`emulator-5554`），Android 17 / API 37 / arm64，应用 target SDK 36。安装并运行内部 Release APK，无需 Metro；权限通过 Android／应用界面完成，未用 `adb grant`。未登录，也未配置云端服务。周期／时长恢复为 12 秒／2 秒。
@@ -33,6 +37,22 @@
 | `f7895126-7369-4e19-b146-d6eadcf15bda` | 59.9414 秒 | 1,757 | 5,317,432 bytes |
 
 帧画面是模拟器虚拟场景，不是人体样本；完整解码仅证明容器和帧可读，不证明生理信号或 rPPG 有效。
+
+## 架构重构后 Pixel_5 AVD 回归（2026-10-21）
+
+设备为 `Pixel_5` AVD（`emulator-5554`，Android 17／API 37／arm64），运行本次 Android development build。界面配置周期 12 秒，目标时长先设为 15 秒、再设为 60 秒；回归结束后恢复原目标时长 120 秒。通过 `adb shell input keyevent 223`、`224`、`82` 完成系统睡眠、唤醒与解锁，触发真实 `USER_PRESENT`，未发送伪造广播。
+
+| 会话 ID | 目标时长 | 结果 | `video.mp4` 大小 |
+| --- | ---: | --- | ---: |
+| `52225fef-c5c1-44d9-8e1b-897c20a64af9` | 15 秒 | 正常完成 | 1,743,695 bytes |
+| `c279abf6-3345-4517-83b7-edfa84ed4084` | 60 秒 | 正常完成 | 5,293,977 bytes |
+| `43c90a74-38ba-4589-83e9-49b337871a83` | 60 秒 | 录像中通过通知关闭，未完成片段取消 | 未发布 |
+
+两个正常完成的片段均发布在原位置 `files/passive-capture/<sessionId>/video.mp4`；被取消会话的 `.part` 临时文件已删除，未生成 `video.mp4`。既有会话 `2ef485eb-56dd-4b90-ba3d-1773fd9c37a9/video.mp4` 仍存在，大小为 10,011,381 bytes；完成文件总数从 12 增至 14，录像中取消后仍为 14。等待状态从通知关闭时，服务结束、相机无活动客户端，完成文件数保持 12；录像中关闭时，关闭前可见 `43c90a74-38ba-4589-83e9-49b337871a83/video.mp4.part`，关闭后临时片段消失、服务结束且 `Active Camera Clients` 为空。
+
+60 秒录像期间切到主动 PPG 并尝试打开后置相机，界面显示“相机正被另一种采集会话使用。”，PPG 保持关闭；CameraService 仍只有被动前摄 Camera ID 1。目标录像结束后 Camera ID 1 断开，等待态再次显示 `Active Camera Clients: []`。
+
+本回归只覆盖 Pixel_5 AVD 的短流程与当前采集互斥，不重做 Honor 实体设备验收、7200 秒等待或新增视频的外部完整解码。AVD 画面为虚拟场景，不代表人体样本或 rPPG 有效。
 
 ## 生命周期与失败路径实测
 

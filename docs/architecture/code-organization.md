@@ -83,8 +83,10 @@ health-cv-app/
 │   │   └── tsconfig.json
 │   ├── acquisition/
 │   │   ├── src/
-│   │   │   ├── client.ts
-│   │   │   ├── passive-client.ts
+│   │   │   ├── ppg/
+│   │   │   │   └── client.ts
+│   │   │   ├── passive/
+│   │   │   │   └── client.ts
 │   │   │   ├── index.ts
 │   │   │   ├── native/
 │   │   │   │   ├── Acquisition.nitro.ts
@@ -92,16 +94,31 @@ health-cv-app/
 │   │   │   │   └── CameraPreview.nitro.ts
 │   │   │   └── react/
 │   │   │       └── CameraPreview.tsx
-│   │   ├── android/src/main/java/com/healthcvapp/acquisition/
-│   │   │   ├── bridge/
-│   │   │   ├── camera/
-│   │   │   ├── pixels/
-│   │   │   ├── pipeline/
-│   │   │   ├── processing/
-│   │   │   ├── passive/
-│   │   │   ├── runtime/
-│   │   │   ├── session/
-│   │   │   └── writers/
+│   │   ├── android/src/main/java/
+│   │   │   ├── com/healthcvapp/acquisition/
+│   │   │   │   ├── bridge/
+│   │   │   │   ├── camera/ownership/
+│   │   │   │   ├── passive/
+│   │   │   │   │   ├── capture/
+│   │   │   │   │   ├── output/
+│   │   │   │   │   ├── runtime/
+│   │   │   │   │   ├── service/
+│   │   │   │   │   └── trigger/
+│   │   │   │   ├── pipeline/
+│   │   │   │   ├── ppg/
+│   │   │   │   │   ├── camera/
+│   │   │   │   │   ├── correlation/
+│   │   │   │   │   ├── model/
+│   │   │   │   │   ├── output/
+│   │   │   │   │   ├── pixels/
+│   │   │   │   │   ├── processing/
+│   │   │   │   │   ├── runtime/
+│   │   │   │   │   └── session/
+│   │   │   │   └── storage/csv/
+│   │   │   └── com/margelo/nitro/acquisition/
+│   │   │       ├── HybridAcquisition.kt
+│   │   │       ├── HybridCameraPreview.kt
+│   │   │       └── HybridPassiveCapture.kt
 │   │   ├── nitrogen/generated/
 │   │   ├── nitro.json
 │   │   ├── react-native.config.js
@@ -254,7 +271,7 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 ### 5.1 调用入口：主动与被动客户端
 
-`src/client.ts` 的 `AcquisitionClient` 封装主动 PPG 状态、权限、后摄预览／采集和双文件产物；`src/passive-client.ts` 只封装被动采集配置、启停、低频状态与视频引用。原生桥接细节不暴露给应用流程。
+`src/ppg/client.ts` 的 `AcquisitionClient` 封装主动 PPG 状态、权限、后摄预览／采集和双文件产物；`src/passive/client.ts` 的 `PassiveCaptureClient` 只封装被动采集配置、启停、低频状态与视频引用。原生桥接细节不暴露给应用流程。
 
 ### 5.2 数据语义：Nitro 低频接口
 
@@ -272,11 +289,12 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 原生源码留在 `packages/acquisition/android`，由 Nitro 对象接入；CNG 宿主工程只维护应用权限和模块自动链接。
 
-- `camera/`：主动 PPG 的 CameraX 后摄预览、帧分析与占用保护。
-- `pixels/`、`processing/`：主动 PPG 的只读 YUV 帧借用、共享统计、PPG 记录和经验提示；被动视频不进入这些路径，当前没有被动像素或人脸筛选。
-- `pipeline/`、`session/`、`writers/`：主动 PPG 的有界数据消费、会话收尾和双 CSV 文件写入。
-- `passive/`：前台服务、动态解锁接收、周期门控、无预览前摄录像、通知操作及私有视频发布；不实例化 `DataHub<T>` 或写入 PPG CSV。
-- `runtime/`、`bridge/`：主动采集运行时及 Nitro 控制对象。
+- `camera/ownership/`、`ppg/camera/`：`camera/ownership/` 提供主动 PPG 与被动录像共用的相机占用保护；`ppg/camera/` 封装主动 PPG 的 CameraX 后摄预览与帧分析。
+- `ppg/pixels/`、`ppg/processing/`：主动 PPG 的只读 YUV 帧借用、共享统计、记录转换和经验提示；被动视频不进入这些路径，当前没有被动像素或人脸筛选。
+- `pipeline/` 提供有界 `DataHub<T>`；`ppg/correlation/`、`ppg/session/`、`ppg/output/`、`storage/csv/` 负责主动 PPG 元数据配对、会话收尾、双 CSV 编码和有序写入。
+- `storage/`：`AcquisitionPaths` 集中维护主动 PPG 与被动视频路径；`AcquisitionFileStore` 负责目录、新建拒覆盖输出和单文件提升，不接管媒体检查、双文件发布或清理策略。
+- `passive/runtime/`、`passive/service/`、`passive/trigger/`、`passive/capture/` 分别负责应用控制与状态、前台服务与通知、周期门控及录像生命周期；`passive/output/PassiveVideoArtifactStore` 负责媒体检查、发布、取消片段清理和完成文件扫描，并使用 `storage/` 的共通路径及文件操作。被动链不创建 `DataHub<T>` 或 PPG CSV。
+- `ppg/runtime/`、`bridge/`：`PPGRuntime` 共享进程级 `PPGController`；控制器串行化主动 PPG 命令，并维护预览元数据缓存、活动会话、低频状态／提示与结构化错误；`bridge/` 封装 Nitro 控制对象。
 
 `src/native` 维护 Nitro Spec，Nitrogen 生成绑定归本包按构建要求管理。运动传感器与 iOS 尚未实现；本次不加入空模块或占位入口。
 
@@ -292,7 +310,7 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 #### Camera2 元数据配对与双文件
 
-预览阶段，`AcquisitionService` 在原生侧最多保留 64 条含 `SENSOR_TIMESTAMP` 的 Camera2 数值结果，并在正式会话启用时交接，用于匹配回调先到、图像仍在途的帧。`FrameMetadataCorrelator` 只按 `SENSOR_TIMESTAMP == ImageProxy.imageInfo.timestamp` 精确关联，按正式帧序交付，并在容量溢出、时间戳缺失或正式帧无法匹配时失败。关联等待有界，不延长 `ImageProxy` 生命周期。
+预览阶段，`PPGController` 在原生侧最多保留 64 条含 `SENSOR_TIMESTAMP` 的 Camera2 数值结果，并在正式会话启用时交接，用于匹配回调先到、图像仍在途的帧。`FrameMetadataCorrelator` 只按 `SENSOR_TIMESTAMP == ImageProxy.imageInfo.timestamp` 精确关联，按正式帧序交付，并在容量溢出、时间戳缺失或正式帧无法匹配时失败。关联等待有界，不延长 `ImageProxy` 生命周期。
 
 `frame.csv` 沿用旧八列表头：`timestamp`、`timestampFrame`、`timestampSystem` 以毫秒小数记录，三项相机时长保持纳秒，ISO 和白平衡模式保留整数。可选结果缺失时写 `0`，因此无法区分缺失与真实零值；缺少用于配对的传感器时间戳则失败。
 
@@ -324,7 +342,9 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 ### 5.7 文件管理与扩展边界
 
-Android `PpgCsvWriter` 和 `FrameCsvWriter` 分别只负责 UTF-8 CSV 编码与文件 I/O；`CaptureSession` 在应用私有会话目录写入两份 `.part` 文件，正常排空并关闭后才提升完成路径并交付产物。任一侧失败都不返回成功引用。
+`PPGCaptureSession` 保留正式帧边界和在途屏障；配对记录交由 `PPGSessionOutput`，再由两侧 `CsvBatchWriter<PPGCaptureRecord>` 使用 `PPGCsvEncoder` 与 `FrameCsvEncoder` 顺序写入。输出层关闭两侧后协调单文件提升与失败回退；任一侧失败都不返回成功产物。
+
+`AcquisitionPaths` 保持 `filesDir/acquisition/<sessionId>/ppg.csv(.part)`、`frame.csv(.part)` 和 `filesDir/passive-capture/<sessionId>/video.mp4(.part)` 的既有位置与文件名；PPG 保留原会话标识规则，被动视频继续要求规范 UUID。已有文件不迁移、不自动删除。`AcquisitionFileStore` 区分供 CSV writer 打开的新输出与供 CameraX 写入的预分配视频文件，只提升同目录单文件。
 
 主动 PPG 的 `listArtifacts()` 只返回当前进程内已完成的双文件引用，进程重启后的 PPG 目录扫描尚未实现；被动视频使用独立目录扫描，应用重开后仍可查询。两种产物都在关闭相机或卸载界面后保留，页面只展示引用，不直接读写或删除会话文件，也不接入上传 URI。
 

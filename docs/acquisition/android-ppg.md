@@ -6,6 +6,12 @@
 
 本次不实现 iOS、运动传感器、上传、云端处理、真实覆盖面积或医学质量判断。`DataHub<T>` 是可供不同原生数据流复用的通用实现，但当前只创建 PPG 会话实例，不添加其它数据流的占位实现。
 
+## 主动采集控制器
+
+`PPGRuntime` 为 Nitro `Acquisition` 控制对象与 `CameraPreview` 视图提供同一个进程级 `PPGController`。控制器持有主动 PPG 相机、预览视图引用、相机会话和活动 `PPGCaptureSession`，并串行执行打开、开始、停止和关闭命令；挂载预览视图本身不会打开相机。
+
+相机回调绑定其所属的会话引用并交给 `PPGFrameHandler`，关闭或切换会话后的旧帧不能写入新会话。控制器通过低频快照和状态监听发送运行状态、经验提示及既有结构化错误码与消息；图像、像素和逐帧记录不传给 JavaScript。
+
 ## DataHub<T> 有界批处理
 
 每个数据流／采集会话拥有独立 `DataHub<T>` 实例、容量、触发条件、消费者和终态；实例间不共享队列或批次元数据。当前 PPG 默认值如下：
@@ -20,7 +26,7 @@
 
 消费者收到的 `List<T>` 是环形存储的临时视图，不复制批次。消费者必须在挂起函数返回前完成读取，不能保留列表或异步继续访问；只有消费者返回后才释放该批次的容量额度。正在消费期间再次达到数量阈值时，也不会并发启动第二个消费者。
 
-`closeAndDrain` 停止接收、取消定时器、顺序消费尾批并等待当前消费者结束；重复关闭等待同一后台屏障。成功表示所有已接收记录均已消费完成。消费者异常会成为终态错误：停止接收、清除未交付记录、唤醒等待者，`closeAndDrain` 抛出该错误，不自动重试。容量不足同样不阻塞相机等待磁盘、不覆盖或静默丢弃后继续成功；当前 `CaptureSession` 会终止并且不返回完成产物。
+`closeAndDrain` 停止接收、取消定时器、顺序消费尾批并等待当前消费者结束；重复关闭等待同一后台屏障。成功表示所有已接收记录均已消费完成。消费者异常会成为终态错误：停止接收、清除未交付记录、唤醒等待者，`closeAndDrain` 抛出该错误，不自动重试。容量不足同样不阻塞相机等待磁盘、不覆盖或静默丢弃后继续成功；当前 `PPGCaptureSession` 会终止并且不返回完成产物。
 
 对应行为测试：`DataHubTest` 覆盖 `offer` 不同步调用消费者、在途批次仍计入容量、基于虚拟时间的计时触发、批次视图在消费结束后失效、数量触发的顺序与无并发消费、重复关闭与尾批等待、不同数据流隔离和消费者失败终态。
 
@@ -55,11 +61,11 @@ timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex
 | `frameIndex` | 正式会话实际接收帧的序号 | 每个会话从 0 递增；不证明相机无跳帧 |
 | `blockIndex` | 每帧一个全帧块 | 固定为 0 |
 
-时间保留毫秒小数，不截断为整数。帧率请求值与 CameraX 实际交付时间分开；递增帧号不代表采样完整。`PpgRecordProcessor` 只转换帧元数据与共享统计，不访问队列或文件；`PpgCsvWriter` 只编码八列并按收到的批次顺序写入，不另建队列或消费者。
+时间保留毫秒小数，不截断为整数。帧率请求值与 CameraX 实际交付时间分开；递增帧号不代表采样完整。`PpgRecordProcessor` 只转换帧元数据与共享统计，不访问队列或文件；`PPGCsvEncoder` 与 `FrameCsvEncoder` 分别从同一配对记录编码既有八列协议，`CsvBatchWriter` 复用行缓冲并按收到的批次顺序写入，不另建队列或消费者。
 
 ## Camera2 逐帧元数据与 `frame.csv`
 
-CameraX `ImageAnalysis` 在构建时注册 `Camera2Interop.Extender(...).setSessionCaptureCallback(...)`。`onCaptureCompleted` 从对应 `TotalCaptureResult` 读取实际结果，不使用请求值代替测量值。预览期间在原生侧以固定 64 条有界环形缓冲保留最近的含 `SENSOR_TIMESTAMP` 数值结果；正式会话启用时转交缓存，以覆盖回调先于图像交付的在途帧。PPG 图像的 `ImageProxy.imageInfo.timestamp` 必须与结果中的 `CaptureResult.SENSOR_TIMESTAMP` 完全相等才配对；两侧只缓存独立数值，不保留 `ImageProxy` 或 Camera2 对象，并按 `frameIndex` 顺序提交。
+CameraX `ImageAnalysis` 在构建时注册 `Camera2Interop.Extender(...).setSessionCaptureCallback(...)`。`onCaptureCompleted` 从对应 `TotalCaptureResult` 读取实际结果，不使用请求值代替测量值。预览期间由 `PPGController` 以固定 64 条有界环形缓冲保留最近的含 `SENSOR_TIMESTAMP` 数值结果；正式会话启用时转交缓存，以覆盖回调先于图像交付的在途帧。PPG 图像的 `ImageProxy.imageInfo.timestamp` 必须与结果中的 `CaptureResult.SENSOR_TIMESTAMP` 完全相等才配对；两侧只缓存独立数值，不保留 `ImageProxy` 或 Camera2 对象，并按 `frameIndex` 顺序提交。
 
 UTF-8 `frame.csv` 表头严格为：
 
@@ -78,9 +84,9 @@ timestamp,timestampFrame,timestampSystem,exposureTime,durationTime,rollingShutte
 | `iso` | `SENSOR_SENSITIVITY` 实际 ISO | 整数；结果缺失时为 `0` |
 | `whiteBalanceMode` | `CONTROL_AWB_MODE` 实际白平衡模式 | Camera2 整数枚举；结果缺失时为 `0` |
 
-旧版兼容字段以 `0` 表示可选 Camera2 字段缺失，因此无法区分“未提供”和实际零值。`SENSOR_TIMESTAMP` 不适用该兜底：时间戳缺失、正式帧未匹配、重复时间戳或有界关联缓存溢出都会显式失败。停止时最多等待 Camera2 结果 1 秒；仍未匹配的正式帧不写成成功记录。两份 CSV 由同一个有序 DataHub 消费者按配对记录同步追加，逐行顺序与时间戳对应。
+旧版兼容字段以 `0` 表示可选 Camera2 字段缺失，因此无法区分“未提供”和实际零值。`SENSOR_TIMESTAMP` 不适用该兜底：时间戳缺失、正式帧未匹配、重复时间戳或有界关联缓存溢出都会显式失败。停止时最多等待 Camera2 结果 1 秒；仍未匹配的正式帧不写成成功记录。同一个有序 DataHub 消费者将配对批次交给 `PPGSessionOutput`，先写 PPG CSV、再写 frame CSV，逐行顺序与时间戳对应。
 
-正常停止等待两份 CSV 排空、关闭并完成路径提升后，产物引用以 `files[]` 分别提供 `ppg`／`frame` 的路径和字节数；任一侧失败都不返回完成会话。
+`PPGSessionOutput` 管理双 writer 的打开、顺序消费、关闭、两份路径提升与回退；只有两份已关闭文件均提升成功后，才生成 `files[]` 产物引用。任一侧失败都不返回完成会话。
 
 ## 经验提示
 
@@ -100,7 +106,7 @@ b = Y + 1.8556 × (U - 128)
 
 ## 会话、文件与停止完成
 
-每次正式采集使用独立会话标识和持久目录：`filesDir/acquisition/<sessionId>/`。写入期间文件名为 `ppg.csv.part` 与 `frame.csv.part`；只有在正常停止、等待在途帧及关联完成、排空队列、刷新并关闭两个写入器、提升两份完成路径且确认文件存在后，才返回包含 `files[]` 的产物引用。停止收尾期间不允许开始下一次采集。
+每次正式采集使用独立会话标识和持久目录：`filesDir/acquisition/<sessionId>/`。`AcquisitionPaths` 集中维护 `ppg.csv.part`、`frame.csv.part` 与对应完成路径；`AcquisitionFileStore` 负责拒覆盖新输出及单文件提升。正常停止等待在途帧及关联完成、排空队列后，由 `PPGSessionOutput` 关闭两个 writer 并协调完成路径；停止收尾期间不允许开始下一次采集。
 
 像素处理、容量不足、消费者或文件写入失败会关闭该会话的记录入口并释放资源，不返回成功产物；未完成的 `.part` 不会伪装成 `ppg.csv`，也不承诺自动删除。关闭相机或卸载页面会正常停止当前会话；已完成文件不会因此删除。相机中断或后台切换终止当前会话并显示结构化错误。
 

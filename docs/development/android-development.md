@@ -174,6 +174,20 @@ adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/fra
 在 Pixel_5 AVD 中手动打开后置相机、开始采集并正常停止。会话 `f6202159-ec77-4001-ae78-f698656107e2` 返回预览状态，页面显示 `ppg.csv` 为 25,008 bytes、`frame.csv` 为 17,880 bytes。两份文件各 239 行（含表头），共 238 条数据；逐行 `timestampFrame` 完全一致且递增，PPG `frameIndex` 从 0 连续至 237。
 
 该结果验证模拟器中的相机回调、精确关联、双文件落盘和页面产物引用；模拟器画面不代表真实 PPG，未验证实体设备、传感器信号质量或性能。
+
+### 架构重构后 Pixel_5 AVD 回归（2026-10-21）
+
+使用 `Pixel_5` AVD（`emulator-5554`，Android 17／API 37／arm64）运行本次 Android development build。两次主动采集都从界面正常停止，关闭后重新读取各自独立会话目录中的两份 CSV：
+
+| 会话 ID | `ppg.csv` 数据行 | `frame.csv` 数据行 | 文件大小（PPG／frame） |
+| --- | ---: | ---: | ---: |
+| `0dc9a330-6919-4d05-b55e-6f5e522eb965` | 295 | 295 | 31,053／22,125 bytes |
+| `f8b11e1a-749f-4e6e-bfc9-863a5e42ddf8` | 400 | 400 | 42,129／29,959 bytes |
+
+PPG 表头为 `timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex`；frame 表头为 `timestamp,timestampFrame,timestampSystem,exposureTime,durationTime,rollingShutterSkewTime,iso,whiteBalanceMode`。每次采集的两份文件逐行 `timestampFrame` 完全一致，PPG `frameIndex` 分别从 0 连续至 294、399。停止后立即再次点击同一控件位置，页面回到预览且未出现第三份会话产物；两个已完成会话的 CSV 均可在相机关闭后读取。
+
+AVD 使用虚拟场景，只验证模拟器相机回调、逐帧配对与文件落盘；不代表真实人体 PPG、实体设备信号或性能。
+
 ## Android 无扰式被动采集
 
 ### Pixel_5 模拟器实测（2026-10-20）
@@ -195,7 +209,7 @@ Release APK 与核心诊断命令：
 pnpm --dir apps/native exec expo prebuild --platform android
 pnpm --filter @health-cv-app/native run android:release
 adb -s emulator-5554 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
-adb -s emulator-5554 shell dumpsys activity services com.healthcvapp.mobile
+adb -s emulator-5554 shell dumpsys activity services com.healthcvapp.mobile/com.healthcvapp.acquisition.passive.service.PassiveCaptureService
 adb -s emulator-5554 shell dumpsys media.camera
 adb -s emulator-5554 shell input keyevent 223
 adb -s emulator-5554 shell input keyevent 224
@@ -219,6 +233,12 @@ Nitro 绑定生成、CNG 重建、Release 构建及安装成功。Gradle 原生�
 模拟器中服务启动失败显示 `FOREGROUND_SERVICE_START_TIMEOUT`，通知渠道关闭时拒绝启动；两项均确认服务未运行且相机未打开。运行中撤销权限、通知划除与通知声／振动／悬浮提醒等项目的模拟器结果未覆盖；Honor 真机验收见下文。
 
 模拟器结果只适用于 Pixel_5 AVD。Honor PPG-AN00 的最终真机验收见下文；其他厂商限制仍未验证。模拟器虚拟画面不证明真实人体信号或 rPPG 有效。
+
+### 架构重构后 Pixel_5 AVD 回归（2026-10-21）
+
+本次在同一 `Pixel_5` AVD 上用界面启动已迁移的前台服务；设置周期 12 秒、目标时长 15 秒及 60 秒后，通过系统睡眠、唤醒和解锁按键序列触发真实 `USER_PRESENT`，没有发送伪造广播。被动页面等待时 `Active Camera Clients` 为空；录像使用前摄 Camera ID 1。
+
+被动录像、通知取消及原目录复查的详细结果见 [架构重构后 Pixel_5 AVD 回归记录](../acquisition/android-passive-capture.md#架构重构后-pixel_5-avd-回归2026-10-21)。本次只验证 AVD 短周期运行路径，不重做 Honor 真机验收或 7200 秒长待机；模拟器虚拟画面不证明真实人体信号。
 
 ### Honor PPG-AN00 真机授权与后台策略复测（2026-10-20）
 

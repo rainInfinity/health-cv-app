@@ -110,7 +110,7 @@ Nitrogen 生成的绑定代码属于采集模块的构建产物，需要随模�
 
 ### 5.1 连续写入与低频管理
 
-连续写入使用平台原生文件 API。本次 Android `PpgCsvWriter` 以 UTF-8 编码八列 PPG CSV，`FrameCsvWriter` 编码对应的八列 Camera2 `frame.csv`；两者顺序消费同一配对批次，iOS 写入器尚未实施。
+连续写入使用平台原生文件 API。`CsvBatchWriter` 通过 `PPGCsvEncoder` 与 `FrameCsvEncoder` 以 UTF-8 编码既有八列 PPG 和 Camera2 CSV；`PPGSessionOutput` 让两侧顺序消费同一配对批次并管理关闭与完成发布，iOS 写入器尚未实施。
 
 正常停止必须等待 Camera2 配对结束、在途帧完成、DataHub 尾批消费以及两个文件刷新和关闭后，才交付双文件完成产物。JavaScript 文件库不进入逐帧热路径。
 
