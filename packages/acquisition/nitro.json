@@ -20,6 +20,12 @@
         "language": "kotlin",
         "implementationClassName": "HybridCameraPreview"
       }
+    },
+    "PassiveCapture": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridPassiveCapture"
+      }
     }
   },
   "ignorePaths": ["**/node_modules", "nitrogen/generated"],

@@ -25,6 +25,8 @@ import com.healthcvapp.acquisition.camera.CameraSource
 import com.healthcvapp.acquisition.camera.CameraSourceException
 import com.healthcvapp.acquisition.camera.CameraSourceListener
 import com.healthcvapp.acquisition.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraUseGuard
+import com.healthcvapp.acquisition.camera.CameraUseLease
 import com.healthcvapp.acquisition.pixels.PixelCropRect
 import com.healthcvapp.acquisition.pixels.PixelFrameView
 import com.healthcvapp.acquisition.pixels.PixelPlane
@@ -66,6 +68,8 @@ class AcquisitionService(context: ReactContext) {
   private var state = AcquisitionState.CLOSED
   private var cameraSessionId: String? = null
   private var activeSession: CaptureSession? = null
+  /** 后摄会话独占的相机使用权。 */
+  private var cameraUseLease: CameraUseLease? = null
   /** 预览期间保留最近拍摄结果，以配对开始时仍在途的图像。 */
   private val previewCaptureMetadata = ArrayDeque<CameraFrameMetadata>(PRESTART_CAPTURE_METADATA_CAPACITY)
   private var errorCode: String? = null
@@ -128,6 +132,9 @@ class AcquisitionService(context: ReactContext) {
     val owner = reactContext.currentActivity as? LifecycleOwner
       ?: return@withLock commandResult("ACTIVITY_UNAVAILABLE", "当前界面无法绑定 Android 相机生命周期。")
     val newCameraSessionId = UUID.randomUUID().toString()
+    val cameraLease = CameraUseGuard.tryAcquire(newCameraSessionId)
+      ?: return@withLock commandResult("CAMERA_BUSY", "相机正被另一种采集会话使用。")
+    synchronized(lock) { cameraUseLease = cameraLease }
     updateSnapshot {
       state = AcquisitionState.OPENING
       cameraSessionId = newCameraSessionId
@@ -156,11 +163,13 @@ class AcquisitionService(context: ReactContext) {
       }
       openFailure?.let { details ->
         runCatching { cameraSource.close() }
+        releaseCameraUseLease(cameraLease)
         return@withLock commandResult(details.first, details.second)
       }
       commandResult()
     } catch (error: Throwable) {
       runCatching { cameraSource.close() }
+      releaseCameraUseLease(cameraLease)
       val details = cameraError(error)
       updateSnapshot {
         state = AcquisitionState.FAILED
@@ -277,6 +286,7 @@ class AcquisitionService(context: ReactContext) {
     } catch (error: Throwable) {
       if (closeFailure == null) closeFailure = "CAMERA_CLOSE_FAILED" to (error.message ?: "相机资源释放失败。")
     }
+    synchronized(lock) { cameraUseLease.also { cameraUseLease = null } }?.close()
 
     updateSnapshot {
       activeSession = null
@@ -302,6 +312,13 @@ class AcquisitionService(context: ReactContext) {
   /** 返回本进程中已正常关闭且仍保留在应用私有目录的文件引用。 */
   fun listArtifacts(): Array<AcquisitionArtifact> = synchronized(lock) {
     completedArtifacts.values.map(::toNitroArtifact).toTypedArray()
+  }
+  /** 释放失败或迟到的打开结果所持有的专属令牌。 */
+  private fun releaseCameraUseLease(lease: CameraUseLease) {
+    synchronized(lock) {
+      if (cameraUseLease === lease) cameraUseLease = null
+    }
+    lease.close()
   }
 
   private fun createCameraListener(openedSessionId: String) = object : CameraSourceListener {

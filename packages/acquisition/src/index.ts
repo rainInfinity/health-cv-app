@@ -5,6 +5,12 @@ export {
   AcquisitionError,
   createAcquisitionClient,
 } from './client'
+
+export {
+  PassiveCaptureClient,
+  PassiveCaptureError,
+  createPassiveCaptureClient,
+} from './passive-client'
 export type {
   AcquisitionArtifact,
   AcquisitionArtifactFile,
@@ -14,3 +20,10 @@ export type {
   AcquisitionState,
   StopCaptureResult,
 } from './native/Acquisition.nitro'
+
+export type {
+  PassiveCaptureArtifact,
+  PassiveCaptureConfig,
+  PassiveCaptureSnapshot,
+  PassiveCaptureState,
+} from './native/PassiveCapture.nitro'

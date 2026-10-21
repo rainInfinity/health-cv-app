@@ -12,13 +12,13 @@ import {
   preserveAcquisitionCleanupError,
 } from '../../app/acquisition'
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { ActionButton } from './components/ActionButton'
 
 const STATE_LABELS: Record<AcquisitionState, string> = {
   closed: '已关闭',
@@ -199,36 +199,6 @@ function readErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '采集操作失败。'
 }
 
-interface ActionButtonProps {
-  /** 按钮上展示的操作名称。 */
-  label: string
-  /** 当前命令进行中时禁用操作。 */
-  disabled: boolean
-  /** 是否采用次要按钮样式。 */
-  secondary?: boolean
-  /** 用户手动触发的异步命令入口。 */
-  onPress: () => void
-}
-
-/** 呈现采集页面内统一样式的命令按钮。 */
-function ActionButton({ label, disabled, secondary = false, onPress }: ActionButtonProps) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        secondary && styles.secondaryButton,
-        disabled && styles.disabledButton,
-        pressed && !disabled && styles.pressedButton,
-      ]}
-    >
-      <Text style={[styles.buttonText, secondary && styles.secondaryButtonText]}>{label}</Text>
-    </Pressable>
-  )
-}
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#f7f8fa' },
@@ -244,12 +214,6 @@ const styles = StyleSheet.create({
   preview: { ...StyleSheet.absoluteFill },
   previewPlaceholder: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e7ebef' },
   actions: { gap: 10 },
-  button: { minHeight: 48, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#155eef' },
-  secondaryButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d0d9' },
-  disabledButton: { opacity: 0.5 },
-  pressedButton: { opacity: 0.8 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  secondaryButtonText: { color: '#344054' },
   disclaimer: { color: '#667085', fontSize: 12, lineHeight: 18 },
   file: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e4e7ec', paddingTop: 10, gap: 4 },
   artifactFile: { paddingTop: 8, gap: 4 },
