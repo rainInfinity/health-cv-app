@@ -174,3 +174,74 @@ adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/fra
 在 Pixel_5 AVD 中手动打开后置相机、开始采集并正常停止。会话 `f6202159-ec77-4001-ae78-f698656107e2` 返回预览状态，页面显示 `ppg.csv` 为 25,008 bytes、`frame.csv` 为 17,880 bytes。两份文件各 239 行（含表头），共 238 条数据；逐行 `timestampFrame` 完全一致且递增，PPG `frameIndex` 从 0 连续至 237。
 
 该结果验证模拟器中的相机回调、精确关联、双文件落盘和页面产物引用；模拟器画面不代表真实 PPG，未验证实体设备、传感器信号质量或性能。
+## Android 无扰式被动采集
+
+### Pixel_5 模拟器实测（2026-10-20）
+
+- 设备：`Pixel_5` AVD，`emulator-5554`，Android 17 / API 37 / arm64；应用 target SDK 36。验证安装内部 Release APK，未运行 Metro。未登录或配置云端服务。
+- 权限：在应用和 Android 系统界面中手动完成相机、通知授权；未使用 `adb grant`。通知渠道关闭时，应用明确报错且没有启动服务或打开相机；恢复渠道后通过界面重新启用。
+- 配置：周期 12 秒、目标录像 2 秒；另用 15 秒与 60 秒配置验证不同长度的完整媒体。实际文件、尺寸、时长、大小与解码帧数见 [Android 无扰式被动采集协议](../acquisition/android-passive-capture.md)。
+- 解锁：使用 `input keyevent 223`、`224`、`82` 让 AVD 睡眠、唤醒并解锁，观察到系统真实 `USER_PRESENT`，未发送伪造广播。临时测量构建在动态接收器 `onReceive` 与 CameraX `VideoRecordEvent.Start` 读取 `SystemClock.elapsedRealtime()`；本次样本分别为 `5,442,799 ms` 和 `5,443,059 ms`，事件到 Start 为 `260 ms`。该数值仅是模拟器单次观测，不代表真机延迟。CameraService 显示 Camera ID 1、前摄。
+- 等待：`dumpsys activity services` 显示前台 `PassiveCaptureService`；`dumpsys media.camera` 的 `Active Camera Clients` 为空。解锁录像期间 CameraService 显示 Camera ID 1、前摄。切换 PPG／被动页面不关闭等待服务。
+- 通知关闭：分别在等待和实际录像中点击“关闭无扰采集”。等待关闭后服务结束；录像中关闭后完成文件数保持 6 → 6，未完成片段未发布且相机释放。重新启用并真实解锁后，文件数 6 → 7。另验证禁用状态下真实解锁不增加文件。
+- 启动失败：暂时禁用服务组件后在页面尝试启用，状态显示 `FOREGROUND_SERVICE_START_TIMEOUT`，没有报告运行中；系统服务列表为空、相机无活动客户端。随后用 `pm default-state` 恢复服务组件。
+- 系统停止：执行 `am force-stop com.healthcvapp.mobile` 后无被动服务或相机客户端；重新进入应用仍未启用，之前的视频仍可查询。
+- 录像状态回归：实测重复 `USER_PRESENT` 曾使忙碌分支把界面状态错误回退为等待，而实际录像仍在继续。修复后再次覆盖通知状态，确认录像状态仍显示“无扰式采集进行中”，关闭录像不会发布未完成片段。
+- 相机互斥：将被动时长设为 60 秒并在录像时切到主动 PPG，点击“打开后置相机”显示“相机正被另一种采集会话使用。”；PPG 保持关闭，CameraService 只有被动录像的一个 Camera ID 1 客户端，被动前台服务继续运行。切回被动页仍显示“前摄正在录像”。
+
+Release APK 与核心诊断命令：
+
+```sh
+pnpm --dir apps/native exec expo prebuild --platform android
+pnpm --filter @health-cv-app/native run android:release
+adb -s emulator-5554 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
+adb -s emulator-5554 shell dumpsys activity services com.healthcvapp.mobile
+adb -s emulator-5554 shell dumpsys media.camera
+adb -s emulator-5554 shell input keyevent 223
+adb -s emulator-5554 shell input keyevent 224
+adb -s emulator-5554 shell input keyevent 82
+adb -s emulator-5554 shell am force-stop com.healthcvapp.mobile
+```
+
+### 回归命令与结果
+
+```sh
+./gradlew :health-cv-app_acquisition:testDebugUnitTest # 工作目录：apps/native/android
+pnpm --filter @health-cv-app/native test
+pnpm --filter @health-cv-app/cloud-client test
+pnpm --filter @health-cv-app/native run typecheck
+pnpm --filter @health-cv-app/acquisition run typecheck
+pnpm --filter @health-cv-app/cloud-client run typecheck
+```
+
+Nitro 绑定生成、CNG 重建、Release 构建及安装成功。Gradle 原生采集测试 `BUILD SUCCESSFUL`；Native 测试 25/25、cloud-client 测试 11/11；三项 TypeScript 类型检查均成功。
+
+模拟器中服务启动失败显示 `FOREGROUND_SERVICE_START_TIMEOUT`，通知渠道关闭时拒绝启动；两项均确认服务未运行且相机未打开。运行中撤销权限、通知划除与通知声／振动／悬浮提醒等项目的模拟器结果未覆盖；Honor 真机验收见下文。
+
+模拟器结果只适用于 Pixel_5 AVD。Honor PPG-AN00 的最终真机验收见下文；其他厂商限制仍未验证。模拟器虚拟画面不证明真实人体信号或 rPPG 有效。
+
+### Honor PPG-AN00 真机授权与后台策略复测（2026-10-20）
+
+- 设备：Honor PPG-AN00，Android 16／API 36，`targetSdk=36`；安装包含 JS bundle 的内部 Release，不依赖 Metro。
+- 启用后台设置：手动管理，打开“允许后台活动”，保持“允许自启动”和“允许关联启动”关闭。页面提示仅在点击“授权并启用无扰采集”时显示；打开应用设置入口进入 `com.android.settings/.applications.InstalledAppDetails`。用户确认后服务进入等待态。
+- 构建及安装：
+
+  ```sh
+  pnpm --filter @health-cv-app/native run android:release
+  adb -s <device-serial> install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
+  ```
+
+- `dumpsys activity services com.healthcvapp.mobile` 显示 `isForeground=true`、通知 ID `7312`。设备退到桌面并锁屏时，相机客户端为空；设备主人真实解锁后，CameraService 记录两次应用客户端连接／释放：20:18:11–20:18:17 与 20:18:58–20:19:05。20:19:18 检查时前台仍为 Honor Launcher，活动相机客户端为空。系统广播记录在 20:18:11 入队，存在于 20:18:58 完成的延后记录；没有独立记录实际解锁次数，因此不据此断言发生了两次物理解锁。
+- 该次记录是 2026-10-20 的初步观察，仅证明该机在上述设置下能够后台打开并释放相机；没有导出或完整解码视频。后续最终验收结论见下一节。
+
+### Honor PPG-AN00 剩余真机验收补充（2026-10-21）
+
+设备、Release 构建和 Honor 后台活动设置同上一节。本助手此前在 30 秒周期／5 秒时长下观察到两次设备解锁机会：`USER_PRESENT` 于 13:24:03 和 13:29:42 入队；CameraService 分别在 13:24:03–13:24:09 与 13:29:43–13:29:49 连接应用相机后释放。第一次发生于后台等待，第二次在应用页面可见时；两段之间相机为空。这只记录短周期观测，不单独证明媒体解码或 7200 秒验收。
+
+设备操作者确认剩余真机验收项目均通过，包括：
+
+- 通知安静显示、状态入口和不依赖页面执行的关闭操作；无声音、振动或悬浮提醒；通知划除、通知权限／渠道禁用及系统停止应用可区分。
+- Release 应用在真实解锁时后台录像；周期内不录像、周期到期但没有解锁不录像、应用可见时解锁仍触发；切换其他 App 不终止录像，录像中重新锁屏会结束未完成片段，必要条件失效后停止接受采集。
+- 按目标 7200 秒周期完成后台等待及前后两次解锁录像，等待期间相机无占用；两份真机视频已完成媒体探测、完整解码和画面检查。
+
+以上最终验收结论来自设备操作者确认。本次交接未包含两小时等待的精确起止时刻、服务状态快照、两份视频的会话标识及详细媒资数值，因此不补写这些读数。设备范围仅为 Honor PPG-AN00；其他厂商未验证，视频可读不代表 rPPG 有效。

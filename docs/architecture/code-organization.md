@@ -12,8 +12,8 @@
 - 使用 pnpm workspace，应用目录为 `apps/native`，暂不加入 WeApp。
 - 设置 `measurement`、`acquisition`、`cloud-client` 三个功能包。
 - 测量定义、流程编排和业务状态放在同一个业务包中，不独立建立 `domain`、`state`、`data` 或 `contracts` 包。
-- Android 后置相机帧处理、PPG 记录、有界批处理和文件写入由采集包的 Kotlin 实现；运动传感器和 iOS 仍未实施。
-- 自建 Android 相机采集模块通过 Nitro 接入；当前只实现后摄，前后摄像头不同时采集。
+- Android 原生主动 PPG 由采集包的 Kotlin 实现，包含后摄像素处理、PPG 记录、有界批处理及双 CSV；无扰式被动录像由同包独立服务实现，只录制前摄视频，不复用 PPG 处理链。
+- 主动 PPG 使用后摄；无扰式被动录像使用前摄和 Android 前台服务。`CameraUseGuard` 防止两种相机会话抢占或并行，这不表示所有原生采集都已后台化。
 - 业务状态使用 Nano Stores，React 绑定只用于应用端；服务端查询与离散请求使用 React Query，真实 HTTP 通信使用 Axios。
 - 云端接口按普通渠道 JSON API 和单文件传输组织；不接入实时网络传输或原始图像/视频上传。
 
@@ -48,7 +48,8 @@ health-cv-app/
 │       │   │   └── storage/
 │       │   ├── features/
 │       │   │   ├── acquisition/
-│       │   │   │   └── AcquisitionScreen.tsx
+│   │   │   │   ├── AcquisitionScreen.tsx
+│   │   │   │   └── PassiveCaptureScreen.tsx
 │       │   │   └── measurement/
 │       │   │       ├── screens/
 │       │   │       ├── components/
@@ -83,9 +84,11 @@ health-cv-app/
 │   ├── acquisition/
 │   │   ├── src/
 │   │   │   ├── client.ts
+│   │   │   ├── passive-client.ts
 │   │   │   ├── index.ts
 │   │   │   ├── native/
 │   │   │   │   ├── Acquisition.nitro.ts
+│   │   │   │   ├── PassiveCapture.nitro.ts
 │   │   │   │   └── CameraPreview.nitro.ts
 │   │   │   └── react/
 │   │   │       └── CameraPreview.tsx
@@ -95,6 +98,7 @@ health-cv-app/
 │   │   │   ├── pixels/
 │   │   │   ├── pipeline/
 │   │   │   ├── processing/
+│   │   │   ├── passive/
 │   │   │   ├── runtime/
 │   │   │   ├── session/
 │   │   │   └── writers/
@@ -244,22 +248,21 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 ## 5. 设备采集：`packages/acquisition`
 
-该包负责设备能力、Android 后摄执行、像素处理、Camera2 逐帧元数据关联、低频反馈、有界数据消费和 PPG／frame 双 CSV 产物；本次实现仍仅含 Android 相机，不含运动传感器或 iOS 代码。
+该包负责 Android 主动后摄 PPG 采集，以及独立的前摄被动视频服务；前者处理像素、Camera2 元数据、PPG 数据和双 CSV，后者只管理解锁触发、视频录制及私有视频产物。
 
 不另建一个只有采集协议的包，再把实际采集代码分散放入应用端。
 
-### 5.1 调用入口：`src/client.ts`
+### 5.1 调用入口：主动与被动客户端
 
-`AcquisitionClient` 封装状态查询、权限申请、打开后摄、开始、停止、关闭和完成产物查询。当前没有运动传感器配置或取消接口；原生桥接细节不暴露给应用流程。
+`src/client.ts` 的 `AcquisitionClient` 封装主动 PPG 状态、权限、后摄预览／采集和双文件产物；`src/passive-client.ts` 只封装被动采集配置、启停、低频状态与视频引用。原生桥接细节不暴露给应用流程。
 
 ### 5.2 数据语义：Nitro 低频接口
 
-当前公开类型由 `src/native/Acquisition.nitro.ts` 定义：
+主动 PPG 类型由 `src/native/Acquisition.nitro.ts` 定义；被动接口由 `src/native/PassiveCapture.nitro.ts` 定义：
 
-- `AcquisitionState`：后摄与正式会话阶段。
-- `AcquisitionSnapshot`：结构化错误、实际帧尺寸／帧率、torch 能力、nullable 经验提示和最近完成产物。
-- `AcquisitionArtifact`：会话标识、`files[]` 双文件引用（kind、path、sizeBytes）及单调起止时间。
-- Nitro 控制接口仅提供异步命令、低频快照和状态监听，不定义或传输像素、PPG 样本、逐帧元数据或记录批次。
+- 主动 PPG 快照提供后摄状态、结构化错误、实际帧尺寸／帧率、torch 能力、nullable 经验提示和双 CSV 产物。
+- 被动接口提供配置、真实服务状态、最近原因与完成视频引用；视频只通过私有文件路径和媒体元数据引用，不把视频字节或帧传给 JavaScript。
+- 两种 Nitro 接口只提供异步控制、低频快照与状态监听，不定义或传输像素、PPG 样本、逐帧元数据或记录批次。
 
 若以后新增外部采集数据，必须明确通道、区域、单位、时间基准和缺失字段语义；不能仅用无法解释的 `number[]` 表示。
 
@@ -267,19 +270,19 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 ### 5.3 原生实现：`android/`
 
-本次仅实现 Android 后置相机采集。原生源码留在 `packages/acquisition/android`，由 Nitro 对象和原生预览视图接入；CNG 宿主工程只维护应用权限和模块自动链接。
+原生源码留在 `packages/acquisition/android`，由 Nitro 对象接入；CNG 宿主工程只维护应用权限和模块自动链接。
 
-- `camera/`：CameraX 后摄能力、预览、实际格式／帧率协商与串行帧分析。
-- `pixels/`、`processing/`：只读 YUV 帧借用、共享统计、PPG 记录和独立经验提示。
-- `pipeline/`：不依赖相机或 PPG 类型的有界 `DataHub<T>`；本次只实例化 PPG 数据流。
-- `session/`、`writers/`：配对会话收尾、PPG 与 frame UTF-8 CSV 文件写入。
-- `runtime/`、`bridge/`：原生服务、Nitro 控制对象和预览视图连接。
+- `camera/`：主动 PPG 的 CameraX 后摄预览、帧分析与占用保护。
+- `pixels/`、`processing/`：主动 PPG 的只读 YUV 帧借用、共享统计、PPG 记录和经验提示；被动视频不进入这些路径，当前没有被动像素或人脸筛选。
+- `pipeline/`、`session/`、`writers/`：主动 PPG 的有界数据消费、会话收尾和双 CSV 文件写入。
+- `passive/`：前台服务、动态解锁接收、周期门控、无预览前摄录像、通知操作及私有视频发布；不实例化 `DataHub<T>` 或写入 PPG CSV。
+- `runtime/`、`bridge/`：主动采集运行时及 Nitro 控制对象。
 
 `src/native` 维护 Nitro Spec，Nitrogen 生成绑定归本包按构建要求管理。运动传感器与 iOS 尚未实现；本次不加入空模块或占位入口。
 
 ### 5.4 高频数据与时间
 
-高频相机帧、像素处理、PPG 记录、Camera2 元数据关联和文件写入都在 Android 原生侧。JavaScript 只接收控制结果、低频设备状态、经验提示、结构化错误及双文件完成产物引用，不接收像素、PPG 记录、逐帧元数据或批次，也不长期缓存样本。
+主动 PPG 的高频相机帧、像素处理、PPG 记录、Camera2 元数据关联和文件写入都在 Android 原生侧。被动视频同样不向 JavaScript 传递帧或媒体字节；JavaScript 只接收启停结果、低频状态与原因、结构化错误及文件引用。
 
 `DataHub<T>` 按采集数据流／会话独立实例化，容量包含等待消费和正在消费的记录；数量与时间阈值只触发单个后台消费者，不在相机回调中执行文件 I/O。容量不足、处理或写入失败会终止采集成功路径，不能静默丢记录。
 
@@ -300,6 +303,15 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 通过独立的 `acquisition/react` 公开入口提供视图接入。业务流程使用核心采集入口，不依赖预览组件。
 
+### 被动采集页面与服务边界
+
+`apps/native/src/features/acquisition/PassiveCaptureScreen.tsx` 负责用途说明、权限与配置入口、低频运行状态和视频引用展示。`PassiveCaptureClient` 负责权限请求、配置、启停、视频查询和状态订阅；页面卸载只解除订阅，不替代原生服务的显式关闭操作。
+
+被动服务仅在用户启用且系统条件满足后等待 `USER_PRESENT`，周期到期时直接录制前摄视频。等待时不打开相机；录像不创建预览或 `ImageAnalysis`，不录音、不做人脸／像素筛选、不计算 PPG。视频留在应用私有目录，不由采集模块自动上传或清理。
+
+主动 PPG 仍是页面发起的后摄预览与 PPG／CSV 会话。两种模式通过 `CameraUseGuard` 拒绝相机并发；被动录像占用时，主动页面显示忙状态，不抢占被动会话。此隔离不意味着主动 PPG 已可在后台运行。
+
+
 ### 5.6 产物与资源的生命周期
 
 停止采集、释放运行资源和删除采集产物是不同操作：
@@ -314,7 +326,7 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 Android `PpgCsvWriter` 和 `FrameCsvWriter` 分别只负责 UTF-8 CSV 编码与文件 I/O；`CaptureSession` 在应用私有会话目录写入两份 `.part` 文件，正常排空并关闭后才提升完成路径并交付产物。任一侧失败都不返回成功引用。
 
-Nitro `listArtifacts()` 返回当前进程中已完成的双文件引用；文件在关闭相机或卸载界面后仍保留，但进程重启后的目录扫描和清理策略尚未实现。当前页面展示引用，不直接读写或删除会话文件，也不接入上传 URI。
+主动 PPG 的 `listArtifacts()` 只返回当前进程内已完成的双文件引用，进程重启后的 PPG 目录扫描尚未实现；被动视频使用独立目录扫描，应用重开后仍可查询。两种产物都在关闭相机或卸载界面后保留，页面只展示引用，不直接读写或删除会话文件，也不接入上传 URI。
 
 待上传或仍需保留的文件放应用私有持久目录，不默认依赖可能被系统清理的缓存目录。正在写入或上传的文件不得清理。文件系统路径与上传 URI 分开处理，删除时机由测量业务决定。
 
