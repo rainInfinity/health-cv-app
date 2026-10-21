@@ -39,6 +39,7 @@ health-cv-app/
 │       │   │   ├── App.tsx
 │       │   │   ├── bootstrap.ts
 │       │   │   ├── acquisition.ts
+│       │   │   ├── sensors.ts
 │       │   │   ├── auth/
 │       │   │   ├── providers/
 │       │   │   ├── navigation/
@@ -50,6 +51,8 @@ health-cv-app/
 │       │   │   ├── acquisition/
 │   │   │   │   ├── AcquisitionScreen.tsx
 │   │   │   │   └── PassiveCaptureScreen.tsx
+│       │   │   ├── sensors/
+│       │   │   │   └── SensorCaptureScreen.tsx
 │       │   │   └── measurement/
 │       │   │       ├── screens/
 │       │   │       ├── components/
@@ -87,10 +90,13 @@ health-cv-app/
 │   │   │   │   └── client.ts
 │   │   │   ├── passive/
 │   │   │   │   └── client.ts
+│   │   │   ├── sensors/
+│   │   │   │   └── client.ts
 │   │   │   ├── index.ts
 │   │   │   ├── native/
 │   │   │   │   ├── Acquisition.nitro.ts
 │   │   │   │   ├── PassiveCapture.nitro.ts
+│   │   │   │   ├── SensorCapture.nitro.ts
 │   │   │   │   └── CameraPreview.nitro.ts
 │   │   │   └── react/
 │   │   │       └── CameraPreview.tsx
@@ -114,10 +120,17 @@ health-cv-app/
 │   │   │   │   │   ├── processing/
 │   │   │   │   │   ├── runtime/
 │   │   │   │   │   └── session/
+│       │       │   ├── sensors/
+│       │       │   │   ├── model/
+│       │       │   │   ├── output/
+│       │       │   │   ├── runtime/
+│       │       │   │   ├── session/
+│       │       │   │   └── source/
 │   │   │   │   └── storage/csv/
 │   │   │   └── com/margelo/nitro/acquisition/
 │   │   │       ├── HybridAcquisition.kt
 │   │   │       ├── HybridCameraPreview.kt
+│   │   │       ├── HybridSensorCapture.kt
 │   │   │       └── HybridPassiveCapture.kt
 │   │   ├── nitrogen/generated/
 │   │   ├── nitro.json
@@ -157,7 +170,7 @@ health-cv-app/
 └── tsconfig.base.json
 ```
 
-上述目录图体现当前已实现的 Android 采集界面和包结构，以及其它模块的目标职责；iOS、运动传感器和测量业务流程未因目录示意而被视为已实现。
+上述目录图体现当前已实现的 Android 相机、被动录像和传感器采集界面与包结构；iOS 采集和测量业务流程仍未实施。
 
 ## 3. 应用端：`apps/native`
 
@@ -177,7 +190,9 @@ health-cv-app/
 
 `i18n/` 管理语言来源、翻译与格式化；`preferences/` 管理持久化的用户偏好；`storage/` 只接入偏好存储引擎，不演变为包罗信号文件和网络的基础设施层。注册存储引擎后才创建 persistent Store，避免顶层导入造成初始化顺序错误。
 
-### 3.2 功能界面：`src/features/measurement`
+`sensors.ts` 为四种 `SensorKind` 组装各自的 `SensorClient` 与低频 Nano Stores，不缓存样本，也不把页面订阅当作采集生命周期。
+
+### 3.2 功能界面
 
 界面按业务功能就近组织，不把全应用页面、组件和 Hook 分别堆在根级目录。
 
@@ -198,6 +213,10 @@ health-cv-app/
 通过 `@nanostores/react` 获取业务会话状态，转换低频展示属性，并提供开始、停止、取消等操作入口。必要的服务端查询与离散请求接入 React Query，不再自行包装一套 React 状态订阅。
 
 Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、采集结束条件或后续上传行为。不通过增加薄包装 Hook 或桥接类来重复已有流程。
+
+#### 传感器验证界面：`src/features/sensors`
+
+`SensorCaptureScreen.tsx` 展示四种 Android 默认传感器的能力、微秒配置、低频状态、结构化错误和完成文件引用；页面订阅清理不会停止仍由原生会话拥有的采集。该验证入口不依赖登录、相机或云端配置，也不编排测量业务。
 
 ### 3.3 已发生的复用：`src/shared`
 
@@ -296,17 +315,17 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 - `passive/runtime/`、`passive/service/`、`passive/trigger/`、`passive/capture/` 分别负责应用控制与状态、前台服务与通知、周期门控及录像生命周期；`passive/output/PassiveVideoArtifactStore` 负责媒体检查、发布、取消片段清理和完成文件扫描，并使用 `storage/` 的共通路径及文件操作。被动链不创建 `DataHub<T>` 或 PPG CSV。
 - `ppg/runtime/`、`bridge/`：`PPGRuntime` 共享进程级 `PPGController`；控制器串行化主动 PPG 命令，并维护预览元数据缓存、活动会话、低频状态／提示与结构化错误；`bridge/` 封装 Nitro 控制对象。
 
-`src/native` 维护 Nitro Spec，Nitrogen 生成绑定归本包按构建要求管理。运动传感器与 iOS 尚未实现；本次不加入空模块或占位入口。
+`sensors/model/` 定义类型、配置、样本和产物；`sensors/source/` 通过受控线程封装 `SensorManager`；`sensors/session/` 与 `sensors/output/` 管理原生回调窗口、有界 `DataHub`、六列表头编码和单文件发布；`sensors/runtime/` 按类型维护唯一控制器并处理宿主前台边界。源失败只终止对应传感器；共同宿主暂停／销毁会中断全部活动源，但不是跨源失败级联。
 
 ### 5.4 高频数据与时间
 
-主动 PPG 的高频相机帧、像素处理、PPG 记录、Camera2 元数据关联和文件写入都在 Android 原生侧。被动视频同样不向 JavaScript 传递帧或媒体字节；JavaScript 只接收启停结果、低频状态与原因、结构化错误及文件引用。
+主动 PPG 的高频相机帧、像素处理、记录、Camera2 元数据关联和文件写入都在 Android 原生侧。被动视频不向 JavaScript 传递帧或媒体字节；传感器样本与 CSV 写入也留在原生。JavaScript 只接收启停结果、低频状态、结构化错误及完成产物引用。
 
-`DataHub<T>` 按采集数据流／会话独立实例化，容量包含等待消费和正在消费的记录；数量与时间阈值只触发单个后台消费者，不在相机回调中执行文件 I/O。容量不足、处理或写入失败会终止采集成功路径，不能静默丢记录。
+`DataHub<T>` 按数据流／会话独立实例化，容量包含等待消费和正在消费的记录；数量与时间阈值只触发单个后台消费者，不在相机或传感器回调中执行文件 I/O。容量不足、处理或写入失败会终止对应采集成功路径，不能静默丢记录。
 
 当前每帧一个全帧 PPG 块，`blockIndex=0`。`timestamp` 是处理帧时的 `elapsedRealtimeNanos`，`timestampFrame` 是 CameraX 帧时间，`timestampSystem` 是 `System.nanoTime()`；均以毫秒小数写入，`timestampSystem` 不是 Unix 日期。正式会话以处理帧的单调接收边界排除开始前帧。
 
-相机时间与运动传感器时钟尚未对齐；本次不采集运动数据，也不宣称跨源同步。经验提示复用当前全帧 Y/U/V 统计，使用旧算法阈值，但完整像素仍由同步处理作用域提供给后续处理器；提示不表示覆盖面积、信号质量或医学结论。
+主动 PPG 与运动传感器各自保留单调时钟；当前未定义相机与传感器之间的跨源时钟对齐，不宣称其记录可直接按时间戳同步。经验提示不表示覆盖面积、信号质量或医学结论。
 
 #### Camera2 元数据配对与双文件
 
@@ -334,19 +353,17 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 停止采集、释放运行资源和删除采集产物是不同操作：
 
-- 停止采集后等待帧关联和 DataHub 尾批完成，排空并关闭两个写入器，提升 `ppg.csv` 与 `frame.csv` 后生成双文件产物引用。
+- 正常停止等待 PPG 帧关联与 DataHub 尾批、两个 writer 关闭后才交付双文件产物；传感器停止等待监听注销、在途回调和本源尾批结束，关闭 writer 后才发布单文件产物。
 - 释放摄像头、传感器和队列等运行资源。
 - 根据业务明确的保留策略删除采集文件。
-
-释放运行资源不得隐式删除刚生成的文件。产物交给测量流程后，采集模块不得自行使其失效。上传完成或用户放弃后的删除条件，在数据保留策略确定后落实。
 
 ### 5.7 文件管理与扩展边界
 
 `PPGCaptureSession` 保留正式帧边界和在途屏障；配对记录交由 `PPGSessionOutput`，再由两侧 `CsvBatchWriter<PPGCaptureRecord>` 使用 `PPGCsvEncoder` 与 `FrameCsvEncoder` 顺序写入。输出层关闭两侧后协调单文件提升与失败回退；任一侧失败都不返回成功产物。
 
-`AcquisitionPaths` 保持 `filesDir/acquisition/<sessionId>/ppg.csv(.part)`、`frame.csv(.part)` 和 `filesDir/passive-capture/<sessionId>/video.mp4(.part)` 的既有位置与文件名；PPG 保留原会话标识规则，被动视频继续要求规范 UUID。已有文件不迁移、不自动删除。`AcquisitionFileStore` 区分供 CSV writer 打开的新输出与供 CameraX 写入的预分配视频文件，只提升同目录单文件。
+`AcquisitionPaths` 保持既有 PPG `filesDir/acquisition/<sessionId>/` 与被动视频 `filesDir/passive-capture/<sessionId>/` 路径；传感器文件使用隔离的 `filesDir/acquisition/sensors/<kind>/<sessionId>/<kind>.csv(.part)`。已有文件不迁移、不自动删除。
 
-主动 PPG 的 `listArtifacts()` 只返回当前进程内已完成的双文件引用，进程重启后的 PPG 目录扫描尚未实现；被动视频使用独立目录扫描，应用重开后仍可查询。两种产物都在关闭相机或卸载界面后保留，页面只展示引用，不直接读写或删除会话文件，也不接入上传 URI。
+主动 PPG 与传感器的 `listArtifacts()` 只返回当前进程内已完成引用，不扫描磁盘；进程重启后的传感器查询列表重置，但已完成 CSV 仍留在私有目录。被动视频使用独立目录扫描，应用重开后仍可查询。所有页面只展示引用，不直接读写或删除会话文件，也不接入上传 URI。
 
 待上传或仍需保留的文件放应用私有持久目录，不默认依赖可能被系统清理的缓存目录。正在写入或上传的文件不得清理。文件系统路径与上传 URI 分开处理，删除时机由测量业务决定。
 

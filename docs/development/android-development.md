@@ -265,3 +265,37 @@ Nitro 绑定生成、CNG 重建、Release 构建及安装成功。Gradle 原生�
 - 按目标 7200 秒周期完成后台等待及前后两次解锁录像，等待期间相机无占用；两份真机视频已完成媒体探测、完整解码和画面检查。
 
 以上最终验收结论来自设备操作者确认。本次交接未包含两小时等待的精确起止时刻、服务状态快照、两份视频的会话标识及详细媒资数值，因此不补写这些读数。设备范围仅为 Honor PPG-AN00；其他厂商未验证，视频可读不代表 rPPG 有效。
+
+## Android 传感器采集
+
+SensorManager 采集协议、错误、设备边界和 Pixel_5 AVD 实测记录见[Android 传感器采集](../acquisition/android-sensors.md)。Android 传感器采集已接入 `@health-cv-app/acquisition` Nitro 绑定及独立验证页；不需要 Expo Go。传感器 API 本身没有新增权限，应用既有 `CAMERA`、`POST_NOTIFICATIONS` 和前台服务权限仍供相机与被动采集使用。
+
+从仓库根目录生成绑定、检查 TypeScript 并构建 Android development build：
+
+```sh
+pnpm --filter @health-cv-app/acquisition run nitrogen
+pnpm --filter @health-cv-app/acquisition run typecheck
+pnpm --filter @health-cv-app/native run typecheck
+pnpm --filter @health-cv-app/native run android
+```
+
+直接运行原生测试时在 `apps/native/android` 执行：
+
+```sh
+./gradlew :health-cv-app_acquisition:testDebugUnitTest
+```
+
+### 本次传感器变更最终回归
+
+仓库根目录执行包与应用类型检查及 Nitro 绑定生成；最后一条 Gradle 命令在 `apps/native/android` 执行：
+
+```sh
+pnpm --filter @health-cv-app/acquisition run typecheck
+pnpm --filter @health-cv-app/native run typecheck
+pnpm --filter @health-cv-app/acquisition run nitrogen
+./gradlew :health-cv-app_acquisition:testDebugUnitTest :app:assembleDebug
+```
+
+两项类型检查与 Nitro 绑定生成成功；Gradle 输出 `BUILD SUCCESSFUL`，共 491 项任务（67 executed、424 up-to-date）。
+
+本次 AVD 使用 `emulator-5554`、Android 17／API 37。`run:android` 的 APK 构建成功，但 Expo CLI 自动解析 development-client deep link 失败；通过 `adb shell monkey -p com.healthcvapp.mobile 1` 手动打开已安装应用后，传感器页正常加载并完成实际采集。模拟器传感器输入、CSV 读取及各会话数据行数见传感器协议文档；这只验证 Android Emulator 的系统回调，不代表实体设备传感器。

@@ -25,8 +25,9 @@
 | 页面导航       | React Navigation                           | 已明确 | 应用端页面与路由                            |
 | 原生绑定       | Nitro Modules                              | 已明确 | 自研采集接口与原生回调                         |
 | Android 相机采集 | Kotlin + CameraX | 已实现，已在模拟器验证 | 主动后摄 PPG 与独立前摄被动录像；实体机兼容与长时间后台运行待验证 |
+| Android 运动传感器采集 | Kotlin `SensorManager` + Nitro Modules | 已实施，Pixel_5 AVD 实测 | 四种默认传感器独立控制并写入 CSV；实体设备兼容与性能仍待验证 |
 | iOS 采集 | Swift + AVFoundation + Core Motion | 已选路线，未实施 | 本变更不含 iOS 原生代码 |
-| 连续文件写入 | Android 原生文件 API；iOS Foundation FileHandle（待实施） | Android PPG 与被动视频已实施 / iOS 待实施 | PPG 双 CSV 与独立私有视频；JavaScript 不拼接样本或媒体 |
+| 连续文件写入 | Android 原生文件 API；iOS Foundation FileHandle（待实施） | Android PPG、被动视频与传感器 CSV 已实施 / iOS 待实施 | PPG 双 CSV、传感器单源 CSV 与独立私有视频；JavaScript 不拼接样本或媒体 |
 | JS 文件管理    | `react-native-file-access`                 | 已明确 | 目录、查询、移动与清理等低频操作                    |
 | 状态管理       | `nanostores` + `@nanostores/react`         | 已明确 | 业务状态与应用状态，React 绑定只用于应用端            |
 | 国际化        | `@nanostores/i18n`                         | 已明确 | 界面文案、语言切换与格式化                       |
@@ -76,11 +77,11 @@ flowchart TD
 
 ### 4.1 自建采集模块
 
-Android 采集包以 Kotlin 和 CameraX 实现两条隔离路径：主动后摄 PPG 与 Camera2 元数据关联并生成 `ppg.csv`、`frame.csv`；被动服务只用前摄 `VideoCapture` 录制无声视频，不绑定预览或图像分析。SensorManager 与 iOS 的 Swift、AVFoundation、Core Motion 仍是已选方向，尚未实施。
+Android 采集包以 Kotlin 和 CameraX 实现主动后摄 PPG 与被动前摄录像；另以 `SensorManager`、独立控制器和 Nitro 低频接口采集加速度计、陀螺仪、磁力计与重力传感器。iOS 的 Swift、AVFoundation、Core Motion 仍是已选路线，尚未实施。
 
-主动 PPG 的候选请求为 720×720、30 FPS，由 CameraX 协商并报告实际尺寸与帧率；被动视频报告媒体文件的实际尺寸和时长。运动传感器、iOS、实体机相机兼容、长时间后台限制及信号质量要求仍未验证或确定。
+PPG 候选请求为 720×720、30 FPS，由 CameraX 协商并报告实际尺寸与帧率；被动视频报告媒体文件的实际尺寸和时长。四种运动传感器已在 Android AVD 验证真实 `SensorManager` 回调和 CSV；实体设备兼容、持续性能与生产基线仍未验证。跨相机／传感器时钟对齐和信号质量也未确定。
 
-主动 PPG Nitro 接口只暴露控制命令、低频状态／提示与双文件引用；被动 Nitro 接口只暴露配置、启停、低频状态／原因及私有视频引用。两条路径都不向 JavaScript 传递像素或媒体字节；PPG 分析、队列与文件写入由原生处理。
+主动 PPG Nitro 接口只暴露控制命令、低频状态／提示与双文件引用；被动 Nitro 接口只暴露配置、启停、低频状态／原因及私有视频引用；传感器 Nitro 接口只暴露逐类型能力、控制、低频状态和 CSV 引用。三条路径都不向 JavaScript 传递像素、媒体字节、样本或批次。
 
 被动录像不复用主动 PPG 的像素与 `DataHub` 路径；当前没有被动像素分析、人脸检测或基于画面筛选。主动 PPG 页面由用户操作控制，不因新增前台服务而变为后台采集。
 
@@ -110,19 +111,19 @@ Nitrogen 生成的绑定代码属于采集模块的构建产物，需要随模�
 
 ### 5.1 连续写入与低频管理
 
-连续写入使用平台原生文件 API。`CsvBatchWriter` 通过 `PPGCsvEncoder` 与 `FrameCsvEncoder` 以 UTF-8 编码既有八列 PPG 和 Camera2 CSV；`PPGSessionOutput` 让两侧顺序消费同一配对批次并管理关闭与完成发布，iOS 写入器尚未实施。
+连续写入使用平台原生文件 API。PPG 的 `CsvBatchWriter` 通过 `PPGCsvEncoder` 与 `FrameCsvEncoder` 编码配对 CSV；传感器 `SensorSessionOutput` 使用 `SensorCsvEncoder` 保留逐类型六列表头并单独写入每种会话 CSV。iOS 写入器尚未实施。
 
-正常停止必须等待 Camera2 配对结束、在途帧完成、DataHub 尾批消费以及两个文件刷新和关闭后，才交付双文件完成产物。JavaScript 文件库不进入逐帧热路径。
+正常停止必须等待 PPG 在途帧和 DataHub 尾批及两个文件关闭后才交付双文件产物；传感器停止等待注销、回调退出、尾批写入和单文件关闭后才交付产物。JavaScript 文件库不进入采样热路径。
 
-`react-native-file-access` 是低频文件管理的已选依赖；当前两个 CSV 文件由原生模块创建并通过完成产物引用提供，页面不直接读取或删除会话文件。
+`react-native-file-access` 是低频文件管理的已选依赖；PPG、传感器和被动视频文件由原生模块创建并通过完成产物引用提供，页面不直接读写会话文件。
 
 ### 5.2 保存位置与生命周期
 
-主动 PPG 的 CSV 与被动视频分别写入应用私有持久目录中的独立会话目录。PPG 文件以 `.part` 写入，正常收尾后才作为双文件产物发布；被动视频需正常 Finalize 并通过媒体可读检查后才发布，未完成片段不作为成功产物返回。
+主动 PPG、传感器 CSV 与被动视频分别写入应用私有持久目录中的独立会话路径。PPG 与传感器 CSV 以 `.part` 写入，满足正常收尾条件后才发布完成产物；被动视频需正常 Finalize 并通过媒体可读检查后才发布。未完成片段不作为成功产物返回。
 
 释放摄像头、传感器和队列不删除采集产物。正在写入或上传的文件不得被清理。上传成功、云端处理成功与允许删除的关系，按保留策略明确，不隐式等同。
 
-本次 PPG CSV 八列及 `frame.csv` 八列字段和时间语义已确定；Camera2 可选字段缺失时以 `0` 兼容，无法据此区分缺失与实际零值。产物保留期限、应用异常退出后的处理方式仍待定，不能把偏好持久化当作测量恢复能力。
+主动 PPG CSV、Camera2 `frame.csv` 和传感器 CSV 的表头及时间语义已确定；传感器协议、单调时间和重启后查询范围见 [Android 传感器采集](../acquisition/android-sensors.md)。产物保留期限与进程异常后的清理策略仍待定，不能把偏好持久化当作测量恢复能力。
 
 ### 5.3 Axios 单文件上传与下载
 
@@ -194,7 +195,7 @@ Expo、React、React Native、Nitro、MMKV 和文件库需要作为整体兼容�
 
 以下内容后续确定，不因文档中的目录或候选 API 而提前锁定：
 
-- 本次后置相机路径以外的采集参数、实际传感器数据类型及跨传感器时钟映射。
+- 主动 PPG 参数以外的采集参数、实体设备传感器基线、跨相机／传感器时钟映射及其它数据流的同步方式仍待确定。
 - PPG 以外的信号格式、其它数据流的缓冲和背压需求。
 - 经验覆盖提示在真机上的准确性、生产设备兼容和性能基线。
 - 生产 API 地址、首发普通渠道与联调账号由部署及产品方提供；运行时配置必须显式注入，不从语言或时区推断。
@@ -202,7 +203,7 @@ Expo、React、React Native、Nitro、MMKV 和文件库需要作为整体兼容�
 - 支持语言、系统语言来源、导航细节和界面绘图需求。
 - 整体依赖版本与兼容组合、最低系统版本和设备能力基线。
 
-本次验证覆盖 Android 模拟器中的真实系统解锁事件、前摄被动视频完整解码、停止与产物查询，以及主动 PPG 的页面与相机占用回归。实体手机、7200 秒后台待机、厂商省电行为和通知声／振动仍待实测；模拟器虚拟画面不证明真实 PPG、覆盖准确率或 rPPG 有效。
+本次验证覆盖 Android AVD 中主动 PPG、被动录像和四种真实 `SensorManager` 回调写入 CSV，并实测传感器并行、后台中断、进程重启及相机互斥。实体手机上的传感器兼容、后台限制、耗电和持续性能仍待实测；AVD 虚拟输入不代表真实人体 PPG 或实体运动数据。
 
 依赖安装、构建及真实设备接入的验证状态以 `docs/development` 中的记录为准；本文的性能与生命周期要求是实施约束，不代表已完成验证。
 
