@@ -1,4 +1,4 @@
-# Android 后置相机 PPG 采集协议
+# Android 相机 PPG 采集协议
 
 ## 范围与数据边界
 
@@ -11,6 +11,73 @@
 `PPGRuntime` 为 Nitro `Acquisition` 控制对象与 `CameraPreview` 视图提供同一个进程级 `PPGController`。控制器持有主动 PPG 相机、预览视图引用、相机会话和活动 `PPGCaptureSession`，并串行执行打开、开始、停止和关闭命令；挂载预览视图本身不会打开相机。
 
 相机回调绑定其所属的会话引用并交给 `PPGFrameHandler`，关闭或切换会话后的旧帧不能写入新会话。控制器通过低频快照和状态监听发送运行状态、经验提示及既有结构化错误码与消息；图像、像素和逐帧记录不传给 JavaScript。
+
+## 相机能力查询与冻结配置
+
+调用方可先枚举并查询，不必先申请权限。`listCameras()` 不申请权限；能力与组合查询也不弹授权。受权限阻止读取的单项返回 `permission-required`，字段缺失或查询失败返回 `unknown`，二者都不等同于明确不支持。调用方可显式调用 `requestCameraPermission()` 后重新查询；授权不会打开相机。只有用户明确调用 `openCamera(config)` 才请求相机使用权并绑定预览。
+
+
+启动前查询按所选逻辑相机执行，查询值仅是当时快照：
+
+```ts
+const cameras = await client.listCameras()
+const cameraId = cameras.find((camera) => camera.facing === 'back')?.cameraId
+if (cameraId == null) throw new Error('当前没有可用后摄')
+
+let capabilities = await client.getCameraCapabilities(cameraId)
+if (
+  capabilities.exposureTimeNanos.status === 'permission-required'
+  || capabilities.iso.status === 'permission-required'
+) {
+  await client.requestCameraPermission()
+  capabilities = await client.getCameraCapabilities(cameraId)
+}
+const captureOptions = await client.getSupportedCaptureOptions(cameraId, {
+  targetResolution: { width: 720, height: 720 },
+  targetFps: 30,
+})
+```
+
+`getSupportedCaptureOptions` 对输入尺寸构造一个未绑定的 Preview + YUV `SessionConfig`，以 CameraX 的组合支持性和该配置对应的帧率范围返回单项结果。明确不兼容为 `unsupported`；不能确认组合或没有可用帧率元数据为 `unknown`。支持范围是候选，不承诺实际交付尺寸或 FPS；目标帧率不在范围时，打开阶段仍须协商并报告调整原因。不得把单项尺寸和通用帧率做笛卡尔积。结果同时返回本地最大 64 块及按候选像素尺寸约束的行列上限。查询不绑定生命周期、不占用相机租约、不启用 torch、不启动分析、不创建会话文件；打开时重新检查权限、相机 ID、能力和组合状态。
+
+### 模拟器查询记录
+
+2026-10-23 在 Pixel 5 AVD（`sdk_gphone16k_arm64`，Android 17，API 37）中按本节流程操作。枚举返回 `1`（前摄，方向 270°）和 `10`（后摄，方向 90°）；撤销相机权限后，枚举、能力和组合查询没有弹授权界面，且未打开相机。显式授权后重新查询 cameraId `1`：设备报告手动曝光、曝光时间 `13611–10319000832 ns`、ISO `100–1000`、EV 补偿 `-24–24`（步长 `1/6`）、AWB 自动／关闭及预设、AF 自动／关闭，torch 与 AE／AWB 锁受支持；手动对焦状态未知。`720×720` 与目标 `30 FPS` 组合报告支持，FPS 范围为 `7–30`、`15–15`、`15–30`、`30–30`，本地上限为 64 块、64 行和 64 列。
+
+查询前后 `dumpsys media.camera` 均无活动客户端；查询期间没有预览或补光。应用私有采集目录中既有测试文件清单未变化，也没有新增会话文件。之后单独打开 cameraId `1` 时，Camera2 活动客户端仍为 ID `1`；关闭后活动客户端再次为空，证明选择未回退到默认后摄。上述模拟器数据只验证查询与控制链路，不代表实体相机或生理信号。
+
+完整配置采用一个对象，打开后至关闭期间冻结：
+
+| 字段 | 语义与约束 |
+| --- | --- |
+| `cameraId` | 当前设备枚举得到的逻辑相机标识；显式选择失效或不兼容时失败，不替换成另一镜头。 |
+| `targetResolution.width/height` | 目标分析尺寸偏好，单位像素，正整数；组合查询结果及打开结果分别说明兼容性和实际提交值。 |
+| `targetFps` | 目标帧率偏好，单位帧／秒，有限正数；不代表 CameraX 实际交付 FPS。 |
+| `torchEnabled` | 是否明确请求补光；请求开启但设备不支持时失败，不静默关闭。 |
+| `exposure.mode` | `auto` 或 `manual`；自动模式使用补偿索引与可选 AE 锁，手动模式使用曝光时间和 ISO。 |
+| `exposure.timeNanos` | 手动曝光时长，单位纳秒，正的 JavaScript 安全整数；自动模式必须为 `null`，不是启动等待时间。 |
+| `exposure.iso` | 手动模式的正整数 ISO；自动模式必须为 `null`。 |
+| `exposure.compensationIndex` | 自动曝光补偿的整数设备索引；手动模式必须为 `null`。实际 EV 为索引乘设备步长，例如步长 `1/3 EV` 时索引 `3` 对应 `1 EV`。 |
+| `exposure.locked` | 仅自动曝光允许请求 `true`；每次正式开始前都须由当前相机周期的拍摄结果确认。 |
+| `whiteBalance.mode` | `auto`、`off` 或当前设备明确支持的预设模式；`off` 不代表可设置增益或色温。 |
+| `whiteBalance.locked` | 仅自动白平衡允许请求 `true`，并须在正式采集开始前确认。 |
+| `focus.mode` | `auto`、`off` 或 `manual`，须由所选相机能力明确支持。 |
+| `focus.distanceDiopters` | 手动对焦距离，单位屈光度；`0` 表示无穷远，其他模式必须为 `null`。 |
+| `processing.blocks` | 两个正整数 `[rows, columns]`，默认 `[1, 1]`；`rows` 沿有效图像的纵轴、`columns` 沿横轴，块按行优先编号；网格大小不得超过查询返回的本地处理限制。 |
+
+配置校验区分 `INVALID_CAMERA_CONFIG`（形状、互斥或数值越界）、`CAMERA_PARAMETER_UNSUPPORTED`（设备明确不支持的显式控制）与 `CAMERA_CAPABILITY_UNAVAILABLE`（权限不足或能力未知）。校验失败必须发生在取得相机占用或创建输出文件之前。曝光、ISO、补光、白平衡、对焦及锁定不裁剪、不忽略、不切换自动模式；尺寸和帧率偏好只能按已查询的组合选项协商，并记录调整原因。
+
+一次打开结果与低频快照分别保留 `requestedConfig`、`submittedConfig`、调整原因、实际图像尺寸／有效区域、观测 FPS 和实际分块布局。请求值或 CameraX 设置 Future 不代表硬件拍摄结果。需要更改相机或参数时先关闭再重新打开；不支持采集中动态调参，也不保留旧的无参 `openCamera()`、`exposureDelay`（误称的启动等待）或 `fixedFocus`（含义不完整的 AF 开关）接口。
+
+### 配置冻结与自动算法锁
+
+`openCamera(config)` 在申请相机租约前重新查询并验证所选 cameraId、Preview + YUV 组合及完整配置；绑定后冻结请求值、实际提交值和明确的尺寸／FPS 调整原因。查询结果是启动前快照，不替代打开阶段复核；打开后的参数变更必须先关闭，再提交新的配置。
+
+`exposure.locked` 只适用于自动曝光，`whiteBalance.locked` 只适用于自动白平衡。开始正式采集时，原生侧提交锁请求，并在当前相机周期等待晚于最近预览结果、时间戳递增且 AE／AWB 状态匹配的真实 `TotalCaptureResult`；等待最多 2 秒。确认帧和更早的在途图像不会进入正式窗口；锁确认前不创建文件、不进入 `capturing`。超时、设备中断或结果状态不匹配会使开始失败、关闭该相机周期并释放对应租约。
+
+正常停止先排空并完成文件，再解除本周期请求过的锁，等待新结果确认相应锁状态为 `false`。解除失败时完成文件仍作为产物保留，但相机会关闭、状态报告错误，不承诺预览可复用。关闭或后台中断直接收尾并解绑相机；迟到结果不得启动或恢复已关闭的周期。
+
+Pixel_5 AVD 的正向结果与限制见 [Android 开发与验证](../development/android-development.md)。
 
 ## DataHub<T> 有界批处理
 
@@ -40,11 +107,19 @@
 
 像素行为测试覆盖带行填充、非零 ByteBuffer 起点、非零裁剪、交错共享色度缓冲和像素步长；统计测试另覆盖奇数帧尺寸的 4:2:0 色度采样数。`PixelProcessingTest` 覆盖处理器成功／失败后的借用失效和 exactly-once 帧释放。
 
+## 二维分块坐标与色度边界
+
+每帧按 `ImageProxy.cropRect` 的实际有效区域划分 `[rows, columns]` 网格；左上角为坐标起点，`x` 增加对应列、`y` 增加对应行。相机旋转和预览镜像不改变原始分析帧中的块身份。每个轴先将长度整除为基础尺寸，再把余数像素从首行／首列开始逐个分配；各块连续、非空，行优先编号为 `blockIndex = row * columns + column`。实际 crop 不能容纳请求行列数或块数超过 64 时，拒绝该帧配置，不生成部分统计。
+
+Y 均值只使用该块中的有效亮度像素。U/V 来自 4:2:0 色度平面：一个色度样本代表相邻的 2×2 亮度单元；若此单元与块边界相交，该样本在每个相交块各计一次，不按面积拆分，也不在单块内重复。因而不同块的色度样本集合可重叠，块均值分母是该块实际相交的色度样本数；分块色度计数之和不必等于全帧色度样本数。全帧均值独立计算，不随网格改变，预览经验提示继续使用全帧结果。
+
+已知像素夹具覆盖 7×5 帧的非零 crop `[1,1,6,4)`、行填充、交错 U/V 和 `[2,3]` 网格。该 5×3 有效区域按列宽 `2,2,1`、行高 `2,1` 分配，完整区域均值为 Y/U/V `23/35/135`；块均值按 `blockIndex` 顺序为 `16.5/30/130`、`18.5/40/140`、`20/45/145`、`31.5/45/145`、`33.5/55/155`、`35/60/160`。这同时验证跨块共享色度样本及其真实分母；模拟器实采条带和矩形网格记录见开发验收文档。
+
 ## PPG CSV 字段与时间语义
 
-每个被正式采集会话接受的实际帧生成一条完整有效区域记录，一个帧块的 `blockIndex` 固定为 `0`。Y 均值按有效 Y 像素计算；U/V 均值按裁剪区域实际相交的 4:2:0 色度样本计算，每个色度单元只计一次，故 Y 与 U/V 的样本数可以不同。均值为 0–255 范围内的原始通道值，不转换为 RGB 或质量分数。
+每个正式帧按冻结网格输出 `rows × columns` 条 PPG 记录；`[1,1]` 时仍只有一条全帧记录。行优先的 `blockIndex` 从 `0` 连续至 `rows × columns - 1`；同一帧的所有块共享 `timestamp`、`timestampFrame`、`timestampSystem` 和 `frameIndex`。Y/U/V 是各块原始通道均值，范围 0–255；U/V 按与该块相交的色度单元计数，详见前节边界规则。
 
-UTF-8 CSV 表头严格为：
+UTF-8 CSV 表头保持不变：
 
 ```text
 timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex
@@ -53,13 +128,13 @@ timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex
 | 字段 | 含义 | 单位／约束 |
 | --- | --- | --- |
 | `timestamp` | 开始处理该帧时读取的 `SystemClock.elapsedRealtimeNanos()` | 毫秒小数；单调启动后时间，不是帧曝光时间 |
-| `timestampFrame` | CameraX `ImageInfo.timestamp` | 纳秒换算为毫秒小数；保留原始帧时间语义 |
+| `timestampFrame` | CameraX `ImageInfo.timestamp` | 纳秒换算为毫秒小数；同帧所有块完全相同 |
 | `timestampSystem` | 开始处理该帧时读取的 `System.nanoTime()` | 毫秒小数；不是 Unix 日期或墙上时间 |
-| `avgY` | 有效裁剪区 Y 平面均值 | 0–255 |
-| `avgU` | 有效区域对应的 U 色度样本均值 | 0–255 |
-| `avgV` | 有效区域对应的 V 色度样本均值 | 0–255 |
-| `frameIndex` | 正式会话实际接收帧的序号 | 每个会话从 0 递增；不证明相机无跳帧 |
-| `blockIndex` | 每帧一个全帧块 | 固定为 0 |
+| `avgY` | 当前块有效区域内 Y 平面均值 | 0–255 |
+| `avgU` | 与当前块相交的 U 色度样本均值 | 0–255 |
+| `avgV` | 与当前块相交的 V 色度样本均值 | 0–255 |
+| `frameIndex` | 正式会话实际接收帧的序号 | 每个会话从 0 递增；同一帧的所有块相同 |
+| `blockIndex` | 当前帧的行优先块编号 | 从 0 递增；`[1,1]` 固定为 0 |
 
 时间保留毫秒小数，不截断为整数。帧率请求值与 CameraX 实际交付时间分开；递增帧号不代表采样完整。`PpgRecordProcessor` 只转换帧元数据与共享统计，不访问队列或文件；`PPGCsvEncoder` 与 `FrameCsvEncoder` 分别从同一配对记录编码既有八列协议，`CsvBatchWriter` 复用行缓冲并按收到的批次顺序写入，不另建队列或消费者。
 
@@ -84,7 +159,7 @@ timestamp,timestampFrame,timestampSystem,exposureTime,durationTime,rollingShutte
 | `iso` | `SENSOR_SENSITIVITY` 实际 ISO | 整数；结果缺失时为 `0` |
 | `whiteBalanceMode` | `CONTROL_AWB_MODE` 实际白平衡模式 | Camera2 整数枚举；结果缺失时为 `0` |
 
-旧版兼容字段以 `0` 表示可选 Camera2 字段缺失，因此无法区分“未提供”和实际零值。`SENSOR_TIMESTAMP` 不适用该兜底：时间戳缺失、正式帧未匹配、重复时间戳或有界关联缓存溢出都会显式失败。停止时最多等待 Camera2 结果 1 秒；仍未匹配的正式帧不写成成功记录。同一个有序 DataHub 消费者将配对批次交给 `PPGSessionOutput`，先写 PPG CSV、再写 frame CSV，逐行顺序与时间戳对应。
+缺少 `SENSOR_TIMESTAMP`、正式帧未匹配、重复时间戳或有界关联缓存溢出都会显式失败。停止时最多等待 Camera2 结果 1 秒；仍未匹配的正式帧不写成成功记录。一个 `frameIndex` 对应一条 `frame.csv` 记录和同一 `timestampFrame` 下连续的多条 PPG 块记录；关联按精确传感器时间戳完成，不按 CSV 行号配对。
 
 `PPGSessionOutput` 管理双 writer 的打开、顺序消费、关闭、两份路径提升与回退；只有两份已关闭文件均提升成功后，才生成 `files[]` 产物引用。任一侧失败都不返回完成会话。
 
@@ -110,14 +185,22 @@ b = Y + 1.8556 × (U - 128)
 
 像素处理、容量不足、消费者或文件写入失败会关闭该会话的记录入口并释放资源，不返回成功产物；未完成的 `.part` 不会伪装成 `ppg.csv`，也不承诺自动删除。关闭相机或卸载页面会正常停止当前会话；已完成文件不会因此删除。相机中断或后台切换终止当前会话并显示结构化错误。
 
-`listArtifacts()` 返回当前进程中已完成的会话引用；每个引用含 `ppg.csv`、`frame.csv` 两个文件的类型、绝对路径和字节数。文件位于应用私有持久目录，但当前没有实现进程重启后的目录扫描、恢复或清理策略。
+`listArtifacts()` 返回当前进程中已完成的会话引用；每个引用含 `ppg.csv`、`frame.csv` 两个文件的类型、绝对路径和字节数，以及停止时冻结的请求／提交配置、调整原因、实际图像几何、观测 FPS 和分块布局摘要。文件位于应用私有持久目录，但当前没有实现进程重启后的目录扫描、恢复或清理策略。
 
 会话测试覆盖精确与乱序关联、错配防护、缺失传感器时间戳和缓存溢出；双 CSV 测试覆盖旧版表头与单位、两文件行序及时间戳对应、停止排空和任一写入失败不发布完成产物。行为测试不以 CSV 数值证明模拟器产生真实 PPG。
 
 ## 当前 CameraX 行为
 
-CameraX 绑定默认后摄，预览和 `YUV_420_888` 分析使用候选 `720×720`，并查询预览／分析用例组合支持的 FPS 范围；优先选择包含 30 FPS 且范围最窄的组合，否则选择上限最高的范围。候选参数不是实测值；状态中尺寸来自实际分析帧，FPS 来自原生一秒窗口的交付计数。
+相机权限需由用户显式授权；枚举、能力和 Preview + YUV 组合查询不绑定用例、不打开相机、不启用 torch，也不创建会话文件。打开配置携带枚举得到的精确 `cameraId`；CameraX 用该 ID 过滤相机，不回退到默认镜头。设备或参数变更后须重新查询，原生打开前再读取能力并重新验证同一组 Preview + `YUV_420_888` 用例。
 
-分析运行在单线程原生执行器，使用 `STRATEGY_BLOCK_PRODUCER` 和 CameraX 有界图像队列。设备支持补光灯时，相机打开流程会等待启用 torch；不支持时明确报告 `torchAvailable=false` 并继续打开。关闭相机时以绑定时保留的同一 `SessionConfig` 实例解绑 CameraX，清空 analyzer 并等待已排入的旧帧处理结束；旧相机监听器不能把帧或提示送入下一会话。
+尺寸与 FPS 是请求目标，不是实测保证。查询只验证同一 Preview + YUV `SessionConfig` 组合，并报告此组合的 FPS ranges；目标 FPS 落入多个范围时选择最窄范围，否则选上限最高的有效范围。若目标不在所选范围，提交范围上限并在摘要中写明调整；绑定前再调用 `isSessionConfigSupported`。用例 `setTargetResolution` 提交请求尺寸，但 CameraX 实际交付仍以 `ImageProxy` 的宽、高、有效 crop 为准。状态和完成产物摘要分开呈现请求值、提交值、调整原因、实际帧几何及一秒窗口测得 FPS。
 
-此处记录实现配置，不代表目标 FPS、真实 PPG、覆盖准确率、实体设备兼容或持续运行性能已验证。端到端验收以 Android 模拟器的实际界面操作和停止后文件存在为界，具体命令与结果记在 [Android 开发与验证](../development/android-development.md)。
+配置在打开周期开始时冻结；预览、采集中和停止收尾期间不接受新配置。手动曝光提交 AE off、曝光时间（纳秒）和 ISO；自动曝光提交 EV 补偿索引。AE 锁仅能和自动曝光组合，AWB 锁仅能和自动白平衡组合；对焦的 manual 距离单位为屈光度，0 表示无穷远。只有设备明确报告支持时才提交请求；无法确认或不支持会返回错误，不静默改用另一种模式。Torch 只按 `torchEnabled` 的显式值启用或关闭；请求启用但设备不支持、或 CameraX Future 失败时，打开失败并清理已绑定资源。
+
+配置请求 AE／AWB 锁时，预览阶段不预先锁定。`startCapture` 发送锁请求并等待至多 2 秒的当前相机周期 CaptureResult；须确认请求的锁状态，且结果帧时间晚于开始等待时已观察到的最新帧，才创建文件并进入正式采集。Future 完成只表示控制请求已应用，不代替结果确认。超时、设备中断或未确认均失败收尾，不交付未锁定窗口。正常停止先排空帧队列并关闭两份 CSV，再释放请求的算法锁并等待新的 CaptureResult；解锁失败会关闭相机并报告错误，已完整关闭的产物仍随停止结果返回。关闭／后台中断以当前 camera session ID 清理并幂等释放对应租约，不等待页面卸载。
+
+Pixel_5 Android 17 / API 37 AVD 的前摄 `cameraId=1` 报告支持手动曝光、ISO、自动白平衡、自动／关闭／手动对焦、Torch 和 AE／AWB 锁；后摄 `cameraId=10` 对本次查询的手动曝光、ISO、Torch、AE／AWB 锁明确报告不支持。该结果只代表此 AVD 的相机能力。实体设备能力、不同相机组合、持续温控和真实生理 PPG 未验收；实际 CaptureResult 与文件结果记录在 [Android 开发与验证](../development/android-development.md)。
+
+分析运行在单线程原生执行器，使用 `STRATEGY_BLOCK_PRODUCER` 和 CameraX 有界图像队列。相机关闭时用绑定时保留的同一 `SessionConfig` 实例解绑，清空 analyzer 并等待已排入的旧帧处理结束；旧相机监听器不能把帧或提示送入下一会话。
+
+此处记录实现与指定 AVD 的实测结果，不代表目标 FPS、真实 PPG、覆盖准确率、实体设备兼容或持续运行性能已验证。端到端验收以 Android 模拟器的实际界面操作和停止后文件存在为界，具体命令与结果记在 [Android 开发与验证](../development/android-development.md)。

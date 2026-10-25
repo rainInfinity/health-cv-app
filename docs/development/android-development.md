@@ -140,9 +140,15 @@ env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo start --localhost 
 
 预览使用 `PreviewView.ImplementationMode.PERFORMANCE` 的 `SurfaceView` 实现。验证关闭后在同一页面重新打开时，应确认预览画面和图像分析流都恢复；仅凭页面状态不能证明 CameraX 已重新输出帧。
 
-### 手动操作与文件查询
+### 页面操作、参数／网格验收与文件查询
 
-在应用中按顺序手动打开后置相机、开始采集、停止并保存，再关闭相机并重新打开完成第二次采集。预览期间不创建 CSV；正常停止完成后，页面在会话下分别显示 `ppg.csv` 与 `frame.csv` 路径和大小。关闭相机不会删除已完成文件。
+在 `主动 PPG` 页按此顺序操作：
+
+1. 点击“显式请求相机权限”，再单独点击“枚举可选相机”；这两步不会打开相机、启用补光或创建会话。
+2. 选择本次使用的 camera ID。设置 Preview + YUV 候选宽度／高度（px）与目标 FPS，点击“查询所选相机能力与组合”。查询只适用于当前 camera ID、尺寸和 FPS；切换相机或改动尺寸／FPS 后重新查询。静态模式、数值范围、布尔能力及组合结果分别显示 `支持`、`明确不支持` 或 `未知`，数值范围附单位。
+3. 在“本次配置草稿”选择有支持证据的曝光、白平衡、对焦及 torch 模式，按设备范围填写手动曝光时间（ns）、ISO、曝光补偿步长、手动对焦距离（屈光度）；编辑 `rows`、`columns` 网格。运行中这些输入不可编辑，打开时配置冻结。
+4. 点击“打开已选相机配置”，核对当前周期冻结配置、相机 ID、实际帧尺寸／观测 FPS 和 AE／AWB 锁定阶段。正式采集须另行点击“开始采集”；正常完成用“停止并保存”，随后“关闭相机”。未授权、未查询或候选组合不匹配时不应显示可用的打开操作；无云端登录仍可完成本地采集。
+5. 至少运行 `[1,1]`、上下条带 `[N,1]`、左右条带 `[1,N]` 和非方形网格（如 `[2,3]`）。尺寸／FPS 或相机变更后重新查询；非法网格应显示错误且不开始会话、不产出完成 CSV。确认 `[rows, columns]` 下每个正式帧有 `rows × columns` 条 PPG 行，`blockIndex` 按行优先从 0 连续排列，而 `frame.csv` 仍每帧一行。
 
 验证权限拒绝时，可先撤销模拟器中的权限，再从应用里请求并拒绝：
 
@@ -152,7 +158,7 @@ adb shell pm revoke com.healthcvapp.mobile android.permission.CAMERA
 
 拒绝后页面应保持关闭状态并显示错误；该次请求不新增采集会话或完成文件。需要再次允许时，从 Android 应用权限设置授予相机权限。
 
-用 `run-as` 检查应用私有目录中的两个完成产物；停止返回的路径以 `/files/` 后的相对部分对应 `files/acquisition/<sessionId>/`：
+用 `run-as` 检查应用私有目录中的完成产物；停止返回的路径以 `/files/` 后的相对部分对应 `files/acquisition/<sessionId>/`：
 
 ```sh
 adb shell run-as com.healthcvapp.mobile find files/acquisition -type f \( -name ppg.csv -o -name frame.csv \) -print
@@ -165,9 +171,9 @@ adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/ppg
 adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/frame.csv"
 ```
 
-按行比较两份 CSV 的 `timestampFrame`；每行必须与 Camera2 的 `SENSOR_TIMESTAMP` 精确配对。旧协议对可选 Camera2 字段以 `0` 兜底，因此文件本身不能区分字段缺失和实际零值。
+PPG CSV 中同一 `frameIndex` 的多块记录共享 `timestampFrame`，按帧分组后核对 `blockIndex`；每组 `timestampFrame` 必须与 `frame.csv` 的 `timestampFrame` 精确对应。不要按两份 CSV 的行号比较：frame 文件每帧一行，PPG 文件每帧可有多行。预览、未完成采集或失败中的 `.part` 不属于成功产物；只有正常停止、关联队列排空、两个文件关闭并同时发布后才显示完成文件。
 
-只有正常停止并完成逐帧关联、DataHub 排空和两个文件关闭后，`ppg.csv` 与 `frame.csv` 才作为同一会话的成功产物出现；失败中的 `.part` 不属于成功产物。该验证不要求上传、CSV 数值证明真实 PPG，也不证明目标 FPS、覆盖准确率、实体设备兼容或发热表现。
+该验证只检查相机配置、页面状态和文件协议；CSV 数值不证明真实 PPG，不代表目标 FPS、覆盖准确率、实体设备兼容或发热表现。
 
 ### Pixel_5 模拟器实测（2026-10-20）
 
@@ -187,6 +193,61 @@ adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/fra
 PPG 表头为 `timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex`；frame 表头为 `timestamp,timestampFrame,timestampSystem,exposureTime,durationTime,rollingShutterSkewTime,iso,whiteBalanceMode`。每次采集的两份文件逐行 `timestampFrame` 完全一致，PPG `frameIndex` 分别从 0 连续至 294、399。停止后立即再次点击同一控件位置，页面回到预览且未出现第三份会话产物；两个已完成会话的 CSV 均可在相机关闭后读取。
 
 AVD 使用虚拟场景，只验证模拟器相机回调、逐帧配对与文件落盘；不代表真实人体 PPG、实体设备信号或性能。
+
+### 可配置相机与网格采集验证（2026-10-23）
+
+设备为 `Pixel_5` AVD（`emulator-5554`、Android 17／API 37、arm64，后摄 `virtualscene`）；应用未登录、未配置云端。界面枚举 cameraId `1`（前摄、方向 270°）和 `10`（后摄、方向 90°）。cameraId `1` 实测支持手动曝光／ISO、AWB 预设、手动 AF、torch 及 AE／AWB 锁；cameraId `10` 对手动曝光／ISO、torch 和两种锁返回明确不支持，未提交这些请求。
+
+从界面分别提交两组手动曝光配置。完成文件停止相机后从应用私有目录读取；`frame.csv` 的曝光、ISO 和白平衡值来自真实 Camera2 结果，不是 JS 配置回显：
+
+| 会话 ID | 冻结请求 | `frame.csv` 数据行 | Camera2 实际曝光／ISO／AWB 模式 | `ppg.csv` 数据行 |
+| --- | --- | ---: | --- | ---: |
+| `b3b9ff06-1221-4678-85a8-637669ede4c0` | cameraId `1`；目标 640×720／30 FPS；manual 10,000,000 ns／ISO 200；daylight；manual focus 0 屈光度；torch 开；`[2,3]` | 694 | 10,000,000 ns／200／5 | 4,164 |
+| `60ea14d9-e51c-49fb-9dab-7e7e697dcf89` | cameraId `1`；manual 30,000,000 ns／ISO 400；daylight；`[2,3]` | 262 | 30,000,000 ns／400／5 | 1,572 |
+
+两次相机帧均为 1024×768、有效 crop `(0,0) 1024×768`；请求的 30 FPS 是目标，不是模拟器的交付保证。CameraService dump 同时观察到 torch `TORCH`、手动对焦 `AF_MODE_OFF`／0 屈光度；关闭 torch 的默认预览观察到 `OFF`。白平衡模式值 `5` 对应该设备实际提交的 daylight 模式。
+
+下表中的 CSV 均在相机关闭后直接读取，表头仍为既有八列；逐帧核验 `frameIndex` 连续、PPG 的 `timestampFrame` 与 `frame.csv` 精确对应、块编号按行优先排列，且会话目录没有 `.part` 文件：
+
+| 网格 | 会话 ID | PPG 数据行 | frame 数据行 | 独立核对 |
+| --- | --- | ---: | ---: | --- |
+| `[1,1]` | `a2e31171-c358-4735-b977-d1b536fd304d` | 563 | 563 | 563 组，每帧仅块 0 |
+| `[3,1]` | `ec1883bc-365b-478e-a3b6-11a1ab62a694` | 1,218 | 406 | 每帧块 0–2，时间戳精确分组 |
+| `[1,3]` | `9b937a71-99c1-479b-a503-d70aa11ecb3f` | 267 | 89 | 每帧块 0–2，时间戳精确分组 |
+| `[2,3]` | `60ea14d9-e51c-49fb-9dab-7e7e697dcf89` | 1,572 | 262 | 每帧块 0–5，时间戳精确分组 |
+
+模拟器 UI 把行数设为 `65`、列数设为 `1` 后，打开操作显示“分块网格超过已查询的最大块数或目标尺寸约束。”；运行状态仍为关闭，`dumpsys media.camera` 没有活动客户端，完成 PPG 文件数未增加。恢复 `[1,1]` 后按相同查询、打开、开始、停止路径再次成功。已知像素夹具的独立均值和共享色度边界数值见[相机 PPG 协议](../acquisition/android-ppg.md#二维分块坐标与色度边界)；AVD 虚拟场景不作为像素夹具或真实生理信号。
+另按此流程复测单块会话 `4923331c-54a4-45a5-bfaa-aa7cbaecced6`：`Pixel_5` AVD（Android 17／API 37／arm64）选择前摄 cameraId `1`，请求 640×720 px、目标 30 FPS、自动曝光／白平衡／对焦、`[1,1]`，未登录或配置云端。预览显示冻结请求、实际 1024×768 帧和观测 FPS；开始后按钮变为“停止并保存”，停止后恢复“开始采集”。采集中滚至配置区并点击行数输入框，控件保持禁用、值仍为 `[1,1]`。关闭后从 `files/acquisition/4923331c-54a4-45a5-bfaa-aa7cbaecced6/` 读取到两份完成 CSV，各 1,739 条数据行，PPG 块编号均为 0，逐行 `timestampFrame` 相同，Camera2 实际结果为约 2,099,223 ns／ISO 100／AWB 模式 1；两文件分别为 200,399／149,113 bytes。`dumpsys media.camera` 显示活动客户端为空。另在撤销相机权限并重启后，页面显示“尚未通过本页确认”、能力查询按钮禁用；经页面显式请求并在系统弹窗允许后，权限恢复，但仍须枚举和查询才能打开相机。
+按同一页面步骤再运行非方形网格 `[2,3]` 会话 `379dcf99-580b-45a7-b4e0-7b434f7d1c76`：Pixel_5 AVD（Android 17／API 37／arm64）、cameraId `1`、请求 640×720 px／30 FPS，自动曝光／白平衡／对焦。打开时 UI 显示冻结的 `[2,3]` 配置；开始、停止并保存后关闭相机。直接从应用目录读取到仅有 `ppg.csv`（308,214 bytes）和 `frame.csv`（38,400 bytes），无 `.part`；两文件分别有 2,682 和 447 条数据，PPG 的 `frameIndex` 连续为 0–446，每帧恰有按行优先排列的块 0–5。447 组 PPG `timestampFrame` 均与 `frame.csv` 一一匹配；相机关闭后 `dumpsys media.camera` 的 `Active Camera Clients` 为空。首帧六块的 `avgY` 分别为 150.8833、159.2741、226.8075、84.4455、102.0970、222.0528；这是虚拟场景测值，不作为真实生理信号或实体像素夹具预期值。
+随后再次通过 `run-as` 从应用私有目录读取表中四种网格以及本次 `[1,1]`、`[2,3]` 复测的六个会话，不使用 JS 样本缓存：每个目录只有完成的 `ppg.csv`／`frame.csv`，表头与上列协议一致；各会话的 `frameIndex` 从 0 连续递增，PPG 每帧行数等于网格块数、`blockIndex` 连续行优先排列，PPG 与 frame 的唯一帧时间戳集合双向完全对应。所有已采样的 Y／U／V 均值为有限值且在 0–255 范围。独立像素夹具测试 `PixelBlockStatisticsTest` 还断言 `[2,3]` 各块的 Y/U/V 均值和整帧值，覆盖带行填充、非零 crop、共享交错色度单元的情况。
+
+### 类型检查、Nitro 与 Android 回归（2026-10-23）
+
+从仓库根目录依次运行 `pnpm --filter @health-cv-app/acquisition run nitrogen`、`pnpm --filter @health-cv-app/acquisition run typecheck`、`pnpm --filter @health-cv-app/native run typecheck` 和 `pnpm --filter @health-cv-app/native run test`。Nitro 生成 4／4 个 HybridObject；两项类型检查成功；Native 行为测试 28／28 通过。
+
+在 `apps/native/android` 执行 `./gradlew :health-cv-app_acquisition:testDebugUnitTest :app:assembleDebug`，结果为 `BUILD SUCCESSFUL`。JUnit 报告共 31 个测试套件、120 项测试，失败／错误／跳过均为 0；包含相机配置校验、捕获锁定／解锁、像素网格与色度均值、帧关联、多行 CSV writer、CameraUseGuard 和传感器配置／六列 CSV。Debug APK 编译完成。构建输出有 Expo 未设置 `NODE_ENV` 的提示，以及 Nitro 生成 C++ 的未使用参数 warning，均未阻断构建。
+
+自动 AE 与 AWB 锁的 UI 采集在每次正式开始前显示 `locked`；Camera2 结果为 AE／AWB `ON`、`LOCKED`。两次正常停止后新结果均为 AE／AWB `OFF`、`CONVERGED`，第二次开始重新得到当前周期锁确认；关闭相机后活动客户端为空。Pixel_5 只验证成功解锁；无法稳定注入设备级解锁失败，该分支由 `CaptureLockReleaseTest` 覆盖：解锁失败保留已完成产物并调用关闭当前周期的收尾。
+
+### 主动／被动相机与传感器并行验证（2026-10-23）
+
+被动页在服务关闭时保存 5 秒周期、1 秒录像时长；保存后仍为 disabled，CameraService 没有活动客户端。通过页面显式启用并确认 AVD 设置后，`PassiveCaptureService` 进入前台等待，期间相机空闲。被动服务等待时打开 PPG 页查询并打开 cameraId `1`，前台服务仍运行、未提前打开相机；活动客户端仅为 PPG 的 cameraId `1`。返回桌面后 PPG 客户端释放，服务仍等待；之后通过 AVD 实际锁屏／唤醒手势触发系统解锁事件，CameraService 记录被动录像相机连接后释放。被动页显示“视频已完成收尾并发布”，会话 `050a26d3-8ee0-404a-b1b1-5d27263c8b80` 为 1280×720、1.944 秒、662,688 bytes；本次未重新完整解码视频。测试结束后从页面关闭服务，服务列表无 `PassiveCaptureService`，相机活动客户端为空。
+另在被动服务保持关闭时复查隔离：被动页显示“未启用”，ActivityManager 服务列表为 `(nothing)`；返回 PPG 页枚举 cameraId `1` 并成功查询 720×720／30 FPS 组合，将草稿曝光从 auto 切为 supported manual 再恢复 auto。整个查询／草稿编辑期间 `dumpsys activity services com.healthcvapp.mobile` 仍无服务、`dumpsys media.camera` 的活动客户端为 `[]` 且 cameraId `1`／`10` 均关闭；`files/acquisition` 最新会话仍是先前的 `379dcf99-580b-45a7-b4e0-7b434f7d1c76`，未新增会话目录。
+
+另一次在锁定准备期间把 PPG 放到后台，CameraService 断开 PPG 相机，后续真实解锁由等待中的被动服务连接并释放 cameraId `1`；被中断 PPG 会话只有 `.part`，没有作为成功产物发布。Android 单元测试 `CameraUseGuardTest` 覆盖主动／被动竞争、旧租约迟到释放不能解除新持有者和打开失败后释放；模拟器观察到前一相机断开后服务才能取得相机，未见旧客户端重新打开。
+
+传感器与 PPG 独立启停：加速度计会话 `bc5852f5-f57c-4c3b-b78e-50305fd483dc` 在 PPG 页面打开、采集和停止期间继续运行，之后从应用私有目录读取到 10,833 条数据行。`accelerometer.csv` 表头为 `timestamp,timestampEvent,timestampSystem,accX,accY,accZ`，每条记录均为六列；PPG 停止没有停止该传感器会话。
+
+复查相机和 CSV 的命令：
+
+```sh
+adb shell dumpsys media.camera
+adb shell run-as com.healthcvapp.mobile find files/acquisition -type f \( -name ppg.csv -o -name frame.csv \) -print
+adb shell run-as com.healthcvapp.mobile cat "files/acquisition/<会话ID>/ppg.csv"
+adb shell run-as com.healthcvapp.mobile cat "files/acquisition/<会话ID>/frame.csv"
+```
+
+以上结果仅验证 Pixel_5 AVD 的相机、租约、传感器回调、页面状态和文件协议；不代表真实人体 PPG、实体设备兼容性或目标帧率。
 
 ## Android 无扰式被动采集
 
