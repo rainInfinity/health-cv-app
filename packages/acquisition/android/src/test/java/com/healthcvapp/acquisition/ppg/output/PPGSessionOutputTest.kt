@@ -4,7 +4,8 @@ package com.healthcvapp.acquisition.ppg.output
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import com.healthcvapp.acquisition.storage.AcquisitionPaths
 import com.healthcvapp.acquisition.storage.csv.BatchWriter
 import com.healthcvapp.acquisition.storage.csv.BatchWriterFactory
@@ -113,7 +114,14 @@ class PPGSessionOutputTest {
   )
 
   private fun record() = PPGCaptureRecord(
-    ppg = PPGRecord(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0, 0),
+    ppg = PPGFrameRecord(
+      timestamp = 1.0,
+      timestampFrame = 2.0,
+      timestampSystem = 3.0,
+      frameIndex = 0,
+      blockLayout = CameraBlockLayout(rows = 1, columns = 1),
+      averagesYuv = doubleArrayOf(4.0, 5.0, 6.0),
+    ),
     metadata = CameraFrameMetadata(1L, 1L, 1L, 1L, 1L, 1L, 1, 1),
   )
 

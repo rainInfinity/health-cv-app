@@ -5,9 +5,11 @@ package com.healthcvapp.acquisition.ppg.session
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.correlation.FrameCorrelationFailure
 import com.healthcvapp.acquisition.ppg.correlation.FrameMetadataCorrelator
+import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGArtifact
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import com.healthcvapp.acquisition.ppg.output.PPGSessionOutput
 import com.healthcvapp.acquisition.pipeline.DataHub
 import com.healthcvapp.acquisition.pipeline.DataHubOfferResult
@@ -32,6 +34,7 @@ import kotlinx.coroutines.withContext
 internal class PPGCaptureSession(
   filesDirectory: File,
   val sessionId: String = UUID.randomUUID().toString(),
+  val blockLayout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
   private val output: PPGSessionOutput = PPGSessionOutput(filesDirectory, sessionId, ioDispatcher = ioDispatcher),
   private val consumerDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -63,6 +66,9 @@ internal class PPGCaptureSession(
   init {
     require(capacity > 0 && batchSize in 1..capacity) { "invalid DataHub capacity or batch size" }
     require(flushIntervalMillis > 0) { "flushIntervalMillis must be positive" }
+    require(blockLayout.blockCount <= CameraBlockLayout.MAX_BLOCK_COUNT) {
+      "当前采集会话的分块数超过本地处理上限。"
+    }
   }
 
   /** 先创建会话文件和消费者，再打开正式帧入口并建立单调采集边界。 */
@@ -115,10 +121,18 @@ internal class PPGCaptureSession(
     nextFrameIndex - 1
   }
 
-  /** 像素帧已释放后保存其数值，并等待精确匹配的 Camera2 结果。 */
-  fun offerPpgRecord(record: PPGRecord, sensorTimestampNanos: Long) {
+  /** 像素帧已释放后一次性交付完整块数组，并等待精确匹配的 Camera2 结果。 */
+  fun offerPpgFrame(record: PPGFrameRecord, sensorTimestampNanos: Long) {
+    if (record.blockLayout != blockLayout) {
+      finishFrame(
+        record.frameIndex,
+        null,
+        PPGCaptureFailure("PIXEL_PROCESSING_FAILED", "正式帧的分块布局与会话冻结配置不一致。"),
+      )
+      return
+    }
     synchronized(correlationLock) {
-      applyCorrelationUpdate(metadataCorrelator.offerPpg(record, sensorTimestampNanos))
+      applyCorrelationUpdate(metadataCorrelator.offerPpgFrame(record, sensorTimestampNanos))
     }
   }
 
@@ -208,7 +222,10 @@ internal class PPGCaptureSession(
   fun fail(cause: PPGCaptureFailure): Boolean = markFailed(cause)
 
   /** 停止收帧、等待配对与两份 CSV 排空、关闭并完成后才返回产物。 */
-  suspend fun stop(finishedAtMillis: Long): PPGArtifact = commands.withLock {
+  suspend fun stop(
+    finishedAtMillis: Long,
+    cameraConfigSummary: CameraConfigSummary? = null,
+  ): PPGArtifact = commands.withLock {
     var shouldWaitForFrames: CompletableDeferred<Unit>? = null
     var currentFailure: PPGCaptureFailure? = null
     synchronized(lock) {
@@ -250,7 +267,7 @@ internal class PPGCaptureSession(
       val completed = withContext(ioDispatcher) {
         synchronized(lock) {
           failure?.let { throw it }
-          output.publish(startedAtMillis, finishedAtMillis).also {
+          output.publish(startedAtMillis, finishedAtMillis, cameraConfigSummary).also {
             artifact = it
             phase = Phase.COMPLETED
           }

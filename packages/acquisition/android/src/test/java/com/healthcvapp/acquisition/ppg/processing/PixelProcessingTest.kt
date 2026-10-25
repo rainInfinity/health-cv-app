@@ -2,6 +2,7 @@
 
 package com.healthcvapp.acquisition.ppg.processing
 
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.pixels.PixelCropRect
 import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
 import com.healthcvapp.acquisition.ppg.pixels.PixelPlane
@@ -90,25 +91,28 @@ class PixelProcessingTest {
   }
 
   @Test
-  fun ppgRecordUsesMillisecondFractionsAndOneWholeFrameBlock() {
+  fun ppgFrameRecordUsesMillisecondFractionsAndRetainsItsBlockLayout() {
     val frame = frame(
       timestampFrameNanos = 2_500_000,
       processingElapsedNanos = 1_500_000,
       timestampSystemNanos = 3_500_000,
       frameIndex = 18,
     )
-    val stats = PixelStatistics(12.5, 128.25, 127.75, 4, 1, 1)
+    val layout = CameraBlockLayout(rows = 1, columns = 1)
+    val blockStatistics = checkNotNull(
+      PixelStatisticsExtractor().extractFrame(frame, layout).blocks,
+    )
 
-    val record = PPGRecordProcessor().process(frame, stats)
+    val record = PPGRecordProcessor().process(frame, blockStatistics, layout)
 
     assertEquals(1.5, record.timestamp, 0.0)
     assertEquals(2.5, record.timestampFrame, 0.0)
     assertEquals(3.5, record.timestampSystem, 0.0)
-    assertEquals(12.5, record.avgY, 0.0)
-    assertEquals(128.25, record.avgU, 0.0)
-    assertEquals(127.75, record.avgV, 0.0)
+    assertEquals(6.5, record.averageY(0), 0.0)
+    assertEquals(9.0, record.averageU(0), 0.0)
+    assertEquals(10.0, record.averageV(0), 0.0)
     assertEquals(18L, record.frameIndex)
-    assertEquals(0, record.blockIndex)
+    assertEquals(layout, record.blockLayout)
   }
 
   @Test

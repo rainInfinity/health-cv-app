@@ -3,8 +3,9 @@
 package com.healthcvapp.acquisition.ppg.output
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import com.healthcvapp.acquisition.storage.AcquisitionFileStore
 import com.healthcvapp.acquisition.storage.csv.CsvBatchWriter
 import java.io.IOException
@@ -57,7 +58,7 @@ class FrameCsvEncoderTest {
     val missingTimestamp = record.copy(metadata = record.metadata.copy(timestampFrameNanos = null))
 
     assertThrows(IOException::class.java) {
-      FrameCsvEncoder.appendRow(missingTimestamp, StringBuilder())
+      FrameCsvEncoder.appendRow(missingTimestamp, 0, StringBuilder())
     }
     Unit
   }
@@ -78,15 +79,13 @@ class FrameCsvEncoderTest {
       whiteBalanceMode = if (missingOptionalFields) null else 2,
     )
     return PPGCaptureRecord(
-      ppg = PPGRecord(
+      ppg = PPGFrameRecord(
         timestamp = 1_000.5,
         timestampFrame = sensorTimestampNanos / NANOS_PER_MILLISECOND,
         timestampSystem = 2_000.75,
-        avgY = 10.0,
-        avgU = 127.0,
-        avgV = 129.0,
         frameIndex = frameIndex,
-        blockIndex = 0,
+        blockLayout = CameraBlockLayout(rows = 1, columns = 1),
+        averagesYuv = doubleArrayOf(10.0, 127.0, 129.0),
       ),
       metadata = metadata,
     )

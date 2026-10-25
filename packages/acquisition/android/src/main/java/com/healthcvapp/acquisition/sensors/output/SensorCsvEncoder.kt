@@ -10,8 +10,12 @@ import com.healthcvapp.acquisition.storage.csv.CsvRowEncoder
 internal class SensorCsvEncoder(private val kind: SensorKind) : CsvRowEncoder<SensorSample> {
   override val header: String = "timestamp,timestampEvent,timestampSystem,${kind.axisHeaders}"
 
+  /** 每条传感器样本保持一行，不随相机 CSV 扩展行协议。 */
+  override fun rowCount(record: SensorSample): Int = 1
+
   /** 将同一回调的三个独立时间和 X、Y、Z 值追加到复用缓冲区。 */
-  override fun appendRow(record: SensorSample, destination: StringBuilder) {
+  override fun appendRow(record: SensorSample, rowIndex: Int, destination: StringBuilder) {
+    require(rowIndex == 0)
     destination.appendMonotonicMillis(record.receivedAtElapsedNanos)
     destination.append(',')
     destination.appendMonotonicMillis(record.eventTimestampNanos)

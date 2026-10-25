@@ -28,6 +28,52 @@ class CsvBatchWriterTest {
   }
 
   @Test
+  fun `writes each record row before advancing to the next record`() = kotlinx.coroutines.runBlocking {
+    val output = TrackingOutputStream()
+    val encoder = object : CsvRowEncoder<Pair<String, List<Int>>> {
+      override val header = "frame,block"
+
+      override fun rowCount(record: Pair<String, List<Int>>): Int = record.second.size
+
+      override fun appendRow(
+        record: Pair<String, List<Int>>,
+        rowIndex: Int,
+        destination: StringBuilder,
+      ) {
+        destination.append(record.first).append(',').append(record.second[rowIndex])
+      }
+    }
+    val writer = CsvBatchWriter(output, encoder)
+
+    writer.writeBatch(listOf("frame-0" to listOf(0, 1, 2), "frame-1" to listOf(0)))
+    writer.close()
+
+    assertEquals(
+      "frame,block${System.lineSeparator()}frame-0,0${System.lineSeparator()}frame-0,1${System.lineSeparator()}frame-0,2${System.lineSeparator()}frame-1,0${System.lineSeparator()}",
+      output.toString(Charsets.UTF_8.name()),
+    )
+  }
+
+  @Test
+  fun `rejects a record with no encoded rows`() = kotlinx.coroutines.runBlocking {
+    val output = TrackingOutputStream()
+    val encoder = object : CsvRowEncoder<String> {
+      override val header = "value"
+      override fun rowCount(record: String): Int = 0
+      override fun appendRow(record: String, rowIndex: Int, destination: StringBuilder) {
+        destination.append(record)
+      }
+    }
+    val writer = CsvBatchWriter(output, encoder)
+
+    assertThrows(IOException::class.java) {
+      kotlinx.coroutines.runBlocking { writer.writeBatch(listOf("empty")) }
+    }
+    writer.close()
+    assertEquals("value${System.lineSeparator()}", output.toString(Charsets.UTF_8.name()))
+  }
+
+  @Test
   fun `header failure closes the owned stream and preserves the original failure`() {
     val headerFailure = IOException("header failed")
     val output = TrackingOutputStream(closeFailure = IOException("close failed"))
@@ -35,7 +81,8 @@ class CsvBatchWriterTest {
       override val header: String
         get() = throw headerFailure
 
-      override fun appendRow(record: String, destination: StringBuilder) {
+      override fun rowCount(record: String): Int = 1
+      override fun appendRow(record: String, rowIndex: Int, destination: StringBuilder) {
         destination.append(record)
       }
     }
@@ -64,7 +111,10 @@ class CsvBatchWriterTest {
   private object TextEncoder : CsvRowEncoder<String> {
     override val header: String = "value"
 
-    override fun appendRow(record: String, destination: StringBuilder) {
+    override fun rowCount(record: String): Int = 1
+
+    override fun appendRow(record: String, rowIndex: Int, destination: StringBuilder) {
+      require(rowIndex == 0)
       destination.append(record)
     }
   }

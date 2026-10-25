@@ -3,8 +3,9 @@
 package com.healthcvapp.acquisition.ppg.output
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import com.healthcvapp.acquisition.storage.AcquisitionFileStore
 import com.healthcvapp.acquisition.storage.csv.CsvBatchWriter
 import java.nio.file.Files
@@ -36,17 +37,57 @@ class PPGCsvEncoderTest {
     writer.close()
     assertTrue(runCatching { writer.writeBatch(listOf(record(4, 4.0))) }.exceptionOrNull() is java.io.IOException)
   }
+  @Test
+  fun `one paired frame encodes all blocks in row-major order`() = runTest {
+    val directory = Files.createTempDirectory("ppg-multi-block-writer").toFile()
+    val file = directory.resolve("ppg.csv.part")
+    val writer = CsvBatchWriter(AcquisitionFileStore().createNewOutput(file), PPGCsvEncoder)
 
-  private fun record(index: Long, timestamp: Double) = PPGCaptureRecord(
-    ppg = PPGRecord(
+    writer.writeBatch(
+      listOf(
+        record(
+          index = 7,
+          timestamp = 7.0,
+          layout = CameraBlockLayout(rows = 2, columns = 3),
+          averagesYuv = doubleArrayOf(
+            10.0, 120.0, 130.0,
+            11.0, 121.0, 131.0,
+            12.0, 122.0, 132.0,
+            13.0, 123.0, 133.0,
+            14.0, 124.0, 134.0,
+            15.0, 125.0, 135.0,
+          ),
+        ),
+      ),
+    )
+    writer.close()
+
+    assertEquals(
+      listOf(
+        "timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex",
+        "7.0,8.25,9.5,10.0,120.0,130.0,7,0",
+        "7.0,8.25,9.5,11.0,121.0,131.0,7,1",
+        "7.0,8.25,9.5,12.0,122.0,132.0,7,2",
+        "7.0,8.25,9.5,13.0,123.0,133.0,7,3",
+        "7.0,8.25,9.5,14.0,124.0,134.0,7,4",
+        "7.0,8.25,9.5,15.0,125.0,135.0,7,5",
+      ),
+      file.readLines(),
+    )
+  }
+  private fun record(
+    index: Long,
+    timestamp: Double,
+    layout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
+    averagesYuv: DoubleArray = doubleArrayOf(10.0, 128.0, 129.0),
+  ) = PPGCaptureRecord(
+    ppg = PPGFrameRecord(
       timestamp = timestamp,
       timestampFrame = timestamp + 1.25,
       timestampSystem = timestamp + 2.5,
-      avgY = 10.0,
-      avgU = 128.0,
-      avgV = 129.0,
       frameIndex = index,
-      blockIndex = 0,
+      blockLayout = layout,
+      averagesYuv = averagesYuv,
     ),
     metadata = CameraFrameMetadata(
       timestampElapsedNanos = (timestamp * NANOS_PER_MILLISECOND).toLong(),

@@ -7,6 +7,7 @@ import android.graphics.Rect
 import androidx.camera.core.ImageInfo
 import androidx.camera.core.ImageProxy
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
 import com.healthcvapp.acquisition.ppg.pixels.PixelReader
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureSession
@@ -49,6 +50,75 @@ class PPGFrameHandlerTest {
       assertEquals("1234.567", java.io.File(frameFile.path).readLines()[1].split(',')[1])
     }
   }
+  @Test
+  fun oneFormalFrameWritesEveryRequestedBlockButOneCameraMetadataRow() = runTest {
+    withRoot { root ->
+      val layout = CameraBlockLayout(rows = 2, columns = 3)
+      val handler = frameHandler()
+      val session = session(root, "frame-multi-block", layout)
+      session.start(startedAtElapsedNanos = 0, startedAtMillis = 10)
+      val image = TestImageProxy(
+        timestampNanos = 1_234_567_000L,
+        width = 6,
+        height = 3,
+        cropRect = Rect().apply {
+          left = 1
+          top = 0
+          right = 6
+          bottom = 3
+        },
+      )
+
+      handler.handle(image.proxy, "camera-one", session)
+      session.offerCaptureMetadata(metadata(1_234_567_000L))
+      val artifact = session.stop(finishedAtMillis = 20)
+
+      assertEquals(1, image.closeCount)
+      val ppgRows = java.io.File(
+        artifact.files.single { it.kind == PPGArtifactFileKind.PPG }.path,
+      ).readLines().drop(1).map { it.split(',') }
+      val frameRows = java.io.File(
+        artifact.files.single { it.kind == PPGArtifactFileKind.FRAME }.path,
+      ).readLines()
+      assertEquals((0..5).toList(), ppgRows.map { it[7].toInt() })
+      assertEquals(setOf("0"), ppgRows.map { it[6] }.toSet())
+      assertEquals(setOf("1234.567"), ppgRows.map { it[1] }.toSet())
+      assertEquals(2, frameRows.size)
+      assertEquals("1234.567", frameRows[1].split(',')[1])
+    }
+  }
+
+  @Test
+  fun blockStatisticsFailureCannotSubmitPartialFrameAndReleasesImageOnce() = runTest {
+    withRoot { root ->
+      val layout = CameraBlockLayout(rows = 2, columns = 3)
+      val handler = frameHandler()
+      val session = session(root, "frame-partial-block-failure", layout)
+      session.start(startedAtElapsedNanos = 0, startedAtMillis = 10)
+      val image = TestImageProxy(
+        timestampNanos = 2_000_000L,
+        width = 6,
+        height = 3,
+        cropRect = Rect().apply {
+          left = 1
+          top = 0
+          right = 6
+          bottom = 3
+        },
+        yBytes = ByteArray(17) { (10 + it).toByte() },
+      )
+
+      handler.handle(image.proxy, "camera-one", session)
+      val outcome = runCatching { session.stop(finishedAtMillis = 20) }
+
+      assertTrue(outcome.isFailure)
+      assertEquals("PIXEL_PROCESSING_FAILED", session.terminalFailure?.code)
+      assertEquals(1, image.closeCount)
+      assertFalse(root.resolve("acquisition/frame-partial-block-failure/ppg.csv").exists())
+      assertFalse(root.resolve("acquisition/frame-partial-block-failure/frame.csv").exists())
+    }
+  }
+
 
   @Test
   fun processingFailureReleasesOnceExpiresBorrowAndPreventsPublication() = runTest {
@@ -114,9 +184,14 @@ class PPGFrameHandlerTest {
     elapsedRealtimeNanos = { 1_000L },
   )
 
-  private fun session(root: java.io.File, id: String) = PPGCaptureSession(
+  private fun session(
+    root: java.io.File,
+    id: String,
+    blockLayout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
+  ) = PPGCaptureSession(
     filesDirectory = root,
     sessionId = id,
+    blockLayout = blockLayout,
     ioDispatcher = Dispatchers.Unconfined,
     consumerDispatcher = Dispatchers.Unconfined,
   )
@@ -141,7 +216,19 @@ class PPGFrameHandlerTest {
     }
   }
 
-  private class TestImageProxy(timestampNanos: Long, format: Int = ImageFormat.YUV_420_888) {
+  private class TestImageProxy(
+    timestampNanos: Long,
+    format: Int = ImageFormat.YUV_420_888,
+    private val width: Int = 2,
+    private val height: Int = 2,
+    private val cropRect: Rect = Rect().apply {
+      right = width
+      bottom = height
+    },
+    yBytes: ByteArray = ByteArray(width * height) { (10 + it).toByte() },
+    uBytes: ByteArray = ByteArray(((width + 1) / 2) * ((height + 1) / 2)) { 128.toByte() },
+    vBytes: ByteArray = ByteArray(((width + 1) / 2) * ((height + 1) / 2)) { 129.toByte() },
+  ) {
     var closeCount = 0
       private set
 
@@ -153,20 +240,21 @@ class PPGFrameHandlerTest {
       }
     }
     private val planeProxies = arrayOf(
-      plane(ByteBuffer.wrap(byteArrayOf(10, 11, 12, 13)), rowStride = 2, pixelStride = 1),
-      plane(ByteBuffer.wrap(byteArrayOf(128.toByte())), rowStride = 1, pixelStride = 1),
-      plane(ByteBuffer.wrap(byteArrayOf(129.toByte())), rowStride = 1, pixelStride = 1),
+      plane(ByteBuffer.wrap(yBytes), rowStride = width, pixelStride = 1),
+      plane(ByteBuffer.wrap(uBytes), rowStride = (width + 1) / 2, pixelStride = 1),
+      plane(ByteBuffer.wrap(vBytes), rowStride = (width + 1) / 2, pixelStride = 1),
     )
 
     val proxy = proxy(ImageProxy::class.java) { method, _ ->
       when (method.name) {
         "getFormat" -> format
-        "getWidth", "getHeight" -> 2
+        "getWidth" -> width
+        "getHeight" -> height
         "getCropRect" -> Rect().apply {
-          left = 0
-          top = 0
-          right = 2
-          bottom = 2
+          left = cropRect.left
+          top = cropRect.top
+          right = cropRect.right
+          bottom = cropRect.bottom
         }
         "getImageInfo" -> imageInfo
         "getPlanes" -> planeProxies

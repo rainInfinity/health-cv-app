@@ -34,7 +34,7 @@
     "android": "pnpm --filter @health-cv-app/acquisition run nitrogen && expo run:android",
     "android:release": "pnpm --filter @health-cv-app/acquisition run nitrogen && cd android && ./gradlew assembleRelease",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsc --project tsconfig.test.json && node --test tests/*.test.cjs"
+    "test": "tsc --project tsconfig.test.json && node --experimental-strip-types --test tests/*.test.cjs"
   },
   "private": true
 }

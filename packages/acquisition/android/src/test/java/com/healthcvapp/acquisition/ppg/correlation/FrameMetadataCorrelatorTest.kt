@@ -4,7 +4,8 @@ package com.healthcvapp.acquisition.ppg.correlation
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -17,9 +18,9 @@ class FrameMetadataCorrelatorTest {
 
     assertEquals(emptyList<PPGCaptureRecord>(), correlator.offerMetadata(metadata(2_000_000_000L)).records)
     assertEquals(emptyList<PPGCaptureRecord>(), correlator.offerMetadata(metadata(1_000_000_000L)).records)
-    assertEquals(emptyList<PPGCaptureRecord>(), correlator.offerPpg(record(1, 2_000_000_000L), 2_000_000_000L).records)
+    assertEquals(emptyList<PPGCaptureRecord>(), correlator.offerPpgFrame(record(1, 2_000_000_000L), 2_000_000_000L).records)
 
-    val update = correlator.offerPpg(record(0, 1_000_000_000L), 1_000_000_000L)
+    val update = correlator.offerPpgFrame(record(0, 1_000_000_000L), 1_000_000_000L)
 
     assertNull(update.failure)
     assertEquals(listOf(0L, 1L), update.records.map { it.ppg.frameIndex })
@@ -27,12 +28,31 @@ class FrameMetadataCorrelatorTest {
     assertEquals(update.records.map { it.ppg.timestampFrame }, update.records.map {
       checkNotNull(it.metadata.timestampFrameNanos) / 1_000_000.0
     })
+    assertEquals(listOf(6, 6), update.records.map { it.ppg.blockCount })
   }
 
   @Test
+  fun duplicateFrameIndexRejectsTheWholeMultiBlockFrame() {
+    val correlator = FrameMetadataCorrelator(capacity = 4)
+    val completeFrame = record(0, 1_000_000_000L)
+
+    assertEquals(
+      emptyList<PPGCaptureRecord>(),
+      correlator.offerPpgFrame(completeFrame, 1_000_000_000L).records,
+    )
+    val duplicate = correlator.offerPpgFrame(
+      record(0, 2_000_000_000L),
+      2_000_000_000L,
+    )
+
+    assertEquals("FRAME_METADATA_DUPLICATE_FRAME", duplicate.failure?.code)
+    assertArrayEquals(longArrayOf(0L), duplicate.failedFrameIndexes)
+    assertEquals(emptyList<PPGCaptureRecord>(), duplicate.records)
+  }
+  @Test
   fun nearbyButDifferentTimestampNeverProducesAPair() {
     val correlator = FrameMetadataCorrelator(capacity = 4)
-    correlator.offerPpg(record(0, 1_000_000_000L), 1_000_000_000L)
+    correlator.offerPpgFrame(record(0, 1_000_000_000L), 1_000_000_000L)
 
     val unmatched = correlator.offerMetadata(metadata(1_000_000_001L))
     val stopped = correlator.finish()
@@ -55,23 +75,21 @@ class FrameMetadataCorrelatorTest {
   @Test
   fun cacheOverflowFailsEveryOutstandingFormalFrame() {
     val correlator = FrameMetadataCorrelator(capacity = 1)
-    correlator.offerPpg(record(0, 1_000_000_000L), 1_000_000_000L)
+    correlator.offerPpgFrame(record(0, 1_000_000_000L), 1_000_000_000L)
 
-    val overflow = correlator.offerPpg(record(1, 2_000_000_000L), 2_000_000_000L)
+    val overflow = correlator.offerPpgFrame(record(1, 2_000_000_000L), 2_000_000_000L)
 
     assertEquals("FRAME_METADATA_CAPACITY_EXCEEDED", overflow.failure?.code)
     assertArrayEquals(longArrayOf(0L, 1L), overflow.failedFrameIndexes)
   }
 
-  private fun record(frameIndex: Long, timestampNanos: Long) = PPGRecord(
+  private fun record(frameIndex: Long, timestampNanos: Long) = PPGFrameRecord(
     timestamp = frameIndex.toDouble(),
     timestampFrame = timestampNanos / 1_000_000.0,
     timestampSystem = frameIndex.toDouble() + 2,
-    avgY = 10.0,
-    avgU = 127.0,
-    avgV = 129.0,
     frameIndex = frameIndex,
-    blockIndex = 0,
+    blockLayout = CameraBlockLayout(rows = 2, columns = 3),
+    averagesYuv = DoubleArray(18) { it.toDouble() },
   )
 
   private fun metadata(timestampNanos: Long) = CameraFrameMetadata(

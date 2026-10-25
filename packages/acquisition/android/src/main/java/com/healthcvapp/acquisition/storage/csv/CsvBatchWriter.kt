@@ -34,14 +34,18 @@ internal class CsvBatchWriter<T>(
     }
   }
 
-  /** 逐条编码并立即写入，不创建批次副本或每行缓冲。 */
+  /** 按记录顺序及其行索引写入，复用一份行缓冲且不展平批次。 */
   override suspend fun writeBatch(records: List<T>) {
     val writer = output ?: throw IOException("CSV writer 已关闭")
     for (record in records) {
-      rowBuffer.setLength(0)
-      encoder.appendRow(record, rowBuffer)
-      writer.append(rowBuffer)
-      writer.newLine()
+      val rowCount = encoder.rowCount(record)
+      if (rowCount <= 0) throw IOException("CSV 记录必须至少编码一行。")
+      for (rowIndex in 0 until rowCount) {
+        rowBuffer.setLength(0)
+        encoder.appendRow(record, rowIndex, rowBuffer)
+        writer.append(rowBuffer)
+        writer.newLine()
+      }
     }
   }
 

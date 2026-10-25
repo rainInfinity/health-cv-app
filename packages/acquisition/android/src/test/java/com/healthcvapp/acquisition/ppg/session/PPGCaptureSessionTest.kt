@@ -3,9 +3,22 @@
 package com.healthcvapp.acquisition.ppg.session
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
+import com.healthcvapp.acquisition.ppg.model.CameraConfig
+import com.healthcvapp.acquisition.ppg.model.CameraConfigAdjustment
+import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
+import com.healthcvapp.acquisition.ppg.model.CameraExposureConfig
+import com.healthcvapp.acquisition.ppg.model.CameraExposureMode
+import com.healthcvapp.acquisition.ppg.model.CameraFocusConfig
+import com.healthcvapp.acquisition.ppg.model.CameraFocusMode
+import com.healthcvapp.acquisition.ppg.model.CameraFrameCrop
+import com.healthcvapp.acquisition.ppg.model.CameraFrameGeometry
+import com.healthcvapp.acquisition.ppg.model.CameraResolution
+import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceConfig
+import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceMode
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import com.healthcvapp.acquisition.ppg.output.FrameCsvEncoder
 import com.healthcvapp.acquisition.ppg.output.PPGCsvEncoder
 import com.healthcvapp.acquisition.ppg.output.PPGSessionOutput
@@ -105,6 +118,88 @@ class PPGCaptureSessionTest {
     assertFalse(File(ppgFile.path + ".part").exists())
     assertFalse(File(frameFile.path + ".part").exists())
   }
+
+  /** 验证完成产物保留冻结配置、真实几何和分块布局。 */
+  @Test
+  fun completedArtifactCarriesFrozenConfigurationAndBlockLayout() = runTest {
+    val directory = Files.createTempDirectory("capture-summary").toFile()
+    val dispatcher = StandardTestDispatcher(testScheduler)
+    val layout = CameraBlockLayout(rows = 2, columns = 3)
+    val config = CameraConfig(
+      cameraId = "1",
+      targetResolution = CameraResolution(width = 720.0, height = 720.0),
+      targetFps = 30.0,
+      torchEnabled = false,
+      exposure = CameraExposureConfig(
+        mode = CameraExposureMode.AUTO,
+        compensationIndex = 0.0,
+        timeNanos = null,
+        iso = null,
+        locked = true,
+      ),
+      whiteBalance = CameraWhiteBalanceConfig(mode = CameraWhiteBalanceMode.AUTO, locked = true),
+      focus = CameraFocusConfig(mode = CameraFocusMode.AUTO, distanceDiopters = null),
+      processing = layout,
+    )
+    val summary = CameraConfigSummary(
+      cameraId = "1",
+      requestedConfig = config,
+      submittedConfig = config.copy(
+        targetResolution = CameraResolution(width = 1024.0, height = 768.0),
+      ),
+      adjustments = listOf(
+        CameraConfigAdjustment(
+          field = "targetResolution",
+          requestedValue = "720x720",
+          submittedValue = "1024x768",
+          reason = "该相机的预览与分析组合选择了可用候选尺寸。",
+        ),
+      ),
+      actualFrame = CameraFrameGeometry(
+        width = 1024,
+        height = 768,
+        crop = CameraFrameCrop(left = 0, top = 0, width = 1024, height = 768),
+        sensorOrientationDegrees = 270,
+        mirrored = false,
+      ),
+      observedFps = 24.0,
+      blockLayout = layout,
+    )
+    val session = session(directory, "summary", dispatcher, blockLayout = layout)
+    start(session)
+    offerFrame(session, session.beginFrame(101))
+    offerFrame(session, session.beginFrame(102))
+
+    val artifact = session.stop(finishedAtMillis = 500, cameraConfigSummary = summary)
+    val ppgFile = File(artifact.files.first { it.kind == PPGArtifactFileKind.PPG }.path)
+    val frameFile = File(artifact.files.first { it.kind == PPGArtifactFileKind.FRAME }.path)
+    val ppgRows = ppgFile.readLines().drop(1).map { it.split(',') }
+    val frameRows = frameFile.readLines().drop(1).map { it.split(',') }
+
+    assertEquals(summary, artifact.cameraConfigSummary)
+    assertEquals(12, ppgRows.size)
+    assertEquals(2, frameRows.size)
+    assertEquals(
+      listOf("0", "1", "2", "3", "4", "5", "0", "1", "2", "3", "4", "5"),
+      ppgRows.map { it[7] },
+    )
+    assertEquals(
+      listOf("0", "1"),
+      ppgRows.chunked(6).map { rows ->
+        assertEquals(1, rows.map { it[1] }.distinct().size)
+        assertEquals(1, rows.map { it[2] }.distinct().size)
+        assertEquals(1, rows.map { it[6] }.distinct().size)
+        rows.first()[6]
+      },
+    )
+    assertEquals(frameRows.map { it[1] }, ppgRows.chunked(6).map { it.first()[1] })
+
+    assertTrue(ppgFile.isFile)
+    assertTrue(frameFile.isFile)
+    assertFalse(File(ppgFile.path + ".part").exists())
+    assertFalse(File(frameFile.path + ".part").exists())
+  }
+
   @Test
   fun writesPairedRecordsToBothCsvFilesInFrameOrder() = runTest {
     val directory = Files.createTempDirectory("capture-paired-order").toFile()
@@ -119,8 +214,8 @@ class PPGCaptureSessionTest {
     val secondFrame = session.beginFrame(102)
     assertEquals(0L, firstFrame)
     assertEquals(1L, secondFrame)
-    session.offerPpgRecord(secondRecord.ppg, 2_000_000L)
-    session.offerPpgRecord(firstRecord.ppg, 1_000_000L)
+    session.offerPpgFrame(secondRecord.ppg, 2_000_000L)
+    session.offerPpgFrame(firstRecord.ppg, 1_000_000L)
 
     val artifact = session.stop(finishedAtMillis = 500)
     val ppgFile = File(artifact.files.first { it.kind == PPGArtifactFileKind.PPG }.path)
@@ -229,7 +324,7 @@ class PPGCaptureSessionTest {
 
     val frameIndex = session.beginFrame(101)
     val frameRecord = record(frameIndex)
-    session.offerPpgRecord(frameRecord.ppg, checkNotNull(frameRecord.metadata.timestampFrameNanos))
+    session.offerPpgFrame(frameRecord.ppg, checkNotNull(frameRecord.metadata.timestampFrameNanos))
     val stop = async { runCatching { session.stop(500) } }
     runCurrent()
     assertFalse(stop.isCompleted)
@@ -320,6 +415,7 @@ class PPGCaptureSessionTest {
     directory: File,
     id: String,
     dispatcher: TestDispatcher,
+    blockLayout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
     capacity: Int = 4,
     batchSize: Int = 4,
     frameWriterFactory: (File) -> BatchWriter<PPGCaptureRecord> = ::frameCsvWriter,
@@ -327,6 +423,7 @@ class PPGCaptureSessionTest {
   ) = PPGCaptureSession(
     filesDirectory = directory,
     sessionId = id,
+    blockLayout = blockLayout,
     output = PPGSessionOutput(
       filesDirectory = directory,
       sessionId = id,
@@ -348,25 +445,30 @@ class PPGCaptureSessionTest {
     CsvBatchWriter(AcquisitionFileStore().createNewOutput(file), FrameCsvEncoder)
 
   private fun offerFrame(session: PPGCaptureSession, frameIndex: Long) {
-    val record = record(frameIndex)
+    val record = record(frameIndex, blockLayout = session.blockLayout)
     val sensorTimestampNanos = checkNotNull(record.metadata.timestampFrameNanos)
-    session.offerPpgRecord(record.ppg, sensorTimestampNanos)
+    session.offerPpgFrame(record.ppg, sensorTimestampNanos)
     session.offerCaptureMetadata(record.metadata)
   }
 
   private fun record(
     index: Long,
     timestampNanos: Long = (index + 1) * NANOS_PER_MILLISECOND,
+    blockLayout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
   ) = PPGCaptureRecord(
-    ppg = PPGRecord(
+    ppg = PPGFrameRecord(
       timestamp = index.toDouble(),
       timestampFrame = timestampNanos.toDouble() / NANOS_PER_MILLISECOND,
       timestampSystem = index.toDouble() + 2,
-      avgY = 10.0,
-      avgU = 127.0,
-      avgV = 129.0,
       frameIndex = index,
-      blockIndex = 0,
+      blockLayout = blockLayout,
+      averagesYuv = DoubleArray(blockLayout.rows * blockLayout.columns * 3) {
+        when (it % 3) {
+          0 -> 10.0
+          1 -> 127.0
+          else -> 129.0
+        }
+      },
     ),
     metadata = CameraFrameMetadata(
       timestampElapsedNanos = timestampNanos + 3_000_000L,

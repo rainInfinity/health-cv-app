@@ -17,6 +17,8 @@ class CameraFrameMetadataTest {
       rollingShutterSkewTimeNanos = null,
       iso = 0,
       whiteBalanceMode = null,
+      aeLocked = true,
+      awbLocked = false,
     )
 
     assertEquals(21_500_000L, metadata.timestampElapsedNanos)
@@ -27,5 +29,7 @@ class CameraFrameMetadataTest {
     assertEquals(0L, metadata.rollingShutterSkewTimeNanos)
     assertEquals(0, metadata.iso)
     assertEquals(0, metadata.whiteBalanceMode)
+    assertEquals(true, metadata.aeLocked)
+    assertEquals(false, metadata.awbLocked)
   }
 }

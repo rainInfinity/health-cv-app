@@ -20,6 +20,10 @@ data class CameraFrameMetadata(
   val iso: Int,
   /** Camera2 实际白平衡模式整数值；缺失时为 0。 */
   val whiteBalanceMode: Int,
+  /** Camera2 完成结果确认的 AE 锁状态；结果未提供时为空。 */
+  val aeLocked: Boolean? = null,
+  /** Camera2 完成结果确认的 AWB 锁状态；结果未提供时为空。 */
+  val awbLocked: Boolean? = null,
 ) {
   companion object {
     /** 从 Camera2 完成结果构造旧协议字段，并为缺失的可选结果保留零值。 */
@@ -32,6 +36,8 @@ data class CameraFrameMetadata(
       rollingShutterSkewTimeNanos: Long?,
       iso: Int?,
       whiteBalanceMode: Int?,
+      aeLocked: Boolean? = null,
+      awbLocked: Boolean? = null,
     ) = CameraFrameMetadata(
       timestampElapsedNanos = timestampElapsedNanos,
       timestampFrameNanos = timestampFrameNanos,
@@ -41,6 +47,8 @@ data class CameraFrameMetadata(
       rollingShutterSkewTimeNanos = rollingShutterSkewTimeNanos ?: 0L,
       iso = iso ?: 0,
       whiteBalanceMode = whiteBalanceMode ?: 0,
+      aeLocked = aeLocked,
+      awbLocked = awbLocked,
     )
   }
 }

@@ -9,17 +9,21 @@ import com.healthcvapp.acquisition.storage.csv.CsvRowEncoder
 internal object PPGCsvEncoder : CsvRowEncoder<PPGCaptureRecord> {
   override val header = "timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex"
 
-  /** 按旧列序追加 PPG 时间、像素统计和帧标识。 */
-  override fun appendRow(record: PPGCaptureRecord, destination: StringBuilder) {
+  /** 一帧按冻结网格输出一行一个块。 */
+  override fun rowCount(record: PPGCaptureRecord): Int = record.ppg.blockCount
+
+  /** 按行优先块序追加共享时间、块均值和帧标识。 */
+  override fun appendRow(record: PPGCaptureRecord, rowIndex: Int, destination: StringBuilder) {
     val ppg = record.ppg
+    require(rowIndex in 0 until ppg.blockCount)
     destination
       .append(ppg.timestamp).append(',')
       .append(ppg.timestampFrame).append(',')
       .append(ppg.timestampSystem).append(',')
-      .append(ppg.avgY).append(',')
-      .append(ppg.avgU).append(',')
-      .append(ppg.avgV).append(',')
+      .append(ppg.averageY(rowIndex)).append(',')
+      .append(ppg.averageU(rowIndex)).append(',')
+      .append(ppg.averageV(rowIndex)).append(',')
       .append(ppg.frameIndex).append(',')
-      .append(ppg.blockIndex)
+      .append(rowIndex)
   }
 }

@@ -5,7 +5,6 @@ package com.healthcvapp.acquisition.ppg.processing
 import android.graphics.ImageFormat
 import android.os.SystemClock
 import androidx.camera.core.ImageProxy
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
 import com.healthcvapp.acquisition.ppg.pixels.PixelCropRect
 import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
 import com.healthcvapp.acquisition.ppg.pixels.PixelPlane
@@ -34,16 +33,25 @@ internal class PPGFrameHandler(
         processingElapsedNanos = processingElapsedNanos,
         timestampSystemNanos = timestampSystemNanos,
       )
-      framePipeline.process(
+      framePipeline.processWithBlocks(
         frame = frameView,
         releaseFrame = {
           imageReleased = true
           image.close()
         },
-      ) { processedFrame, statistics ->
+        blockLayout = captureSession?.blockLayout,
+      ) { processedFrame, frameStatistics ->
         if (frameIndex >= 0L) {
-          val record: PPGRecord = ppgRecordProcessor.process(processedFrame, statistics)
-          captureSession!!.offerPpgRecord(record, processedFrame.timestampFrameNanos)
+          val activeCaptureSession = checkNotNull(captureSession)
+          val blockStatistics = checkNotNull(frameStatistics.blocks) {
+            "正式采集帧没有分块统计。"
+          }
+          val record = ppgRecordProcessor.process(
+            processedFrame,
+            blockStatistics,
+            activeCaptureSession.blockLayout,
+          )
+          activeCaptureSession.offerPpgFrame(record, processedFrame.timestampFrameNanos)
           frameFinished = true
         }
       }

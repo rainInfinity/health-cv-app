@@ -4,7 +4,7 @@ package com.healthcvapp.acquisition.ppg.correlation
 
 import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
-import com.healthcvapp.acquisition.ppg.model.PPGRecord
+import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
 import java.util.LinkedHashSet
 import java.util.TreeMap
 
@@ -30,8 +30,8 @@ internal data class FrameCorrelationUpdate(
 /** 有界缓存两侧数值，只按相同传感器时间戳配对，不持有 ImageProxy。 */
 internal class FrameMetadataCorrelator(private val capacity: Int) {
   private class PendingFrame {
-    /** 同一传感器时间戳对应的单帧 PPG 记录。 */
-    var ppg: PPGRecord? = null
+    /** 同一传感器时间戳对应的一帧完整 PPG 块数值。 */
+    var ppg: PPGFrameRecord? = null
     /** 同一传感器时间戳对应的 Camera2 完成结果。 */
     var metadata: CameraFrameMetadata? = null
   }
@@ -48,9 +48,9 @@ internal class FrameMetadataCorrelator(private val capacity: Int) {
     require(capacity > 0) { "capacity must be positive" }
   }
 
-  /** 保存不依赖原生帧存活期的 PPG 数值并尝试精确配对。 */
+  /** 保存不依赖原生帧存活期的一帧完整块数值并尝试精确配对。 */
   @Synchronized
-  fun offerPpg(record: PPGRecord, sensorTimestampNanos: Long): FrameCorrelationUpdate {
+  fun offerPpgFrame(record: PPGFrameRecord, sensorTimestampNanos: Long): FrameCorrelationUpdate {
     if (closed) {
       return fail(
         terminalFailure ?: FrameCorrelationFailure("FRAME_METADATA_CLOSED", "相机元数据关联已关闭。"),

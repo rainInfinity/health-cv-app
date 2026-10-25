@@ -29,9 +29,10 @@ class SensorCsvEncoderTest {
     expectedHeaders.forEach { (kind, header) ->
       val encoder = SensorCsvEncoder(kind)
       val row = StringBuilder()
-      encoder.appendRow(sample, row)
 
       assertEquals(header, encoder.header)
+      assertEquals(1, encoder.rowCount(sample))
+      encoder.appendRow(sample, 0, row)
       assertEquals("2000.001234,2000.002345,2000.003456,11.25,22.5,33.75", row.toString())
     }
   }

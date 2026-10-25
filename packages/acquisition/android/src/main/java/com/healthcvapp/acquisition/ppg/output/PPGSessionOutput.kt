@@ -13,6 +13,7 @@ import com.healthcvapp.acquisition.storage.csv.BatchWriterFactory
 import com.healthcvapp.acquisition.storage.csv.CsvBatchWriterFactory
 import java.io.File
 import java.io.IOException
+import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,11 @@ internal class PPGSessionOutput(
   }
 
   /** 提升两份已关闭文件并在第二侧失败时回退第一侧。 */
-  fun publish(startedAtMillis: Long, finishedAtMillis: Long): PPGArtifact {
+  fun publish(
+    startedAtMillis: Long,
+    finishedAtMillis: Long,
+    cameraConfigSummary: CameraConfigSummary? = null,
+  ): PPGArtifact {
     check(ppgWriterClosed.get()) { "PPG session output must be closed before publication" }
     check(!publicationStarted) { "PPG session output can only be published once" }
     publicationStarted = true
@@ -121,6 +126,7 @@ internal class PPGSessionOutput(
       ),
       startedAtMillis = startedAtMillis,
       finishedAtMillis = finishedAtMillis,
+      cameraConfigSummary = cameraConfigSummary,
     )
   }
 }
