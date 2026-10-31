@@ -67,7 +67,7 @@ adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo
 | Gradle / Android NDK | Gradle 9.3.1；该构建实际使用 NDK 27.1.12297006 |
 | 验证设备 | `Pixel_5` Android Virtual Device，Android 17 / API 37，arm64 模拟器 |
 
-应用锁文件解析出的关键依赖版本：Expo 57.0.27、`expo-dev-client` 57.0.19、React 19.2.3、React Native 0.86.3、`react-native-mmkv` 4.3.2、`react-native-nitro-modules` 0.37.1、`react-native-file-access` 4.0.4、React Navigation 7.5.0、native-stack 7.20.0、Nano Stores 1.5.5（React 绑定 2.0.1、persistent 1.3.5、i18n 1.3.3）、React Query 5.104.1、Axios 1.20.0、styled-components 6.5.3、TypeScript 6.0.3。精确依赖树以 `pnpm-lock.yaml` 为准。
+应用锁文件解析出的关键依赖版本：Expo 57.0.27、`expo-dev-client` 57.0.19、React 19.2.3、React Native 0.86.3、`react-native-mmkv` 4.3.2、`react-native-nitro-modules` 0.37.1、`react-native-file-access` 4.0.4、React Navigation 7.5.0、native-stack 7.20.0、Nano Stores 1.5.5（React 绑定 2.0.1、persistent 1.3.5、i18n 1.3.3）、React Query 5.104.1、Axios 1.20.0、styled-components 6.5.3、`css-to-react-native` 3.2.0、`expo-localization` 57.0.2、NetInfo 12.0.1、`lucide-react-native` 1.64.0、`react-native-svg` 15.15.4、TypeScript 6.0.3。精确依赖树以 `pnpm-lock.yaml` 为准。
 采集模块另外固定 Nitrogen 0.37.1 与 AndroidX CameraX 1.6.2，分别由 `packages/acquisition/package.json` 和 `packages/acquisition/android/build.gradle` 管理。
 
 ## 验证记录与边界
@@ -77,6 +77,16 @@ adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo
 - Android 运行时用短暂的入口代码对 MMKV 执行字符串写入、读回与删除，并对缓存目录文件执行创建、写入、读取和清理；读回匹配。临时代码已移除，应用重新启动后仍显示 `Hello World`。
 - 本机当时无法解析 `dl.google.com`。`apps/native/plugins/with-aliyun-gradle-repositories.js` 与 `patches/` 中的 Gradle 插件补丁为 included build、插件和子项目依赖添加 Aliyun Maven 仓库；官方仓库仍保留为后备。若网络可访问 Google Maven，这些镜像配置仍作为前置仓库。
 - 仅验证了 Android arm64 模拟器。未验证实体设备、iOS、自研 Nitro 采集模块（Spec／Nitrogen 绑定及 Kotlin/Swift 实现），也未实现或验证测量、采集和上传业务。安装 Nitro Modules 与第三方 MMKV 只证明其进入 Android 构建，不代表自研采集能力已可用。
+
+### 前端基础设施与浅色主题首次验收（2026-10-30）
+
+- 已安装并解析依赖：`expo-localization` 57.0.2、`@react-native-community/netinfo` 12.0.1、`lucide-react-native` 1.64.0、`react-native-svg` 15.15.4；`styled-components/native` 还需直接依赖 `css-to-react-native` 3.2.0，缺少时 Metro 无法打包。
+- 锁文件安装成功：`pnpm install --frozen-lockfile`。原生依赖接入后的 Android 构建命令为 `pnpm --filter @health-cv-app/acquisition run nitrogen && pnpm --filter @health-cv-app/native exec sh -c 'cd android && ./gradlew assembleDebug'`，Gradle 输出 `BUILD SUCCESSFUL`。该次构建早于补齐纯 JavaScript 的 `css-to-react-native`；补齐后锁文件安装及 Metro 实际 bundle、页面启动成功。完整集成构建仍留待后续验收。
+- `expo install --check` 报告现有 Expo 57.0.27 与 `expo-dev-client` 57.0.19 分别低于 CLI 当前推荐的 `~57.0.31`、`~57.0.20`。升级尝试因 `pnpm-workspace.yaml` 固定的 Expo 模块补丁版本不再匹配而在安装前失败；因此保留当前锁定版本。本次构建只证明现有组合可构建，不表示与 Expo CLI 推荐 patch 对齐。
+- AVD：`Pixel_5` Android 17 / API 37 / arm64。用 `adb install -r apps/native/android/app/build/outputs/apk/debug/app-debug.apk` 安装，并运行 `adb reverse tcp:8081 tcp:8081`；在 `apps/native` 启动 `CI=false EXPO_PUBLIC_API_BASE_URL= EXPO_PUBLIC_CHANNEL= pnpm --filter @health-cv-app/native exec expo start --dev-client --port 8081 --localhost`，开发客户端连接 `http://127.0.0.1:8081`。
+- 实际观察：显式清空云端地址与渠道后，主动 PPG 本地页正常显示；入口和主题化选中按钮文字可读。切换 Android 夜间模式后应用仍为浅色，随后恢复模拟器原设置。认证恢复启动顺序及服务/缓存单例由入口代码核对；未在本次运行中登录或联调真实服务。
+- 尚未验证统一导航、语言切换、被动录像、传感器操作与服务端查询；不得把本次 AVD 首屏观察外推为这些路径通过，也不代表实体设备或长期后台行为。
+
 
 ### `add-cloud-client-and-auth` 跨模块验证
 

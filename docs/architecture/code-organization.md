@@ -48,17 +48,49 @@ health-cv-app/
 │       │   │   ├── preferences/
 │       │   │   └── storage/
 │       │   ├── features/
+│       │   │   ├── entry/
+│       │   │   │   ├── VerificationEntryScreen/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   └── EntryLink/index.tsx
 │       │   │   ├── acquisition/
-│   │   │   │   ├── AcquisitionScreen.tsx
-│   │   │   │   └── PassiveCaptureScreen.tsx
+│       │   │   │   ├── AcquisitionScreen/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   ├── CameraQueryPanel/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   ├── CameraConfigurationEditor/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   ├── CameraConfigSummaryView/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   ├── PassiveCaptureScreen/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   └── acquisitionMessages.ts
 │       │   │   ├── sensors/
-│       │   │   │   └── SensorCaptureScreen.tsx
+│       │   │   │   └── SensorCaptureScreen/
+│       │   │   │       ├── index.tsx
+│       │   │   │       └── styles.ts
+│       │   │   ├── settings/
+│       │   │   │   ├── LanguageSettingsScreen/
+│       │   │   │   │   ├── index.tsx
+│       │   │   │   │   └── styles.ts
+│       │   │   │   └── LanguageChoice/index.tsx
 │       │   │   └── measurement/
 │       │   │       ├── screens/
 │       │   │       ├── components/
 │       │   │       └── hooks/
 │       │   └── shared/
 │       │       ├── components/
+│       │       │   ├── ActionButton/index.tsx
+│       │       │   ├── AppCard/index.tsx
+│       │       │   ├── AppInput/index.tsx
+│       │       │   ├── AppText/index.tsx
+│       │       │   ├── PageContainer/index.tsx
+│       │       │   └── StatusFeedback/index.tsx
 │       │       └── theme/
 │       ├── assets/
 │       ├── android/
@@ -170,7 +202,7 @@ health-cv-app/
 └── tsconfig.base.json
 ```
 
-上述目录图体现当前已实现的 Android 相机、被动录像和传感器采集界面与包结构；iOS 采集和测量业务流程仍未实施。
+上述目录图展示当前 Android 采集包及应用端已落地模块，并保留尚未实施的测量业务目标结构；`apps/native` 的 `@/*` 映射到 `src/*`，跨模块引用使用该别名，组件目录以 `index.tsx` 为入口，styled-components 定义放在同目录 `styles.ts`。
 
 ## 3. 应用端：`apps/native`
 
@@ -182,7 +214,7 @@ health-cv-app/
 
 组装层只连接依赖，不实现测量流程，也不集中承载所有模块的初始化细节。模块自己的初始化逻辑仍由模块负责。
 
-`providers/` 接入 React Query 和 styled-components/native 的 ThemeProvider。`navigation/` 使用 React Navigation 承载路由。
+`providers/` 接入 React Query 和 styled-components/native 的 ThemeProvider。`navigation/` 使用单一 React Navigation native-stack，注册验证入口、主动 PPG、被动录像、传感器和语言设置路由，并统一解析 `healthcvapp://passive-capture` 深链。
 
 `query/` 承载 QueryClient、服务端资源查询键和必要的请求接入。受保护缓存按服务地址、渠道和会话代次隔离；认证状态不复制账号或资料，也不让页面挂载成为会话恢复的前提。
 
@@ -196,17 +228,13 @@ health-cv-app/
 
 界面按业务功能就近组织，不把全应用页面、组件和 Hook 分别堆在根级目录。
 
-#### `screens/`
+#### 页面组件
 
-负责页面布局、导航参数、交互入口和组件组合。
+页面组件按功能放在 `src/features/<feature>/<ComponentName>/index.tsx`，负责布局、导航参数、交互入口和组件组合；styled-components 放在同目录 `styles.ts`。页面不决定所需采集源，不操作采集文件，不直接处理服务器响应，也不编排上传和结果处理步骤。
 
-页面不决定所需采集源，不操作采集文件，不直接处理服务器响应，也不编排停止、上传和结果处理步骤。
+#### 功能组件
 
-#### `components/`
-
-负责测量功能自己的操作引导、摄像头区域、波形、进度和结果展示。
-
-组件只接收展示数据和操作回调。只有实际被其他功能复用的组件，才移入 `shared/components`。
+相机查询、配置编辑、状态与产物摘要等组件就近放在所属功能目录的同名目录中，只接收展示数据和操作回调。只有实际被其他功能复用的组件，才移入 `shared/components/<ComponentName>`；各组件入口均为 `index.tsx`，无 styled-components 的目录不创建空样式文件。
 
 #### `hooks/`
 
@@ -214,9 +242,9 @@ health-cv-app/
 
 Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、采集结束条件或后续上传行为。不通过增加薄包装 Hook 或桥接类来重复已有流程。
 
-#### 传感器验证界面：`src/features/sensors`
+#### 原生采集验证界面：`src/features`
 
-`SensorCaptureScreen.tsx` 展示四种 Android 默认传感器的能力、微秒配置、低频状态、结构化错误和完成文件引用；页面订阅清理不会停止仍由原生会话拥有的采集。该验证入口不依赖登录、相机或云端配置，也不编排测量业务。
+`acquisition/AcquisitionScreen` 负责主动 PPG 查询、草稿、预览、采集与产物展示。离开时由共享离页守卫等待进行中的相机命令及原生关闭／文件收尾；关闭失败保留当前页面和错误入口，不提前交接相机。`acquisition/PassiveCaptureScreen` 只提供显式被动服务启停与真实状态展示，页面切换不会停止仍归原生服务所有的会话。`sensors/SensorCaptureScreen` 展示四种 Android 默认传感器的能力、配置、低频状态、结构化错误和完成文件引用；页面订阅清理不会停止仍由原生会话拥有的采集。这些验证入口不编排测量业务。
 
 ### 3.3 已发生的复用：`src/shared`
 
@@ -224,9 +252,9 @@ Hook 可以管理弹窗、选中项等界面状态，但不决定必需信号、
 
 不预建泛化的 `shared/services`、`shared/models` 或大而全的 `utils`。模块内部使用的工具留在该模块中。
 
-使用 styled-components/native 时，样式与界面组件就近放置，主题对象在 `shared/theme` 定义。主题偏好由应用 Store 管理，ThemeProvider 只消费实际主题，不保存第二份主题选择状态。
+使用 styled-components/native 时，样式与界面组件就近放置，主题对象和类型化 token 在 `shared/theme` 定义，由组件、SVG 与图表共用。首版 ThemeProvider 只提供浅色主题，不提供深色／跟随系统主题，也不预建主题偏好与切换状态。通用组件在实际复用后提升到 `shared/components`，不建立独立 UI 或 design-tokens 包。
 
-功能文案跟随对应功能组织，公共语言来源与格式化在 `app/i18n` 管理。业务和原生模块返回错误码与参数，不保存已翻译的界面文案。高频波形与连续动画的渲染工具后续按需求选定，不通过逐帧重建样式实现。
+功能文案跟随对应功能组织，公共语言来源与格式化在 `app/i18n` 管理。首发简体中文与英文，默认及回退语言为简体中文，系统语言只在用户选择跟随系统时参与解析。业务和原生模块返回错误码与参数，不保存已翻译的界面文案。图表组件管理实例与展示，不承担请求与流程编排；实时波形仅为后续可能能力，不预建占位接口，完整采样流不进入 JS 状态与缓存。样式、图标、图表、动画及文案的具体开发规则见 [前端开发约定](../development/frontend-development.md)。
 
 ### 3.4 资源与宿主工程
 
@@ -419,11 +447,11 @@ flowchart TD
 
 ## 8. 文档与验证组织
 
-`docs/architecture` 记录架构与模块边界；`docs/acquisition` 记录采集数据协议、配置和能力约束；`docs/development` 记录开发、构建和真机运行方式。
+`docs/architecture` 记录架构与模块边界；`docs/acquisition` 记录采集数据协议、配置和能力约束；`docs/development` 记录应用开发约定、构建和真机运行方式。
 
 `openspec` 保留规格与变更流程材料，不代替长期架构和开发说明。
 
-`technology-stack.md` 维护已明确选型、待定事项和实施边界；本文维护职责与依赖。修改其中一份时，同步受影响内容与相互链接，不将目录示意视为已实现功能。
+`technology-stack.md` 维护已明确选型、待定事项和实施边界；本文维护职责与依赖；[前端开发约定](../development/frontend-development.md) 维护 UI、数据流、缓存和国际化的具体使用规则。修改时同步受影响内容与相互链接，不将目录示意或开发约定视为已实现功能。
 
 验证围绕真实业务和实现就近组织，不要求每个包建立固定的 `contract-check`。优先关注完整采集、产物可读、真实文件上传、正常停止、用户取消和资源释放等实际风险。
 

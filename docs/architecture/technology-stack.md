@@ -2,7 +2,7 @@
 
 ## 1. 文档范围与决策状态
 
-本文整理 health-cv-app 当前讨论形成的技术栈、运行时数据路径和实施边界。目录与模块职责见 [代码组织与模块边界](./code-organization.md)。本文是技术选型状态的维护入口，代码组织文档不重复维护完整选型表。
+本文整理 health-cv-app 当前讨论形成的技术栈、运行时数据路径和实施边界。目录与模块职责见 [代码组织与模块边界](./code-organization.md)。本文是技术选型状态的维护入口，代码组织文档不重复维护完整选型表；UI、数据流、缓存及国际化的具体使用约定见 [前端开发约定](../development/frontend-development.md)。
 
 本项目是 React Native 手机 App，通过相机和运动传感器采集信号序列，保存为文件后上传云端处理。CV 指心血管（cardiovascular），不是计算机视觉。本文不讨论健康指标算法或测量有效性。
 
@@ -30,13 +30,18 @@
 | 连续文件写入 | Android 原生文件 API；iOS Foundation FileHandle（待实施） | Android PPG、被动视频与传感器 CSV 已实施 / iOS 待实施 | PPG 双 CSV、传感器单源 CSV 与独立私有视频；JavaScript 不拼接样本或媒体 |
 | JS 文件管理    | `react-native-file-access`                 | 已明确 | 目录、查询、移动与清理等低频操作                    |
 | 状态管理       | `nanostores` + `@nanostores/react`         | 已明确 | 业务状态与应用状态，React 绑定只用于应用端            |
-| 国际化        | `@nanostores/i18n`                         | 已明确 | 界面文案、语言切换与格式化                       |
-| 偏好持久化      | `@nanostores/persistent`                   | 已明确 | 语言、主题等小型配置                          |
+| 国际化        | `@nanostores/i18n`                         | 已明确 | 简体中文与英文；默认及回退语言为简体中文，待应用接入 |
+| 偏好持久化      | `@nanostores/persistent`                   | 已明确 | 语言等小型配置；首版不保存主题偏好 |
 | 偏好存储底层     | `react-native-mmkv`                        | 已明确 | 适配 `persistent` 的同步存储接口             |
 | 令牌安全存储 | `expo-secure-store` | 已明确 | 应用端安全保存按服务地址与渠道隔离的认证凭据 |
 | 服务端数据管理    | `@tanstack/react-query`                    | 已明确 | 查询缓存与离散请求生命周期                       |
 | HTTP 通信    | Axios                                      | 已明确 | JSON 请求、结构化错误、取消及单文件上传/下载          |
 | 样式         | `styled-components/native`，稳定版 v6 路线       | 已明确 | 沿用用户的样式偏好，不采用 v7 alpha 作为基础         |
+| 系统语言来源 | `expo-localization` | 已明确 | 仅在用户选择跟随系统时解析设备语言；待接入验证 |
+| 通用图标 | `lucide-react-native` + `react-native-svg` | 已明确 | 显式导入；业务图标使用本地 SVG；待接入验证 |
+| 统计图表 | ECharts + `@wuba/react-native-echarts` SVG 渲染器 | 已明确 | 历史趋势与低频统计图；具体版本待兼容验证，不代表支持实时波形 |
+| 动画 | native-stack 转场 + RN `Animated` | 已明确 | 简单动画优先原生驱动；Reanimated 4 仅在真实复杂交互需求出现时引入 |
+| 网络状态监听 | `@react-native-community/netinfo` | 已明确 | 应用级接入 Query `onlineManager`；待接入验证 |
 
 选择 Nitro 不要求放弃 Expo，也不要求使用 VisionCamera。原生绑定、应用工具链和相机实现分别决策；当前相机路线已经确定为自建模块，VisionCamera 不再作为本阶段候选。
 
@@ -153,19 +158,19 @@ Nitrogen 生成的绑定代码属于采集模块的构建产物，需要随模�
 
 业务核心不依赖 React Query Hook 或 Axios；测量流程根据实际操作结果推进，不依赖页面是否仍挂载或某个界面回调是否执行。Query Cache 不保存完整信号序列。
 
-React Native 的应用焦点和网络状态按实际需求接入 `focusManager`、`onlineManager`，不能照搬浏览器 `window` 行为。具体监听依赖尚未选定。
+React Native 的应用焦点使用 `AppState` 接入 `focusManager`，网络状态使用 NetInfo 接入 `onlineManager`，由应用级统一管理，不能照搬浏览器 `window` 行为。返回前台或恢复网络只刷新允许刷新的查询，不自动重放写操作；具体查询新鲜期与回收基线见 [前端开发约定](../development/frontend-development.md)。
 
 ### 6.3 样式与实时界面
 
 使用稳定版 v6 路线的 `styled-components/native`，具体补丁版本随兼容组合锁定。styled 组件在渲染函数外定义，动态样式用于离散或低频状态。
 
-主题选择由应用 Store 管理，实际主题对象交给 `ThemeProvider`；颜色、间距、字号和圆角定义在应用主题目录，不再维护第二份主题选择状态。
+首版仅提供浅色主题，由 `ThemeProvider` 消费统一主题对象；颜色、间距、字号和圆角定义在应用主题目录。系统深色模式不改变应用主题，不提供深色／跟随系统主题入口，也不预建主题偏好 Store 或持久化开关。
 
-Native 端不等同于浏览器 CSS，不能将 v7 alpha 的新能力当作 v6 已有能力。实时波形和连续动画不通过逐点改变 styled 属性实现；需要这些界面能力时，再单独选择绘图与动画方案。
+Native 端不等同于浏览器 CSS，不能将 v7 alpha 的新能力当作 v6 已有能力。历史趋势与低频统计图采用 ECharts 的 RN SVG 渲染器，简单动画采用 RN `Animated`，不通过逐帧重建 styled 属性实现。实时波形仅为后续可能能力，首版不实现、不增加占位接口；当前原生接口没有实时样本输出，未来需单独确定原生预览或有界降采样展示接口及渲染方案，完整采样流仍不进入 JS 状态与缓存。
 
 ## 7. 国际化与偏好持久化
 
-`@nanostores/i18n` 用于应用端文案和格式化。语言优先级为用户明确选择、系统语言、应用回退语言。Native 接入系统语言来源，不使用浏览器检测示例替代它。首批支持语言和系统语言读取方案待定。
+`@nanostores/i18n` 用于应用端文案和格式化。首发支持简体中文 `zh-CN` 与英文 `en-US`，默认及回退语言均为简体中文；首次启动不因系统为英文而自动切换。只有用户明确选择“跟随系统”时，才通过 `expo-localization` 解析设备首选语言列表，无匹配时回退简体中文，并保存 `system` 偏好而非当时解析的语言。具体初始化与切换规则见 [前端开发约定](../development/frontend-development.md)。
 
 业务与原生模块返回错误码、状态和参数，界面负责翻译。不在业务 Store 中保存已经翻译的错误文案，避免切换语言后残留旧文案。
 
@@ -200,7 +205,7 @@ Expo、React、React Native、Nitro、MMKV 和文件库需要作为整体兼容�
 - 经验覆盖提示在真机上的准确性、生产设备兼容和性能基线。
 - 生产 API 地址、首发普通渠道与联调账号由部署及产品方提供；运行时配置必须显式注入，不从语言或时区推断。
 - 产物保留与删除条件、网络和应用中断时的业务行为。
-- 支持语言、系统语言来源、导航细节和界面绘图需求。
+- 页面导航细节、实时波形是否实施及其展示接口和渲染方案；首版浅色主题、支持语言与默认语言已经明确，不再列为待定。
 - 整体依赖版本与兼容组合、最低系统版本和设备能力基线。
 
 本次验证覆盖 Android AVD 中主动 PPG、被动录像和四种真实 `SensorManager` 回调写入 CSV，并实测传感器并行、后台中断、进程重启及相机互斥。实体手机上的传感器兼容、后台限制、耗电和持续性能仍待实测；AVD 虚拟输入不代表真实人体 PPG 或实体运动数据。
