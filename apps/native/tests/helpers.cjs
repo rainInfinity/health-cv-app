@@ -12,6 +12,7 @@ const {
 const {
   createAppQueryClient,
 } = require('../node_modules/.cache/native-test/app/query/client.js');
+const queryClients = new Set();
 
 function deferred() {
   return Promise.withResolvers();
@@ -101,6 +102,7 @@ function createHarness({ scope: suppliedScope, client: clientOverrides = {}, sec
   };
   const accessTokenSource = { current: null };
   const queryClient = createAppQueryClient();
+  queryClients.add(queryClient);
   const auth = createAuthSessionManager({
     client,
     scope,
@@ -111,6 +113,12 @@ function createHarness({ scope: suppliedScope, client: clientOverrides = {}, sec
 
   return { scope, entries, operations, faults, secureStore, credentials, client, accessTokenSource, queryClient, auth };
 }
+
+/** 清理测试创建的查询客户端及其回收定时器。 */
+function clearHarnessQueryClients() {
+  for (const queryClient of queryClients) queryClient.clear();
+  queryClients.clear();
+}
 async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
@@ -118,4 +126,4 @@ async function flushMicrotasks() {
   await Promise.resolve();
 }
 
-module.exports = { apiError, createHarness, deferred, flushMicrotasks, tokens };
+module.exports = { apiError, clearHarnessQueryClients, createHarness, deferred, flushMicrotasks, tokens };

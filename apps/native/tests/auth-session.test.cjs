@@ -1,10 +1,18 @@
 // 验证恢复、受控刷新、取消和退出的会话边界。
 
 const assert = require('node:assert/strict');
-const test = require('node:test');
+const { afterEach, test } = require('node:test');
 
 const { AuthSessionError } = require('../node_modules/.cache/native-test/app/auth/session.js');
-const { apiError, createHarness, deferred, flushMicrotasks, tokens } = require('./helpers.cjs');
+const {
+  apiError,
+  clearHarnessQueryClients,
+  createHarness,
+  deferred,
+  flushMicrotasks,
+  tokens,
+} = require('./helpers.cjs');
+afterEach(clearHarnessQueryClients);
 
 test('登录只发布最小身份，认证秘密不进入 Query 缓存，退出清除凭据', async () => {
   const harness = createHarness();

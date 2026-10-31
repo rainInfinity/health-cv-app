@@ -1,6 +1,6 @@
 /** 通过认证会话门控本人账号、资料、模型和任务服务端查询。 */
 
-import type { QueryClient } from '@tanstack/react-query';
+import type { QueryClient, QueryObserverOptions } from '@tanstack/react-query';
 import type { CloudClient, Req, Rsp } from '@health-cv-app/cloud-client';
 
 import type { AuthSessionManager } from '../auth/session';
@@ -13,6 +13,8 @@ export interface ProtectedQueryOptions<TData> {
   queryKey: readonly unknown[];
   /** 仅在指定代次已确认认证时允许查询。 */
   enabled: boolean;
+  /** 新鲜期（毫秒）；任务详情可基于最新缓存响应动态计算。 */
+  staleTime?: NonNullable<QueryObserverOptions<TData>['staleTime']>;
   /** 通过认证保护入口执行一次资源请求。 */
   queryFn: (context: { signal: AbortSignal }) => Promise<TData>;
 }
@@ -79,6 +81,7 @@ export function createAppQueries(
       return {
         queryKey: keys.profile,
         enabled: auth.isAuthenticatedAt(generation),
+        staleTime: 60_000,
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           auth.runProtected((options) => client.users.getProfile(options), { signal }, generation),
       };
@@ -90,6 +93,7 @@ export function createAppQueries(
       return {
         queryKey: keys.models(query?.offset, query?.limit),
         enabled: auth.isAuthenticatedAt(generation),
+        staleTime: 1_800_000,
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           auth.runProtected((options) => client.models.list(query, options), { signal }, generation),
       };
@@ -101,6 +105,7 @@ export function createAppQueries(
       return {
         queryKey: keys.tasks(query?.offset, query?.limit),
         enabled: auth.isAuthenticatedAt(generation),
+        staleTime: 30_000,
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           auth.runProtected((options) => client.tasks.list(query, options), { signal }, generation),
       };
@@ -112,6 +117,10 @@ export function createAppQueries(
       return {
         queryKey: keys.task(taskId),
         enabled: auth.isAuthenticatedAt(generation),
+        staleTime: (query) => {
+          const status = query.state.data?.status;
+          return status === 'SUCCEEDED' || status === 'FAILED' ? 300_000 : 0;
+        },
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           auth.runProtected((options) => client.tasks.getById(taskId, options), { signal }, generation),
       };
