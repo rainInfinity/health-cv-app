@@ -3,11 +3,15 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
     "strict": true,
+    "resolveJsonModule": true,
     "module": "CommonJS",
     "moduleResolution": "Node10",
     "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "noEmit": false,
     "outDir": "./node_modules/.cache/native-test",
     "rootDir": "./src"

@@ -2,6 +2,7 @@
 
 import { useStore } from '@nanostores/react'
 import type {
+  CameraCapabilityStatus,
   CameraFocusMode,
   CameraModeCapability,
   CameraWhiteBalanceMode,
@@ -9,15 +10,21 @@ import type {
 import {
   acquisitionCameraQuery,
   updateAcquisitionCameraDraft,
-} from '../../app/acquisition'
-import { ActionButton } from './components/ActionButton'
-import { StyleSheet, Text, TextInput, View } from 'react-native'
+} from '@/app/acquisition'
+import { ActionButton } from '@/shared/components/ActionButton'
+import { AppCard } from '@/shared/components/AppCard'
+import { AppInput } from '@/shared/components/AppInput'
+import { AppText } from '@/shared/components/AppText'
+import { acquisitionMessages } from '@/features/acquisition/acquisitionMessages'
+import type { AcquisitionMessageValues } from '@/features/acquisition/acquisitionMessages'
 
-const CAPABILITY_STATUS: Record<'supported' | 'unsupported' | 'permission-required' | 'unknown', string> = {
-  supported: '支持',
-  unsupported: '明确不支持',
-  'permission-required': '需要相机权限',
-  unknown: '未知',
+import { EditorGroup, EditorInputs } from './styles'
+
+const CAPABILITY_STATUS_KEYS: Record<CameraCapabilityStatus, keyof AcquisitionMessageValues> = {
+  supported: 'capabilitySupported',
+  unsupported: 'capabilityUnsupported',
+  'permission-required': 'capabilityPermissionRequired',
+  unknown: 'capabilityUnknown',
 }
 
 const WHITE_BALANCE_MODES: CameraWhiteBalanceMode[] = [
@@ -32,27 +39,34 @@ const WHITE_BALANCE_MODES: CameraWhiteBalanceMode[] = [
   'shade',
 ]
 
-const WHITE_BALANCE_LABELS: Record<CameraWhiteBalanceMode, string> = {
-  auto: '自动',
-  off: '关闭',
-  incandescent: '白炽灯',
-  fluorescent: '荧光灯',
-  'warm-fluorescent': '暖荧光灯',
-  daylight: '日光',
-  'cloudy-daylight': '阴天',
-  twilight: '暮光',
-  shade: '阴影',
+const WHITE_BALANCE_MESSAGE_KEYS: Record<CameraWhiteBalanceMode, keyof AcquisitionMessageValues> = {
+  auto: 'auto',
+  off: 'off',
+  incandescent: 'incandescent',
+  fluorescent: 'fluorescent',
+  'warm-fluorescent': 'warmFluorescent',
+  daylight: 'daylight',
+  'cloudy-daylight': 'cloudyDaylight',
+  twilight: 'twilight',
+  shade: 'shade',
 }
 
 const FOCUS_MODES: CameraFocusMode[] = ['auto', 'off', 'manual']
-const FOCUS_LABELS: Record<CameraFocusMode, string> = {
-  auto: '自动',
-  off: '关闭 AF',
-  manual: '手动',
+const FOCUS_MESSAGE_KEYS: Record<CameraFocusMode, keyof AcquisitionMessageValues> = {
+  auto: 'focusAuto',
+  off: 'focusOff',
+  manual: 'focusManual',
+}
+
+/** 描述相机配置编辑器接收的外部禁用状态。 */
+export interface CameraConfigurationEditorProps {
+  /** 当前会话占用相机时禁止修改下一次启动草稿。 */
+  disabled?: boolean
 }
 
 /** 提供模式相关的相机配置草稿编辑器。 */
-export function CameraConfigurationEditor({ disabled = false }: { disabled?: boolean }) {
+export function CameraConfigurationEditor({ disabled = false }: CameraConfigurationEditorProps) {
+  const messages = useStore(acquisitionMessages)
   const query = useStore(acquisitionCameraQuery)
   const config = query.draftConfig
   const capabilities = query.capabilities
@@ -92,49 +106,45 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>本次配置草稿</Text>
-      <Text style={styles.body}>
-        相机与参数在打开时冻结；预览／采集中不能重配。修改尺寸或 FPS 后须重新查询该组合。
-      </Text>
-      <Text style={styles.body}>cameraId：{config.cameraId}</Text>
-      <Text style={styles.body}>
-        目标尺寸：{config.targetResolution.width} × {config.targetResolution.height} px；目标 FPS：{config.targetFps}
-      </Text>
+    <AppCard>
+      <AppText variant="section">{messages.configTitle}</AppText>
+      <AppText tone="secondary">{messages.configDescription}</AppText>
+      <AppText tone="secondary" variant="caption">{messages.cameraId}：{config.cameraId}</AppText>
+      <AppText tone="secondary" variant="caption">
+        {messages.targetSize}：{config.targetResolution.width} × {config.targetResolution.height} px；{messages.targetFpsLabel}：{config.targetFps}
+      </AppText>
 
-      <View style={styles.group}>
-        <Text style={styles.subtitle}>曝光与 AE</Text>
+      <EditorGroup>
+        <AppText variant="label">{messages.exposureAndAe}</AppText>
         <ActionButton
-          label={`自动曝光 · ${CAPABILITY_STATUS[modeStatus(capabilities.exposureModes, 'auto')]}`}
+          label={`${messages.autoExposure} · ${messages[CAPABILITY_STATUS_KEYS[modeStatus(capabilities.exposureModes, 'auto')]]}`}
           disabled={controlsDisabled || modeStatus(capabilities.exposureModes, 'auto') !== 'supported'}
           secondary={config.exposure.mode !== 'auto'}
           onPress={() => setExposureMode('auto')}
         />
         <ActionButton
-          label={`手动曝光 · ${CAPABILITY_STATUS[modeStatus(capabilities.exposureModes, 'manual')]}`}
-          disabled={controlsDisabled || modeStatus(capabilities.exposureModes, 'manual') !== 'supported'}
+          label={`${messages.manualExposure} · ${messages[CAPABILITY_STATUS_KEYS[modeStatus(capabilities.exposureModes, 'manual')]]}`}
           secondary={config.exposure.mode !== 'manual'}
           onPress={() => setExposureMode('manual')}
         />
         {config.exposure.mode === 'auto' ? (
           <>
-            <Text style={styles.body}>
-              补偿索引：{CAPABILITY_STATUS[capabilities.exposureCompensationIndex.status]}；单位为设备 EV 步长。
-            </Text>
-            <TextInput
-              editable={!controlsDisabled}
-              accessibilityLabel="曝光补偿索引"
+            <AppText tone="secondary" variant="caption">
+              {messages.compensationIndex}：{messages[CAPABILITY_STATUS_KEYS[capabilities.exposureCompensationIndex.status]]}；{messages.deviceEvStep}
+            </AppText>
+            <AppInput
+              label={messages.compensationIndexLabel}
+              disabled={controlsDisabled}
               keyboardType="number-pad"
               value={String(config.exposure.compensationIndex ?? '')}
               onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
                 ...current,
                 exposure: { ...current.exposure, compensationIndex: parseOptionalNumber(value) },
               }))}
-              style={styles.input}
-              placeholder="曝光补偿索引"
+              placeholder={messages.compensationIndexLabel}
             />
             <ActionButton
-              label={`请求 AE 锁定：${config.exposure.locked ? '开启' : '关闭'} · ${CAPABILITY_STATUS[capabilities.aeLock.status]}`}
+              label={`${messages.aeLockRequest}：${config.exposure.locked ? messages.on : messages.off} · ${messages[CAPABILITY_STATUS_KEYS[capabilities.aeLock.status]]}`}
               disabled={controlsDisabled || (!config.exposure.locked && capabilities.aeLock.status !== 'supported')}
               secondary={!config.exposure.locked}
               onPress={() => updateAcquisitionCameraDraft((current) => ({
@@ -145,45 +155,43 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
           </>
         ) : (
           <>
-            <Text style={styles.body}>
-              曝光时间：{formatRange(capabilities.exposureTimeNanos.range, 'ns')}；ISO：{formatRange(capabilities.iso.range, 'ISO')}。
-            </Text>
-            <TextInput
-              editable={!controlsDisabled}
-              accessibilityLabel="手动曝光时间纳秒"
+            <AppText tone="secondary" variant="caption">
+              {messages.exposureTime}：{formatRange(capabilities.exposureTimeNanos.range, 'ns', messages)}；{messages.capabilityIso}：{formatRange(capabilities.iso.range, 'ISO', messages)}。
+            </AppText>
+            <AppInput
+              label={messages.manualExposureTimeLabel}
+              disabled={controlsDisabled}
               keyboardType="number-pad"
               value={String(config.exposure.timeNanos ?? '')}
               onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
                 ...current,
                 exposure: { ...current.exposure, timeNanos: parseOptionalNumber(value) },
               }))}
-              style={styles.input}
-              placeholder="曝光时间（ns）"
+              placeholder={messages.exposureTimePlaceholder}
             />
-            <TextInput
-              editable={!controlsDisabled}
-              accessibilityLabel="手动 ISO"
+            <AppInput
+              label={messages.manualIsoLabel}
+              disabled={controlsDisabled}
               keyboardType="number-pad"
               value={String(config.exposure.iso ?? '')}
               onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
                 ...current,
                 exposure: { ...current.exposure, iso: parseOptionalNumber(value) },
               }))}
-              style={styles.input}
               placeholder="ISO"
             />
           </>
         )}
-      </View>
+      </EditorGroup>
 
-      <View style={styles.group}>
-        <Text style={styles.subtitle}>白平衡与 AWB</Text>
+      <EditorGroup>
+        <AppText variant="label">{messages.whiteBalanceAndAwb}</AppText>
         {WHITE_BALANCE_MODES.map((mode) => {
           const status = modeStatus(capabilities.whiteBalanceModes, mode)
           return (
             <ActionButton
               key={mode}
-              label={`${WHITE_BALANCE_LABELS[mode]} · ${CAPABILITY_STATUS[status]}`}
+              label={`${messages[WHITE_BALANCE_MESSAGE_KEYS[mode]]} · ${messages[CAPABILITY_STATUS_KEYS[status]]}`}
               disabled={controlsDisabled || status !== 'supported'}
               secondary={config.whiteBalance.mode !== mode}
               onPress={() => updateAcquisitionCameraDraft((current) => ({
@@ -197,7 +205,7 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
           )
         })}
         <ActionButton
-          label={`请求 AWB 锁定：${config.whiteBalance.locked ? '开启' : '关闭'} · ${CAPABILITY_STATUS[capabilities.awbLock.status]}`}
+          label={`${messages.awbLockRequest}：${config.whiteBalance.locked ? messages.on : messages.off} · ${messages[CAPABILITY_STATUS_KEYS[capabilities.awbLock.status]]}`}
           disabled={controlsDisabled || config.whiteBalance.mode !== 'auto' || (!config.whiteBalance.locked && capabilities.awbLock.status !== 'supported')}
           secondary={!config.whiteBalance.locked}
           onPress={() => updateAcquisitionCameraDraft((current) => ({
@@ -205,16 +213,16 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
             whiteBalance: { ...current.whiteBalance, locked: !current.whiteBalance.locked },
           }))}
         />
-      </View>
+      </EditorGroup>
 
-      <View style={styles.group}>
-        <Text style={styles.subtitle}>对焦与 Torch</Text>
+      <EditorGroup>
+        <AppText variant="label">{messages.focusAndTorch}</AppText>
         {FOCUS_MODES.map((mode) => {
           const status = modeStatus(capabilities.focusModes, mode)
           return (
             <ActionButton
               key={mode}
-              label={`${FOCUS_LABELS[mode]} 对焦 · ${CAPABILITY_STATUS[status]}`}
+              label={`${messages[FOCUS_MESSAGE_KEYS[mode]]} · ${messages[CAPABILITY_STATUS_KEYS[status]]}`}
               disabled={controlsDisabled || status !== 'supported'}
               secondary={config.focus.mode !== mode}
               onPress={() => updateAcquisitionCameraDraft((current) => ({
@@ -231,26 +239,25 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
         })}
         {config.focus.mode === 'manual' && (
           <>
-            <Text style={styles.body}>
-              手动距离：{formatRange(capabilities.focusDistanceDiopters.range, '屈光度')}；0 表示无穷远。
-            </Text>
-            <TextInput
-              editable={!controlsDisabled}
-              accessibilityLabel="手动对焦屈光度"
+            <AppText tone="secondary" variant="caption">
+              {messages.manualDistance}：{formatRange(capabilities.focusDistanceDiopters.range, 'D', messages)}；{messages.infinityDistance}
+            </AppText>
+            <AppInput
+              label={messages.manualFocusDistanceLabel}
+              disabled={controlsDisabled}
               keyboardType="decimal-pad"
               value={String(config.focus.distanceDiopters ?? '')}
               onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
                 ...current,
                 focus: { ...current.focus, distanceDiopters: parseOptionalNumber(value) },
               }))}
-              style={styles.input}
-              placeholder="手动对焦距离（屈光度）"
+              placeholder={messages.manualFocusDistancePlaceholder}
             />
           </>
         )}
-        <Text style={styles.body}>Torch 能力：{formatBoolean(capabilities.torch)}</Text>
+        <AppText tone="secondary" variant="caption">{messages.torchCapability}：{formatBoolean(capabilities.torch, messages)}</AppText>
         <ActionButton
-          label={`Torch：${config.torchEnabled ? '开启' : '关闭'}`}
+          label={`${messages.torch}：${config.torchEnabled ? messages.on : messages.off}`}
           disabled={controlsDisabled || (!config.torchEnabled && capabilities.torch.status !== 'supported')}
           secondary={!config.torchEnabled}
           onPress={() => updateAcquisitionCameraDraft((current) => ({
@@ -258,47 +265,45 @@ export function CameraConfigurationEditor({ disabled = false }: { disabled?: boo
             torchEnabled: !current.torchEnabled,
           }))}
         />
-      </View>
+      </EditorGroup>
 
-      <View style={styles.group}>
-        <Text style={styles.subtitle}>图像分块 [rows, columns]</Text>
-        <Text style={styles.body}>
-          可用范围：最多 {query.captureOptions?.processing.maxBlockCount ?? '未知'} 块；
-          {query.captureOptions?.processing.maxRows ?? '未知'} 行 × {query.captureOptions?.processing.maxColumns ?? '未知'} 列。
-        </Text>
-        <View style={styles.inputs}>
-          <TextInput
-            editable={!controlsDisabled}
-            accessibilityLabel="分块行数"
+      <EditorGroup>
+        <AppText variant="label">{messages.processingGrid}</AppText>
+        <AppText tone="secondary" variant="caption">
+          {messages.availableRange}：{query.captureOptions?.processing.maxBlockCount ?? messages.capabilityUnknown} {messages.blocks}；
+          {query.captureOptions?.processing.maxRows ?? messages.capabilityUnknown} {messages.rows} × {query.captureOptions?.processing.maxColumns ?? messages.capabilityUnknown} {messages.columns}。
+        </AppText>
+        <EditorInputs>
+          <AppInput
+            label={messages.rowCount}
+            disabled={controlsDisabled}
             keyboardType="number-pad"
             value={String(config.processing.blocks[0] ?? '')}
             onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
               ...current,
               processing: { blocks: [parseOptionalNumber(value) ?? 0, current.processing.blocks[1] ?? 0] },
             }))}
-            style={styles.input}
-            placeholder="行数"
+            placeholder={messages.rowCountPlaceholder}
           />
-          <TextInput
-            editable={!controlsDisabled}
-            accessibilityLabel="分块列数"
+          <AppInput
+            label={messages.columnCount}
+            disabled={controlsDisabled}
             keyboardType="number-pad"
             value={String(config.processing.blocks[1] ?? '')}
             onChangeText={(value) => updateAcquisitionCameraDraft((current) => ({
               ...current,
               processing: { blocks: [current.processing.blocks[0] ?? 0, parseOptionalNumber(value) ?? 0] },
             }))}
-            style={styles.input}
-            placeholder="列数"
+            placeholder={messages.columnCountPlaceholder}
           />
-        </View>
-      </View>
-    </View>
+        </EditorInputs>
+      </EditorGroup>
+    </AppCard>
   )
 }
 
 /** 将模式数组与未知值区分为支持、未知或明确不支持。 */
-function modeStatus(capability: CameraModeCapability, mode: string): keyof typeof CAPABILITY_STATUS {
+function modeStatus(capability: CameraModeCapability, mode: string): CameraCapabilityStatus {
   if (capability.modes?.includes(mode)) return 'supported'
   if (capability.unknownModes.includes(mode)) {
     return capability.status === 'permission-required' ? 'permission-required' : 'unknown'
@@ -309,8 +314,12 @@ function modeStatus(capability: CameraModeCapability, mode: string): keyof typeo
 }
 
 /** 格式化设备报告的数值范围与单位，不填补未知边界。 */
-function formatRange(range: { minimum: number; maximum: number } | null, unit: string): string {
-  return range == null ? `未知（${unit}）` : `${range.minimum}–${range.maximum} ${unit}`
+function formatRange(
+  range: { minimum: number; maximum: number } | null,
+  unit: string,
+  messages: AcquisitionMessageValues,
+): string {
+  return range == null ? `${messages.rangeUnknown}（${unit}）` : `${range.minimum}–${range.maximum} ${unit}`
 }
 
 /** 将空输入保留为空值，其它输入转换为后续校验的数值。 */
@@ -319,25 +328,13 @@ function parseOptionalNumber(value: string): number | null {
 }
 
 /** 格式化布尔能力状态，区分 false 与未知。 */
-function formatBoolean(capability: { status: keyof typeof CAPABILITY_STATUS; value: boolean | null }): string {
-  const value = capability.value == null ? '值未知' : capability.value ? '已知支持' : '已知不支持'
-  return `${CAPABILITY_STATUS[capability.status]}：${value}`
+function formatBoolean(
+  capability: { status: CameraCapabilityStatus; value: boolean | null },
+  messages: AcquisitionMessageValues,
+): string {
+  const value = capability.value == null
+    ? messages.valueUnknown
+    : capability.value ? messages.valueSupported : messages.valueUnsupported
+  return `${messages[CAPABILITY_STATUS_KEYS[capability.status]]}：${value}`
 }
 
-const styles = StyleSheet.create({
-  card: { padding: 16, borderRadius: 12, backgroundColor: '#fff', gap: 10 },
-  title: { color: '#263238', fontSize: 17, fontWeight: '600' },
-  subtitle: { color: '#344054', fontSize: 15, fontWeight: '600' },
-  body: { color: '#52606d', fontSize: 13, lineHeight: 19 },
-  group: { gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e4e7ec', paddingTop: 10 },
-  inputs: { flexDirection: 'row', gap: 8 },
-  input: {
-    flex: 1,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: '#c7d0d9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: '#344054',
-  },
-})

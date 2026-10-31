@@ -9,7 +9,8 @@
     "plugins": [
       "expo-dev-client",
       "expo-secure-store",
-      "./plugins/with-aliyun-gradle-repositories"
+      "./plugins/with-aliyun-gradle-repositories",
+      "expo-localization"
     ],
     "android": {
       "permissions": [
@@ -36,7 +37,10 @@
               "host": "passive-capture"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "adaptiveIcon": {

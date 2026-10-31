@@ -2,6 +2,7 @@
 
 import { atom, type ReadableAtom } from 'nanostores'
 import {
+  SensorCaptureError,
   createSensorClient,
   type SensorArtifact,
   type SensorCapabilities,
@@ -59,16 +60,22 @@ const artifactsAtom = atom<Record<SensorKind, SensorArtifact[]>>({
 /** 页面只读订阅的各类型完成文件。 */
 export const sensorArtifacts: ReadableAtom<Record<SensorKind, SensorArtifact[]>> = artifactsAtom
 
-/** 保存能力查询或本地操作失败的可展示信息。 */
-const errorsAtom = atom<Record<SensorKind, string | null>>({
+/** 单类型界面错误只保留稳定错误码，不保存或回显底层消息。 */
+interface SensorScreenError {
+  /** 原生或客户端协议中的稳定错误码。 */
+  code: string
+}
+
+/** 保存能力查询或本地操作失败的稳定错误码。 */
+const errorsAtom = atom<Record<SensorKind, SensorScreenError | null>>({
   accelerometer: null,
   gyroscope: null,
   magnetometer: null,
   gravity: null,
 })
 
-/** 页面只读订阅的各类型本地错误。 */
-export const sensorErrors: ReadableAtom<Record<SensorKind, string | null>> = errorsAtom
+/** 页面只读订阅的各类型本地错误码。 */
+export const sensorErrors: ReadableAtom<Record<SensorKind, SensorScreenError | null>> = errorsAtom
 
 /** 连接页面的低频状态订阅；清理订阅不会停止采集。 */
 export function connectSensorScreen(): () => void {
@@ -90,14 +97,14 @@ export async function refreshSensorScreen(): Promise<void> {
       updateRecord(capabilitiesAtom, kind, capabilities)
       updateRecord(errorsAtom, kind, null)
     } catch (error) {
-      updateRecord(errorsAtom, kind, error instanceof Error ? error.message : '传感器操作失败。')
+      setSensorError(kind, error)
     }
 
     try {
       const artifacts = await client.listArtifacts()
       updateRecord(artifactsAtom, kind, artifacts)
     } catch (error) {
-      updateRecord(errorsAtom, kind, error instanceof Error ? error.message : '传感器操作失败。')
+      setSensorError(kind, error)
     }
   }))
 }
@@ -115,9 +122,10 @@ export async function stopSensorCapture(kind: SensorKind): Promise<void> {
   updateRecord(artifactsAtom, kind, await sensorClients[kind].listArtifacts())
 }
 
-/** 保存可展示的单类型错误，不改变其它传感器状态。 */
+/** 保存单类型稳定错误码，不改变其它传感器状态。 */
 export function setSensorError(kind: SensorKind, error: unknown): void {
-  updateRecord(errorsAtom, kind, error instanceof Error ? error.message : '传感器操作失败。')
+  const code = error instanceof SensorCaptureError ? error.code : 'SENSOR_CAPTURE_FAILED'
+  updateRecord(errorsAtom, kind, { code })
 }
 
 /** 描述按传感器类型存储的可写记录。 */

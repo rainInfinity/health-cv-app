@@ -40,8 +40,8 @@ export interface AcquisitionCameraQueryState {
   draftConfig: CameraConfig | null
   /** 是否正在等待显式授权或相机查询。 */
   isLoading: boolean
-  /** 最近一次授权或查询失败说明。 */
-  errorMessage: string | null
+  /** 最近一次授权或查询失败的稳定错误码。 */
+  errorCode: string | null
 }
 
 const cameraQueryAtom = atom<AcquisitionCameraQueryState>({
@@ -53,7 +53,7 @@ const cameraQueryAtom = atom<AcquisitionCameraQueryState>({
   captureOptionsRequest: null,
   draftConfig: null,
   isLoading: false,
-  errorMessage: null,
+  errorCode: null,
 })
 
 /** 页面只读订阅的相机查询、选择与授权状态。 */
@@ -76,7 +76,7 @@ export async function requestAcquisitionCameraPermission(): Promise<void> {
         captureOptions: null,
         captureOptionsRequest: null,
         draftConfig: null,
-        errorMessage: null,
+        errorCode: null,
       })
     }
   } catch (error) {
@@ -89,7 +89,7 @@ export async function requestAcquisitionCameraPermission(): Promise<void> {
         captureOptions: null,
         captureOptionsRequest: null,
         draftConfig: null,
-        errorMessage: readAcquisitionError(error),
+        errorCode: readAcquisitionErrorCode(error),
       })
     }
     throw error
@@ -106,7 +106,7 @@ export async function queryAcquisitionCameras(): Promise<CameraDescriptor[]> {
     captureOptionsRequest: null,
     draftConfig: null,
     isLoading: true,
-    errorMessage: null,
+    errorCode: null,
   })
   try {
     const cameras = await acquisitionClient.listCameras()
@@ -125,7 +125,7 @@ export async function queryAcquisitionCameras(): Promise<CameraDescriptor[]> {
       captureOptionsRequest: null,
       draftConfig: null,
       isLoading: false,
-      errorMessage: null,
+      errorCode: null,
     })
     return cameras
   } catch (error) {
@@ -134,7 +134,7 @@ export async function queryAcquisitionCameras(): Promise<CameraDescriptor[]> {
       cameraQueryAtom.set({
         ...current,
         isLoading: false,
-        errorMessage: readAcquisitionError(error),
+        errorCode: readAcquisitionErrorCode(error),
       })
     }
     throw error
@@ -145,7 +145,7 @@ export async function queryAcquisitionCameras(): Promise<CameraDescriptor[]> {
 export function selectAcquisitionCamera(cameraId: string): void {
   const current = cameraQueryAtom.get()
   if (!current.cameras.some((camera) => camera.cameraId === cameraId)) {
-    cameraQueryAtom.set({ ...current, errorMessage: '所选相机不在最近一次枚举结果中。' })
+    cameraQueryAtom.set({ ...current, errorCode: 'CAMERA_SELECTION_INVALID' })
     return
   }
   cameraQueryRevision += 1
@@ -157,7 +157,7 @@ export function selectAcquisitionCamera(cameraId: string): void {
     captureOptionsRequest: null,
     draftConfig: null,
     isLoading: false,
-    errorMessage: null,
+    errorCode: null,
   })
 }
 
@@ -173,7 +173,9 @@ export async function querySelectedAcquisitionCamera(
   request: CameraCaptureOptionsRequest,
 ): Promise<void> {
   const cameraId = cameraQueryAtom.get().selectedCameraId
-  if (cameraId == null) throw new Error('请先枚举并选择一个主动采集相机。')
+  if (cameraId == null) {
+    throw new AcquisitionError('CAMERA_SELECTION_REQUIRED', '请先枚举并选择一个主动采集相机。')
+  }
   const revision = ++cameraQueryRevision
   const frozenRequest: CameraCaptureOptionsRequest = {
     targetResolution: request.targetResolution == null ? null : { ...request.targetResolution },
@@ -186,7 +188,7 @@ export async function querySelectedAcquisitionCamera(
     captureOptionsRequest: null,
     draftConfig: null,
     isLoading: true,
-    errorMessage: null,
+    errorCode: null,
   })
   try {
     const [capabilities, captureOptions] = await Promise.all([
@@ -202,7 +204,7 @@ export async function querySelectedAcquisitionCamera(
       captureOptionsRequest: frozenRequest,
       draftConfig: createDefaultCameraConfig(cameraId, frozenRequest, capabilities, captureOptions),
       isLoading: false,
-      errorMessage: null,
+      errorCode: null,
     })
   } catch (error) {
     const current = cameraQueryAtom.get()
@@ -210,16 +212,19 @@ export async function querySelectedAcquisitionCamera(
       cameraQueryAtom.set({
         ...current,
         isLoading: false,
-        errorMessage: readAcquisitionError(error),
+        errorCode: readAcquisitionErrorCode(error),
       })
     }
     throw error
   }
 }
 
-/** 从授权或查询错误提取可展示信息。 */
-function readAcquisitionError(error: unknown): string {
-  return error instanceof Error ? error.message : '相机授权或查询失败。'
+/** 从授权或查询失败中提取稳定代码；没有结构化代码时返回未知分类。 */
+function readAcquisitionErrorCode(error: unknown): string {
+  if (error != null && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code
+  }
+  return 'UNKNOWN'
 }
 
 /** 根据明确支持模式和当前查询结果生成安全的初始草稿。 */
@@ -291,11 +296,14 @@ export function connectAcquisitionScreen(): () => void {
   return acquisitionClient.subscribe((snapshot) => snapshotAtom.set(snapshot))
 }
 
-/** 解除页面通知并等待相机会话完成关闭。 */
+/** 解除页面通知并仅在仍持有相机或会话时等待原生关闭。 */
 export async function closeAcquisitionScreen(unsubscribe: () => void): Promise<void> {
   unsubscribe()
   try {
-    await acquisitionClient.closeCamera()
+    const snapshot = acquisitionClient.getSnapshot()
+    if (snapshot.state !== 'closed' || snapshot.sessionId != null) {
+      await acquisitionClient.closeCamera()
+    }
   } finally {
     snapshotAtom.set(acquisitionClient.getSnapshot())
   }
