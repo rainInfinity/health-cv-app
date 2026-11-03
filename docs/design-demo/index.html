@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="心沐移动端交互设计演示，所有健康数据均为固定样例。">
+  <title>心沐 · 交互设计演示</title>
+  <link rel="icon" type="image/png" href="/brand-assets/favicon.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <aside class="demo-sidebar" aria-label="设计演示导航">
+    <a class="demo-brand" href="#desktop"><img src="/brand-assets/xinmu-logo.svg" width="36" height="36" alt="">心沐</a>
+    <h1>关心每一次心动。</h1>
+    <p>移动端交互设计演示</p>
+    <nav class="demo-routes" aria-label="全部页面"></nav>
+    <section class="demo-components" aria-labelledby="demo-components-title">
+      <h2 id="demo-components-title">组件</h2>
+      <div class="demo-component-previews">
+        <div class="demo-component-node"><button type="button" data-action="preview-sheet">弹窗</button></div>
+        <div class="demo-toast-previews">
+          <div class="demo-toast-label">Toast</div>
+          <div class="demo-toast-states" role="group" aria-label="Toast 状态预览"></div>
+        </div>
+      </div>
+    </section>
+  </aside>
+  <div class="demo-stage">
+    <div class="demo-mobile-label">设计演示 · 所有读数均为样例</div>
+    <div class="device" aria-label="心沐手机界面">
+      <div id="app" class="device-screen"></div>
+      <div id="sheet-overlay" hidden>
+        <dialog id="sheet" aria-labelledby="sheet-title"><div class="sheet-header"><h2 id="sheet-title"></h2><button type="button" class="sheet-close" aria-label="关闭弹层">×</button></div><div id="sheet-content"></div></dialog>
+      </div>
+      <div id="toast" class="toast" hidden>
+        <span class="toast-icon" aria-hidden="true"></span>
+        <span class="toast-message" role="status" aria-live="polite" aria-atomic="true"></span>
+        <button type="button" class="toast-close" data-action="close-toast" aria-label="关闭提示">×</button>
+      </div>
+    </div>
+    <button type="button" class="demo-reset" data-action="reset-demo">重置演示</button>
+  </div>
+  <noscript>此交互演示需要启用 JavaScript。</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
