@@ -25,6 +25,8 @@ pnpm android:release
 
 脚本先运行采集包的 Nitrogen 代码生成，再执行 Gradle `assembleRelease`。若 `apps/native/android` 尚未生成，先执行 `pnpm expo prebuild --platform android`。APK 输出到 `apps/native/android/app/build/outputs/apk/release/app-release.apk`。
 
+Release bundle 任务会跟踪 `.env`、`.env.local`、`.env.production`、`.env.production.local`；脚本清除 Gradle 子进程的 `CI` 并使用一次性 Gradle daemon，确保环境文件变更时 Expo 重新生成并内联配置。修改环境文件后重新运行此命令。
+
 当前 release variant 使用 `debug.keystore` 签名，适合内部安装测试，不是正式发布签名包。
 
 ## Nitrogen 生成目录
@@ -370,3 +372,35 @@ pnpm --filter @health-cv-app/acquisition run nitrogen
 两项类型检查与 Nitro 绑定生成成功；Gradle 输出 `BUILD SUCCESSFUL`，共 491 项任务（67 executed、424 up-to-date）。
 
 本次 AVD 使用 `emulator-5554`、Android 17／API 37。`run:android` 的 APK 构建成功，但 Expo CLI 自动解析 development-client deep link 失败；通过 `adb shell monkey -p com.healthcvapp.mobile 1` 手动打开已安装应用后，传感器页正常加载并完成实际采集。模拟器传感器输入、CSV 读取及各会话数据行数见传感器协议文档；这只验证 Android Emulator 的系统回调，不代表实体设备传感器。
+
+## 原生产品页与冷启动最终验收（2026-11-03）
+
+验证设备仍为 `Pixel_5` AVD（`emulator-5554`，Android 17／API 37／arm64），包名保持 `com.healthcvapp.mobile`。本次使用内部 Release variant，执行命令（工作目录 `apps/native/android`）：
+
+```sh
+EXPO_PUBLIC_API_BASE_URL=https://test-backend.myhealthyclub.com EXPO_PUBLIC_CHANNEL=android-cn ./gradlew :app:assembleRelease
+adb -s emulator-5554 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
+```
+
+Gradle 命令退出码为 0，APK 安装成功。冷启动验收使用 Android 次级用户隔离首次引导状态，未清除主用户应用数据；验收后移除该测试用户并恢复当前源码构建的 Development Build。主用户既有 PPG、传感器和被动视频文件均未删除。Release 与 Debug 均使用本地 `debug.keystore` 签名，因此安装替换时保留应用数据；该签名仅供内部测试。
+
+用户资料测试使用测试服务 `https://test-backend.myhealthyclub.com`、渠道 `android-cn`；注册账号保留事实见[认证会话记录](./native-auth-session.md)，不在此重复账号凭据。桌面显示名称“心沐”、图标及原生产品页路径均在安装后的 AVD 检查；截图证据见[前端开发验收](./frontend-development.md)。
+
+冷启动深链回归：次级用户首次引导未完成时，`am start -a android.intent.action.VIEW -d healthcvapp://passive-capture` 返回 `LaunchState: COLD`；静态品牌开屏后进入“被动录像”，显示“未启用”。Android 返回键回到“验证入口”；再次普通冷启动回到首次引导第 1 步。深链没有完成引导或启动服务，也没有生成新视频。此路径在独立 Release variant 验收；Expo Development Client 的冷启动会先进入开发启动器，连接 Metro 后原 URL 丢失，不能用来代替 Release 冷启动结论。运行中暖启动深链及主动相机离页收尾另按产品路径检查。
+
+Android API 37 的相机、运行时通知权限、应用通知总开关和被动通知渠道操作与回页刷新见前端验收记录。通知请求只触发通知系统权限，不申请相机、不启用被动采集；进入权限页只读系统状态。主动相机和传感器采集仅验证 Goldfish AVD 生命周期、页面切换和文件收尾；被动服务取消后未生成新视频，既有文件保留。
+
+以上只证明 Pixel_5 AVD 上的原生 UI、权限和导航行为。虚拟相机／传感器不是人体或实体设备输入；不据此宣称生理测量有效、实体机厂商兼容或长期后台录像通过。Release APK 的 Activity 启动耗时不等同于应用可见品牌开屏的两秒时长；开屏可见计时和后台暂停边界由 `startup-flow.test.cjs` 的确定性时钟测试覆盖。
+
+### Development Build 开屏与前后台实测（2026-11-03）
+
+在保留 user0 应用数据的 Pixel_5 AVD（Android 17／API 37）中，通过 `adb shell am force-stop` 后 `adb shell monkey -p com.healthcvapp.mobile 1` 普通冷启动；主机单调时钟记录到首次采样品牌页约 4.8 秒、首次采样首页约 7.18 秒，两次采样相差约 2.38 秒。该采样差包含 ADB 截屏轮询和帧调度，不作为精确页面时长；Development Build 的命令到品牌页耗时也不代表 Release Activity 启动时间。模拟器只观察到一段静态品牌页后进入首页。
+
+品牌页可见约 0.8 秒后按 Home，后台停留约 2.5 秒再恢复：恢复后的首帧仍为原品牌页，约 1 秒后进入首页，没有重播或重复入栈。`startup-flow.test.cjs` 的确定性时钟用例另验证前台累计恰为 2,000 ms、后台暂停和单次推进；这与系统 Activity 启动耗时分开计算。
+
+### Release 开屏 Demo 对齐验收（2026-11-03）
+
+在 Pixel_5 AVD（`emulator-5556`，Android 17／API 37／arm64，1080×2340、440 dpi）使用 `pnpm --filter @health-cv-app/native android:release` 构建 Release；通过 `adb -s emulator-5556 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk` 覆盖安装，未清除应用数据。预构建资源确认原生底色为 `#FFFFFF`，`splash-bridge.png` 使用 180 dp 图宽，图形完整位于 Android 192 dp 系统安全圆内；品牌页及 Demo 的标志均为 144 dp。
+
+从桌面冷启动并连续采样：完整品牌页稳定显示，约两秒后进入已有游客首页；采样帧未见 Logo 裁切、空白页或原生／React 标志叠影。底部 Tab 点击仅切换页面和选中颜色，没有按压波纹；主页卡片阴影收紧到 Demo 的轮廓。将 Android 原生退出时长设为 0 后复测，没有额外等待。该结果仅覆盖 Pixel_5 AVD，不代表实体设备或 iOS。
+

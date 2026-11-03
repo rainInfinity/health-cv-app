@@ -4,7 +4,7 @@
 
 应用只在同时提供 `EXPO_PUBLIC_API_BASE_URL` 和 `EXPO_PUBLIC_CHANNEL` 时组装云端服务。服务地址是不含 `/api/v1` 的 HTTP(S) 根地址；渠道是普通渠道，不能为 `manager`。配置不从系统语言、时区或设备型号推断。模板位于 `apps/native/.env.template`；本机可在 `apps/native/.env` 覆盖配置，该文件已忽略，不要把账号、密码或令牌放入 Expo 公开环境变量。
 
-缺少任一配置时，`App.tsx` 仍显示 `Hello World`，不会创建默认 API 客户端，也不会猜测要恢复哪个作用域。显式配置存在时，`apps/native/index.ts` 在注册根组件前导入 `src/app/bootstrap.ts`；该模块创建唯一的云端客户端、SecureStore 凭据适配器、认证管理器和 QueryClient，并启动一次会话恢复，因此不依赖 React 页面挂载。
+缺少任一配置时，应用仍可浏览原生产品页，但不会创建默认 API 客户端，也不会猜测要恢复哪个作用域。显式配置存在时，`apps/native/index.ts` 在注册根组件前导入 `src/app/bootstrap.ts`；该模块创建唯一的云端客户端、SecureStore 凭据适配器、认证管理器和 QueryClient，并启动一次会话恢复，因此不依赖 React 页面挂载。
 
 ## 认证状态和凭据
 
@@ -26,7 +26,14 @@ QueryClient 对查询和变更都关闭通用自动重试，不安装缓存持�
 
 注册、登录、刷新和登出直接消费 SDK 结果，不进入通用 `QueryCache` 或 `MutationCache`。资料 PATCH 只提交明确字段，成功后以服务端返回的完整资料替换当前代次资料缓存。退出/换账号仅清除匹配的受保护查询与变更，不删除其他服务、渠道、代次或非认证偏好。
 
-当前 `App.tsx` 保留 Hello World 基线页面；此变更提供依赖组装与资源配置，不新增登录页、资料页、任务页、离线资料或任务轮询。
+产品页直接消费这一认证状态：仅 `authenticated` 展示固定本地 mock；`anonymous`、`restoring`、`unavailable` 不展示 mock 健康读数。mock 不进入 Query Cache 或持久化，注册、登录、登出仍复用现有 auth 模块与服务端请求。
+
+## Pixel_5 AVD 认证界面验收（2026-11-02）
+
+- 服务端为 `https://test-backend.myhealthyclub.com`，渠道为 `android-cn`。测试账号 `hcv-native-20261102-81446f5351` 已在测试服务注册并保留；本文不记录密码或令牌。
+- 在原生界面实际完成注册后回到登录页并预填用户名、登录后进入“我的”、错误凭据和用户名冲突反馈、断网失败、已登录会话重启恢复，以及退出后回到游客空态。认证切换后已打开的健康详情同步清空，不再展示登录态 mock。
+- 产品健康卡片只在 `authenticated` 显示固定本地 mock；游客、恢复中和不可确认状态均不冒充登录或呈现测量数据。该 mock 不是测试账号的真实健康资料，也不进入服务端缓存或本地持久化。
+- UI 验收只检查表单和状态转换；未将密码、令牌或健康读数写入文档、截图或日志。
 
 ## 本地行为检查
 

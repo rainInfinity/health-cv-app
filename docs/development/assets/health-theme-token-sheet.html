@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>心沐 · 主题令牌总览</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#F8F8F8;color:#262626;font:16px/1.6 -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif}.sheet{width:1440px;padding:60px 64px 44px;margin:auto}header{margin-bottom:28px}.eyebrow{color:#087D83;font-size:16px;font-weight:600}h1{font-size:38px;line-height:1.3;margin:12px 0}h2{font-size:22px;line-height:1.4;margin:0 0 8px}h3{font-size:16px;margin:0 0 4px}p{margin:0;color:#595959}.stripe{height:5px;border-radius:9999px;margin-top:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.panel{padding:28px;border:1px solid #E6E6E6;border-radius:22px;background:white;min-width:0}.wide{grid-column:1/-1}.swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}.swatch{border:1px solid #E6E6E6;border-radius:12px;overflow:hidden}.swatch i{display:block;height:52px}.swatch div{padding:10px 12px;font-size:13px}.swatch b{display:block;font-size:14px}code{font:12px/1.5 ui-monospace,Menlo,monospace;color:#595959}.note{padding:12px 16px;background:#E5F7F6;border-radius:12px;font-size:13px;margin-top:20px}.feedbacks{display:grid;gap:10px;margin-top:20px}.toast{display:flex;align-items:center;gap:14px;min-height:58px;padding:12px 16px;border:1px solid #E6E6E6;border-radius:22px;background:#FFF}.toast svg{width:28px;height:28px;flex-shrink:0}.toast span{flex:1}.toast small{color:#666;font-size:12px}.status-list{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}.status{border:1px solid #E6E6E6;border-radius:12px;padding:14px}.status strong{display:block;font-size:15px}.status strong::before{content:'●';margin-right:8px}.backgrounds{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}.scene{padding:24px;border-radius:22px;min-height:230px;display:grid;align-content:start;gap:16px}.scene .sample-card{border-radius:22px;padding:20px;font-size:14px}.sample-button{padding:10px 20px;text-align:center;border-radius:9999px;color:white;margin-top:16px;font-weight:500}.metrics{display:grid;gap:12px;margin-top:20px}.metric{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #F0F0F0;padding-bottom:8px}.metric span:last-child{font-size:12px;color:#666}.radii{display:flex;align-items:center;gap:12px;margin:22px 0}.radius{flex:1;padding:18px 8px;text-align:center;background:#E5F7F6;border:1px solid #0AB6C040;color:#087D83;font-size:13px}.details{font-size:14px;margin-top:16px}.details p+p{margin-top:8px}footer{margin-top:24px;color:#666;font-size:13px;display:flex;justify-content:space-between;gap:24px}
+</style>
+</head>
+<body>
+<main class="sheet">
+<header><div class="eyebrow">心沐 · 浅色主题 / 设计令牌</div><h1>柔和渐变，清晰反馈。</h1><p>以当前健康页与功能页为基准。品牌、装饰、操作反馈与健康评估各有边界。</p><div class="stripe"></div></header>
+<div class="grid">
+<section class="panel"><h2>品牌与装饰色</h2><p>装饰颜色不与生理领域强制绑定，也不随健康读数变色。</p><div class="swatches" id="palette"></div><div class="note">深青用于链接与选中态；亮玫红、青绿和柔蓝用于图形与插画。文字使用中性色。</div></section>
+<section class="panel"><h2>操作反馈 · 白色表面</h2><p>通过面性图标与状态文字区分，不借用健康评估色。</p><div class="feedbacks" id="feedbacks"></div><div class="note">Toast 位于手机顶部。加载持续到替换或关闭，其他提示 3.5 秒后消失。</div></section>
+<section class="panel wide"><h2>页面背景与卡片表面</h2><p>渐变配方包含颜色、透明度、位置与半径；透明度只施加在表面，不降低正文或插画的不透明度。</p><div class="backgrounds"><div class="scene" id="home-scene"><h3>健康页 · 四层径向渐变</h3><div class="sample-card" id="health-card">健康主卡 · 白色 → 浅青绿<div class="sample-button">品牌渐变 · 主要操作</div></div></div><div class="scene" id="functions-scene"><h3>功能页 · 三层径向渐变</h3><div class="sample-card" id="function-card">功能卡 · 白色 84% → 白色 76% → 浅青绿 76%<p style="margin-top:12px">白色浮层与半透明内容表面分别定义，不统一透明化。</p></div></div></div><div class="note">主按钮沿用 105° 青绿渐变与白字，保留已确认视觉，但不宣称满足 WCAG AA 文字对比度。</div></section>
+<section class="panel"><h2>文字角色</h2><p>系统字体、系统字号缩放；重点数字采用等宽数字。</p><div class="metrics" id="typography"></div></section>
+<section class="panel"><h2>空间、形状与层级</h2><p id="spacing"></p><div class="radii" id="radii"></div><div class="details"><p>卡片、弹窗、Toast：22 dp；输入框：8 dp；按钮：胶囊形。</p><p>页面横向：24 dp，窄屏 16 dp；指标卡：16 dp，紧凑 14 dp；首页底部：20 dp，窄屏 12 dp。</p><p>卡片阴影：右下 2 / 4，模糊 12，透明度 6.5%；浮层：0 / 8，模糊 28，透明度 12%。Android 分别映射 elevation 1 / 4。</p><p>操作图标采用线性风格，状态及业务图形允许面性；原生触控目标至少 48 dp。</p><p id="motion"></p></div></section>
+<section class="panel wide"><h2>健康评估 · 独立语义</h2><p>仅展示服务端或明确规则已确认的评估结果；不从图标颜色或原始读数自行推断。指标数值默认中性文字。</p><div class="status-list" id="statuses"></div></section>
+</div>
+<footer><span>来源：apps/native/src/shared/theme/theme.ts · Web 阴影映射</span><span>浅色主题 · 不包含医学阈值与诊断规则</span></footer>
+</main>
+<script type="module">
+/** 将原生主题配方转换为 Web 预览，所有颜色来自实时导出的主题数据。 */
+const theme = await fetch('/theme.json').then((response) => { if (!response.ok) throw new Error('主题数据不可用'); return response.json(); });
+const { colors, gradients, backgrounds } = theme;
+const linear = (recipe) => `linear-gradient(${recipe.angle}deg, ${recipe.colors.map((color, index) => `${color} ${recipe.locations[index] * 100}%`).join(', ')})`;
+const background = (recipe) => recipe.layers.map((layer) => `radial-gradient(ellipse ${layer.radius.x}px ${layer.radius.y}px at ${layer.center.x * 100}% ${layer.center.y * 100}%, ${layer.color}, transparent)`).concat(recipe.base).join(', ');
+document.querySelector('.stripe').style.background = linear(gradients.button);
+const palette = [['品牌青', colors.brand.primary], ['品牌薄荷', colors.brand.gradient.end], ['深青操作', colors.brand.action], ['亮玫红装饰', colors.accent.rose], ['柔和玫红装饰', colors.accent.roseMuted], ['柔和蓝装饰', colors.accent.blue]];
+document.querySelector('#palette').innerHTML = palette.map(([label, color]) => `<div class="swatch"><i style="background:${color}"></i><div><b>${label}</b><code>${color}</code></div></div>`).join('');
+const icons = { success: '<circle cx="12" cy="12" r="10"/><path d="m7.5 12 3 3 6-6" fill="none" stroke="white" stroke-width="2"/>', error: '<circle cx="12" cy="12" r="10"/><path d="m8.5 8.5 7 7m0-7-7 7" fill="none" stroke="white" stroke-width="2"/>', loading: '<path d="M12 2a10 10 0 1 1-10 10h4a6 6 0 1 0 6-6Z"/>', information: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="7.5" r="1.2" fill="white"/><path d="M12 11v6" stroke="white" stroke-width="2"/>' };
+const labels = { success: '成功', error: '错误', loading: '加载中', information: '信息' };
+document.querySelector('#feedbacks').innerHTML = Object.entries(colors.feedback).map(([key, color]) => `<div class="toast"><svg viewBox="0 0 24 24" fill="${color}">${icons[key]}</svg><span>${labels[key]} <small>${key}</small></span><code>${color}</code></div>`).join('');
+document.querySelector('#home-scene').style.background = background(backgrounds.home);
+document.querySelector('#functions-scene').style.background = background(backgrounds.functions);
+document.querySelector('#health-card').style.background = linear(gradients.healthCard);
+document.querySelector('#function-card').style.background = linear(gradients.functionCard);
+document.querySelectorAll('.sample-card').forEach((element) => element.style.boxShadow = theme.surfaceElevation.raised.boxShadow);
+document.querySelector('.sample-button').style.background = linear(gradients.button);
+const textLabels = { pageTitle: '页面标题', sectionTitle: '区块标题', body: '正文内容', label: '标签文字', caption: '辅助说明', metric: '72 次/分' };
+document.querySelector('#typography').innerHTML = Object.entries(theme.typography.roles).map(([key, role]) => `<div class="metric"><span style="font-size:${role.fontSize}px;line-height:${role.lineHeight}px;font-weight:${role.fontWeight};font-variant-numeric:tabular-nums">${textLabels[key]}</span><span>${role.fontSize} / ${role.lineHeight} · ${role.fontWeight}</span></div>`).join('');
+document.querySelector('#spacing').textContent = `通用刻度：${Object.values(theme.spacing).join(' · ')} dp`;
+document.querySelector('#radii').innerHTML = Object.entries(theme.radius).map(([name, value]) => `<div class="radius" style="border-radius:${value}px">${name}<br>${value === 9999 ? '胶囊' : `${value} dp`}</div>`).join('');
+document.querySelector('#motion').textContent = `动效：${theme.motion.fast} / ${theme.motion.standard} / ${theme.motion.overlay} ms；加载旋转 ${theme.motion.loadingCycle} ms，遵循减少动态效果设置。`;
+const healthLabels = { unknown: '未评估 / 无数据', pending: '正在评估', inRange: '目标范围', attention: '需要关注', outOfRange: '超出范围 / 风险偏高', critical: '严重状态' };
+document.querySelector('#statuses').innerHTML = Object.entries(colors.status).map(([key, color]) => `<div class="status"><strong style="color:${color}">${healthLabels[key]}</strong><code>${key} · ${color}</code></div>`).join('');
+document.body.dataset.ready = 'true';
+</script>
+</body>
+</html>

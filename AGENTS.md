@@ -39,7 +39,7 @@
 ### TypeScript 与组件组织
 
 - TypeScript 项目应将各自的 `src` 根目录映射为 `@/`；配置时同步更新 TypeScript 与实际构建、运行工具。引用 `src` 内跨目录模块时优先使用 `@/`，避免层级较深的相对路径；同目录引用可使用相对路径。
-- React 组件按组件名建立同名目录；以 `index.ts` 作为组件对外入口，组件实现放在 `.tsx` 文件中，`styles.ts` 集中定义该组件的 styled-components 样式。
+- React 组件按组件名建立同名目录；以 `index.ts` 作为组件对外入口，组件实现放在同级的 `xxx.tsx` 文件中，`styles.ts` 集中定义该组件的 styled-components 样式。
 
 ### 注释
 
