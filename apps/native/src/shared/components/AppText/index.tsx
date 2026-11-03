@@ -1,6 +1,6 @@
-/** 按应用浅色主题提供可缩放的通用文字层级。 */
+/** 结合应用文字 token 与系统字号缩放提供通用文字层级。 */
 
-import type { TextProps } from 'react-native'
+import { useWindowDimensions, type TextProps } from 'react-native'
 
 import { TextElement } from './styles'
 import type { AppTextTone, AppTextVariant } from './styles'
@@ -15,7 +15,8 @@ export interface AppTextProps extends TextProps {
   tone?: AppTextTone
 }
 
-/** 渲染遵循主题字号、行高和系统字号缩放的文本。 */
+/** 按系统字号同步缩放行高，并提供可换行的通用文字层级。 */
 export function AppText({ variant = 'body', tone = 'primary', ...textProps }: AppTextProps) {
-  return <TextElement $variant={variant} $tone={tone} {...textProps} />
+  const { fontScale } = useWindowDimensions()
+  return <TextElement $variant={variant} $tone={tone} $fontScale={fontScale} {...textProps} />
 }

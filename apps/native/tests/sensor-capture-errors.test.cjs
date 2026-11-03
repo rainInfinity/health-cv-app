@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const errorLocalization = import('../src/features/sensors/sensorErrorLocalization.ts');
+const errorLocalization = import('../src/pages/dev/sensors/sensorErrorLocalization.ts');
 
 test('未知错误码只显示安全通用提示，已知错误码使用本地化类别', async () => {
   const { localizeSensorCaptureError } = await errorLocalization;

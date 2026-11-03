@@ -18,5 +18,15 @@ export const languagePreference = persistentAtom<LanguagePreference>(
     encode: (value: LanguagePreference) => value,
   },
 )
+/** 设备级引导完成标记；退出账号不清除该偏好。 */
+export const onboardingCompleted = persistentAtom<boolean>(
+  'app.onboarding-completed',
+  false,
+  {
+    listen: false,
+    decode: (value: string) => value === 'true',
+    encode: (value: boolean) => String(value),
+  },
+)
 
 export type { LanguagePreference } from './types'

@@ -1,9 +1,10 @@
 /** 定义共享操作按钮的主题化样式组件。 */
 
 import styled from 'styled-components/native'
+import Svg from 'react-native-svg'
 
 /** 按钮交互表面及其禁用、次要语义。 */
-export const ButtonRoot = styled.Pressable<{ $disabled: boolean; $secondary: boolean }>`
+export const ButtonRoot = styled.Pressable<{ $disabled: boolean; $secondary: boolean; $danger: boolean }>`
   width: 100%;
   min-height: ${({ theme }) => theme.icon.touchTarget}px;
   flex-direction: row;
@@ -17,14 +18,24 @@ export const ButtonRoot = styled.Pressable<{ $disabled: boolean; $secondary: boo
       : $secondary
         ? theme.roles.button.secondary.border
         : 'transparent'};
-  border-radius: ${({ theme }) => theme.radius.md}px;
-  background-color: ${({ theme, $disabled, $secondary }) =>
+  border-radius: ${({ theme }) => theme.radius.pill}px;
+  overflow: hidden;
+  background-color: ${({ theme, $disabled, $secondary, $danger }) =>
     $disabled
       ? theme.roles.button.disabled.background
       : $secondary
         ? theme.roles.button.secondary.background
-        : theme.roles.button.primary.background};
+        : $danger
+          ? theme.roles.button.danger.background
+          : theme.roles.button.primary.background};
   opacity: ${({ $disabled }) => ($disabled ? 0.72 : 1)};
+`
+
+/** 将品牌渐变铺满按钮，尺寸由布局提供，且不拦截触控。 */
+export const ButtonGradient = styled(Svg)`
+  position: absolute;
+  top: 0;
+  left: 0;
 `
 
 /** 让按钮文字、装饰图标和加载反馈按需换行并保持居中。 */
@@ -38,14 +49,16 @@ export const ButtonContent = styled.View`
 `
 
 /** 显示可缩放且可换行的按钮名称。 */
-export const ButtonLabel = styled.Text<{ $disabled: boolean; $secondary: boolean }>`
+export const ButtonLabel = styled.Text<{ $disabled: boolean; $secondary: boolean; $danger: boolean }>`
   flex-shrink: 1;
-  color: ${({ theme, $disabled, $secondary }) =>
+  color: ${({ theme, $disabled, $secondary, $danger }) =>
     $disabled
       ? theme.roles.button.disabled.foreground
       : $secondary
         ? theme.roles.button.secondary.foreground
-        : theme.roles.button.primary.foreground};
+        : $danger
+          ? theme.roles.button.danger.foreground
+          : theme.roles.button.primary.foreground};
   font-size: ${({ theme }) => theme.typography.size.md}px;
   line-height: ${({ theme }) => theme.typography.lineHeight.md}px;
   font-weight: ${({ theme }) => theme.typography.weight.semibold};

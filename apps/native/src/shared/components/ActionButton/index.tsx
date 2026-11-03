@@ -1,10 +1,11 @@
 /** 提供具备触控、按压、禁用、加载和无障碍反馈的共享操作按钮。 */
 
-import type { ReactNode } from 'react'
-import { ActivityIndicator, type PressableProps } from 'react-native'
-import styled, { useTheme } from 'styled-components/native'
+import { useId, useState, type ReactNode } from 'react'
+import { ActivityIndicator, type LayoutChangeEvent, type PressableProps } from 'react-native'
+import { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
+import { useTheme } from 'styled-components/native'
 
-import { ButtonContent, ButtonLabel, ButtonRoot, IconSlot } from './styles'
+import { ButtonContent, ButtonGradient, ButtonLabel, ButtonRoot, IconSlot } from './styles'
 
 /** 描述共享按钮的语义、加载状态和图标内容。 */
 export interface ActionButtonProps extends Omit<PressableProps, 'children' | 'disabled' | 'onPress' | 'style'> {
@@ -14,6 +15,8 @@ export interface ActionButtonProps extends Omit<PressableProps, 'children' | 'di
   disabled?: boolean
   /** 使用白色表面和品牌边界的次要按钮样式。 */
   secondary?: boolean
+  /** 使用危险操作渐变样式。 */
+  danger?: boolean
   /** 显示处理中反馈并阻止重复按压。 */
   loading?: boolean
   /** 与可见文本配合显示的装饰图标。 */
@@ -33,6 +36,7 @@ export function ActionButton({
   label,
   disabled = false,
   secondary = false,
+  danger = false,
   loading = false,
   icon,
   iconPosition = 'leading',
@@ -42,12 +46,28 @@ export function ActionButton({
   ...pressableProps
 }: ActionButtonProps) {
   const theme = useTheme()
+  const gradientId = useId()
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  const recipe = danger ? theme.roles.button.danger.gradient : theme.roles.button.primary.gradient
+  const radians = recipe.angle * Math.PI / 180
+  const dx = Math.sin(radians)
+  const dy = -Math.cos(radians)
+  const length = Math.abs(size.width * dx) + Math.abs(size.height * dy)
+
+  /** 尺寸变化时更新渐变端点，使多行按钮仍保持指定角度。 */
+  function onLayout(event: LayoutChangeEvent) {
+    const { width, height } = event.nativeEvent.layout
+    setSize((previous) => previous.width === width && previous.height === height ? previous : { width, height })
+    pressableProps.onLayout?.(event)
+  }
   const unavailable = disabled || loading
   const color = secondary
     ? theme.roles.button.secondary.foreground
     : unavailable
       ? theme.roles.button.disabled.foreground
-      : theme.roles.button.primary.foreground
+      : danger
+        ? theme.roles.button.danger.foreground
+        : theme.roles.button.primary.foreground
   const iconContent = icon == null ? null : (
     <IconSlot accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {icon}
@@ -59,32 +79,69 @@ export function ActionButton({
       {...pressableProps}
       $disabled={unavailable}
       $secondary={secondary}
+      $danger={danger}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: unavailable, busy: loading }}
       disabled={unavailable}
       onPress={onPress}
+      onLayout={onLayout}
       style={({ pressed }) => pressed && !unavailable
-        ? { backgroundColor: secondary ? theme.colors.brand.subtle : theme.roles.button.primary.pressed }
+        ? {
+            backgroundColor: secondary
+              ? theme.colors.brand.subtle
+              : danger
+                ? theme.roles.button.danger.background
+                : theme.roles.button.primary.pressed,
+          }
         : undefined}
     >
-      <ButtonContent>
-        {loading && (
-          <ActivityIndicator
-            accessible={false}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            color={color}
-            size="small"
-          />
-        )}
-        {iconPosition === 'leading' && iconContent}
-        <ButtonLabel $disabled={unavailable} $secondary={secondary}>
-          {label}
-        </ButtonLabel>
-        {iconPosition === 'trailing' && iconContent}
-      </ButtonContent>
+      {({ pressed }) => (
+        <>
+          {!secondary && !unavailable && size.width > 0 && size.height > 0 && (
+            <ButtonGradient
+              width={size.width}
+              height={size.height}
+              viewBox={`0 0 ${size.width} ${size.height}`}
+              pointerEvents="none"
+              opacity={pressed ? 0.78 : 1}
+            >
+              <Defs>
+                <LinearGradient
+                  id={gradientId}
+                  gradientUnits="userSpaceOnUse"
+                  x1={(size.width - dx * length) / 2}
+                  y1={(size.height - dy * length) / 2}
+                  x2={(size.width + dx * length) / 2}
+                  y2={(size.height + dy * length) / 2}
+                >
+                  {recipe.colors.map((stopColor, index) => (
+                    <Stop key={index} offset={recipe.locations[index]} stopColor={stopColor} />
+                  ))}
+                </LinearGradient>
+              </Defs>
+              <Rect width={size.width} height={size.height} fill={`url(#${gradientId})`} />
+            </ButtonGradient>
+          )}
+          <ButtonContent>
+            {loading && (
+              <ActivityIndicator
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                color={color}
+                size="small"
+              />
+            )}
+            {iconPosition === 'leading' && iconContent}
+            <ButtonLabel $disabled={unavailable} $secondary={secondary} $danger={danger}>
+              {label}
+            </ButtonLabel>
+            {iconPosition === 'trailing' && iconContent}
+          </ButtonContent>
+        </>
+      )}
     </ButtonRoot>
   )
 }

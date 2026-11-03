@@ -8,7 +8,7 @@ import { useTheme } from 'styled-components/native'
 import { AppText } from '@/shared/components/AppText'
 import { FeedbackSurface, IconSlot, TextGroup } from './styles'
 
-/** 描述操作反馈的中性语义类型。 */
+/** 描述操作反馈的语义类型，与健康评估结果相互独立。 */
 export type StatusFeedbackTone = 'info' | 'pending' | 'success' | 'error'
 
 /** 描述反馈标题、说明及可选的业务图标。 */
@@ -39,11 +39,7 @@ export function StatusFeedback({
       : tone === 'success'
         ? CircleCheck
         : Info
-  const iconColor = tone === 'error'
-    ? theme.roles.error.icon
-    : tone === 'info'
-      ? theme.colors.text.secondary
-      : theme.colors.brand.action
+  const iconColor = theme.colors.feedback[tone === 'pending' ? 'loading' : tone === 'info' ? 'information' : tone]
 
   return (
     <FeedbackSurface

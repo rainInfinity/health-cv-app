@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">心沐</title>
+  <desc id="desc">圆润心形与内部柔波，内外两层水意环左右分段，内环更细淡且与外环留有空隙。</desc>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0AB6C0"/><stop offset="1" stop-color="#2BC7A0"/></linearGradient>
+    <mask id="heart" maskUnits="userSpaceOnUse" x="0" y="0" width="160" height="160">
+      <path fill="white" d="M72 134C56 122 20 98 17 65C15 43 29 28 47 28C61 28 67 36 75 43Q80 48 85 43C93 36 99 28 113 28C131 28 145 43 143 65C140 98 104 122 88 134Q80 142 72 134Z"/>
+      <path d="M39 79C52 65 62 65 75 79S99 93 121 70" fill="none" stroke="black" stroke-width="11" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g fill="url(#brand)">
+    <path mask="url(#heart)" d="M0 0H160V160H0Z"/>
+    <g opacity=".62">
+      <path d="M65 145C40 145 17 139 17 131C17 125 28 122 39 122C24 126 25 131 37 135C45 139 56 143 65 145Z"/>
+      <path d="M95 145C120 145 143 139 143 131C143 125 132 122 121 122C136 126 135 131 123 135C115 139 104 143 95 145Z"/>
+    </g>
+    <g opacity=".44">
+      <path d="M44 124C35 126 39 130 60 136C45 134 33 130 35 127C36 125 40 124 44 124Z"/>
+      <path d="M116 124C125 126 121 130 100 136C115 134 127 130 125 127C124 125 120 124 116 124Z"/>
+    </g>
+  </g>
+</svg>

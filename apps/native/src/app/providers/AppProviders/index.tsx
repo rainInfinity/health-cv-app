@@ -5,10 +5,11 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { ThemeProvider } from 'styled-components/native'
 
+import { FeedbackHost } from '@/shared/components/FeedbackHost'
+import { lightTheme } from '@/shared/theme/theme'
 import { appServices } from '@/app/bootstrap'
 import type { AppServices } from '@/app/bootstrap'
 import { installAppLifecycle } from '@/app/lifecycle/appLifecycle'
-import { lightTheme } from '@/shared/theme/theme'
 
 /** 描述根 Providers 的 React 子树。 */
 export interface AppProvidersProps {
@@ -28,7 +29,9 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <SafeAreaProvider>
       <ThemeProvider theme={lightTheme}>
-        <AppServicesContext.Provider value={appServices}>{content}</AppServicesContext.Provider>
+        <AppServicesContext.Provider value={appServices}>
+          <FeedbackHost>{content}</FeedbackHost>
+        </AppServicesContext.Provider>
       </ThemeProvider>
     </SafeAreaProvider>
   )

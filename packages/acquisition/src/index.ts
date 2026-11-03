@@ -62,6 +62,8 @@ export type {
 export type {
   PassiveCaptureArtifact,
   PassiveCaptureConfig,
+  PassiveCaptureNotificationChannelState,
+  PassiveCaptureNotificationSettings,
   PassiveCaptureSnapshot,
   PassiveCaptureState,
 } from './native/PassiveCapture.nitro'

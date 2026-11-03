@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "health-cv-app",
+    "name": "心沐",
     "slug": "health-cv-app",
     "version": "1.0.0",
     "newArchEnabled": true,
@@ -10,7 +10,16 @@
       "expo-dev-client",
       "expo-secure-store",
       "./plugins/with-aliyun-gradle-repositories",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-bridge.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
     ],
     "android": {
       "permissions": [

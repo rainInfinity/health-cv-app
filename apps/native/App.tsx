@@ -3,6 +3,9 @@
 import { AppProviders } from '@/app/providers/AppProviders'
 import { RootNavigator } from '@/app/navigation/RootNavigator'
 import { StatusBar } from 'expo-status-bar'
+import * as SplashScreen from 'expo-splash-screen'
+
+void SplashScreen.preventAutoHideAsync().catch(() => undefined)
 
 /** 保持本地入口可用，并由原生导航栈管理页面与返回路径。 */
 export default function App() {

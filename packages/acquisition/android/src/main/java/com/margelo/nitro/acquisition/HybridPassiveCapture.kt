@@ -5,12 +5,18 @@ package com.margelo.nitro.acquisition
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
 import com.healthcvapp.acquisition.passive.runtime.PassiveCaptureRuntimes
+import com.healthcvapp.acquisition.passive.service.PassiveCaptureNotifications
 
 /** 暴露被动服务控制、真实快照、低频状态与持久视频查询。 */
 class HybridPassiveCapture : HybridPassiveCaptureSpec() {
-  private val runtime = PassiveCaptureRuntimes.get(
-    checkNotNull(NitroModules.applicationContext) { "Nitro Application Context is unavailable" }.applicationContext,
-  )
+  private val context = checkNotNull(NitroModules.applicationContext) {
+    "Nitro Application Context is unavailable"
+  }.applicationContext
+  private val runtime = PassiveCaptureRuntimes.get(context)
+
+  /** 查询通知系统状态，不创建渠道或启用被动服务。 */
+  override fun getNotificationSettings(): PassiveCaptureNotificationSettings =
+    PassiveCaptureNotifications.settingsSnapshot(context)
 
   /** 返回原生服务快照，不根据保存的用户偏好推断运行状态。 */
   override fun getSnapshot(): PassiveCaptureSnapshot = runtime.getSnapshot()

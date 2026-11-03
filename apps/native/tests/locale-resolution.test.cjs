@@ -1,4 +1,4 @@
-// 验证语言选择优先级、系统语言族顺序与安全回退。
+// 验证通用语言解析工具及当前版本的固定中文行为。
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
@@ -6,6 +6,9 @@ const test = require('node:test');
 const {
   resolveLocale,
 } = require('../node_modules/.cache/native-test/app/i18n/resolveLocale.js');
+const {
+  currentLocale,
+} = require('../node_modules/.cache/native-test/app/i18n/locale.js');
 const {
   createPersistentStorageEngine,
 } = require('../node_modules/.cache/native-test/app/storage/persistentEngine.js');
@@ -59,6 +62,29 @@ test('首选语言不支持时继续查找后续设备语言', () => {
 test('设备语言列表没有受支持语言时回退简体中文', () => {
   assert.equal(resolveLocale('system', [deviceLocale('fr-FR'), deviceLocale('de-DE')]), 'zh-CN');
   assert.equal(resolveLocale('system', []), 'zh-CN');
+});
+
+test('当前应用有效语言固定为简体中文', () => {
+  assert.equal(currentLocale.get(), 'zh-CN');
+});
+
+test('旧版英语和跟随系统偏好仍保留但不改变当前中文界面', async () => {
+  const { persistentAtom, setPersistentEngine } = await import('@nanostores/persistent');
+  const values = new Map();
+  setPersistentEngine(
+    createPersistentStorageEngine(createStorage(values), persistentEvents),
+    persistentEvents,
+  );
+  const preference = persistentAtom('test.legacy-language-preference', 'zh-CN', { listen: false });
+
+  preference.set('en-US');
+  assert.equal(preference.get(), 'en-US');
+  assert.equal(currentLocale.get(), 'zh-CN');
+
+  preference.set('system');
+  assert.equal(preference.get(), 'system');
+  assert.equal(values.get('test.legacy-language-preference'), 'system');
+  assert.equal(currentLocale.get(), 'zh-CN');
 });
 
 test('系统语言刷新更新派生 locale，但持久选择仍为 system', async () => {

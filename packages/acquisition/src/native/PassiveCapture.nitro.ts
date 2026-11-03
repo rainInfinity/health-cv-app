@@ -59,9 +59,23 @@ export interface PassiveCaptureCommandResult {
   errorMessage: string | null
 }
 
+/** 通知渠道查询值；missing 表示用户尚未启用相关服务而渠道未创建。 */
+export type PassiveCaptureNotificationChannelState = 'enabled' | 'disabled' | 'missing'
+
+/** Android 被动通知设置的只读系统快照，不会创建渠道或启用服务。 */
+export interface PassiveCaptureNotificationSettings {
+  /** 应用级通知总开关是否允许通知。 */
+  appNotificationsEnabled: boolean
+  /** 既有被动通知渠道是否创建及启用。 */
+  channelState: PassiveCaptureNotificationChannelState
+}
+
 /** 控制独立被动服务并查询完成视频的 Android 原生对象。 */
 export interface PassiveCapture extends HybridObject<{ android: 'kotlin' }> {
+  /** 查询被动服务的真实状态，不根据保存配置推断运行中。 */
   getSnapshot(): PassiveCaptureSnapshot
+  /** 查询系统通知开关与既有渠道，不创建渠道或启动服务。 */
+  getNotificationSettings(): PassiveCaptureNotificationSettings
   setConfig(config: PassiveCaptureConfig): Promise<PassiveCaptureCommandResult>
   enable(): Promise<PassiveCaptureCommandResult>
   disable(): Promise<PassiveCaptureCommandResult>

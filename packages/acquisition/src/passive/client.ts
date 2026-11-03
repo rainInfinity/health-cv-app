@@ -7,6 +7,7 @@ import type {
   PassiveCapture,
   PassiveCaptureArtifact,
   PassiveCaptureConfig,
+  PassiveCaptureNotificationSettings,
   PassiveCaptureSnapshot,
 } from '../native/PassiveCapture.nitro'
 
@@ -30,6 +31,11 @@ export class PassiveCaptureClient {
   /** 读取原生服务的真实状态，不根据配置推断服务正在运行。 */
   getSnapshot(): PassiveCaptureSnapshot {
     return this.native.getSnapshot()
+  }
+  /** 查询应用通知开关和已存在的被动渠道，不启用服务或创建渠道。 */
+  getNotificationSettings(): PassiveCaptureNotificationSettings {
+    this.ensureAndroid()
+    return this.native.getNotificationSettings()
   }
 
   /** 保存未启用时生效的周期和目标时长配置。 */

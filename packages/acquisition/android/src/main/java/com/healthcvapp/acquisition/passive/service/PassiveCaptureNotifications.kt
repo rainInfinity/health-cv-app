@@ -15,6 +15,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.margelo.nitro.acquisition.PassiveCaptureNotificationChannelState
+import com.margelo.nitro.acquisition.PassiveCaptureNotificationSettings
 import com.margelo.nitro.acquisition.PassiveCaptureState
 
 /** 维护同一条等待／录像通知及其原生关闭操作。 */
@@ -43,6 +45,24 @@ internal object PassiveCaptureNotifications {
       lockscreenVisibility = Notification.VISIBILITY_PRIVATE
     }
     manager.createNotificationChannel(channel)
+  }
+
+  /** 读取通知总开关及既有渠道，不创建通知渠道或启动被动服务。 */
+  fun settingsSnapshot(context: Context): PassiveCaptureNotificationSettings {
+    val channelState = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+      PassiveCaptureNotificationChannelState.MISSING
+    } else {
+      val channel = context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_ID)
+      when {
+        channel == null -> PassiveCaptureNotificationChannelState.MISSING
+        channel.importance == NotificationManager.IMPORTANCE_NONE -> PassiveCaptureNotificationChannelState.DISABLED
+        else -> PassiveCaptureNotificationChannelState.ENABLED
+      }
+    }
+    return PassiveCaptureNotificationSettings(
+      appNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+      channelState = channelState,
+    )
   }
 
   /** 返回权限、应用通知或安静渠道不可用的具体原因。 */

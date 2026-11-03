@@ -6,6 +6,7 @@
     "resolveJsonModule": true,
     "module": "CommonJS",
     "moduleResolution": "Node10",
+    "jsx": "react-jsx",
     "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -16,5 +17,24 @@
     "outDir": "./node_modules/.cache/native-test",
     "rootDir": "./src"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/app/navigation/acquisitionLeaveGuard.ts",
+    "src/app/lifecycle/appStateEvents.ts",
+    "src/app/lifecycle/queryLifecycle.ts",
+    "src/app/query/client.ts",
+    "src/app/query/keys.ts",
+    "src/app/query/resources.ts",
+    "src/app/auth/session.ts",
+    "src/app/auth/credentials.ts",
+    "src/app/auth/scope.ts",
+    "src/app/i18n/resolveLocale.ts",
+    "src/app/i18n/locale.ts",
+    "src/app/i18n/localeState.ts",
+    "src/app/storage/persistentEngine.ts",
+    "src/app/permissions/permissionServiceCore.ts",
+    "src/app/preferences/types.ts",
+    "src/app/startup/startupFlow.ts",
+    "src/pages/home/healthPresentation.ts",
+    "src/shared/components/FeedbackHost/toastLifecycle.ts"
+  ]
 }

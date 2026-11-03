@@ -1,14 +1,10 @@
-/** 从持久语言选择与当前系统语言列表派生最终界面语言。 */
+/** 固定当前版本有效语言，旧偏好与系统语言不再切换本版界面。 */
 
-import { getLocales } from 'expo-localization'
-import { subscribeToAppForeground } from '../lifecycle/foreground'
-import { languagePreference } from '../preferences'
-import { createLocaleState } from './localeState'
+import { atom, readonlyType } from 'nanostores'
 
-const localeState = createLocaleState(languagePreference, getLocales)
+import type { AppLocale } from './resolveLocale'
 
-/** 当前界面语言；不独立写入，始终由偏好和设备语言列表计算。 */
-export const currentLocale = localeState.currentLocale
+const publishedLocale = atom<AppLocale>('zh-CN')
 
-subscribeToAppForeground(localeState.refreshSystemLocales)
-
+/** 本版唯一开放的界面语言；通用偏好解析工具仍独立保留。 */
+export const currentLocale = readonlyType(publishedLocale)

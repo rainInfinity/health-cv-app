@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1170" height="2532" viewBox="0 0 390 844" role="img" aria-labelledby="title description" preserveAspectRatio="xMidYMid slice">
+  <title id="title">心沐品牌页启动图</title>
+  <desc id="description">按设计 Demo 排版的心沐品牌页：右上青色和左下薄荷色柔光、144 像素标志、居中字标与 Slogan、底部说明。</desc>
+  <defs>
+    <radialGradient id="welcome-teal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(358.8 0 0 776.48 390 0)">
+      <stop offset="0" stop-color="#0AB6C0" stop-opacity="0.102"/>
+      <stop offset="1" stop-color="#0AB6C0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="welcome-mint" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(358.8 0 0 776.48 0 844)">
+      <stop offset="0" stop-color="#2BC7A0" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#2BC7A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="xinmu-brand" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0AB6C0"/>
+      <stop offset="1" stop-color="#2BC7A0"/>
+    </linearGradient>
+    <mask id="xinmu-heart" maskUnits="userSpaceOnUse" x="0" y="0" width="160" height="160">
+      <path fill="white" d="M72 134C56 122 20 98 17 65C15 43 29 28 47 28C61 28 67 36 75 43Q80 48 85 43C93 36 99 28 113 28C131 28 145 43 143 65C140 98 104 122 88 134Q80 142 72 134Z"/>
+      <path d="M39 79C52 65 62 65 75 79S99 93 121 70" fill="none" stroke="black" stroke-width="11" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <rect width="390" height="844" fill="#FFFFFF"/>
+  <ellipse cx="390" cy="0" rx="358.8" ry="776.48" fill="url(#welcome-teal)"/>
+  <ellipse cx="0" cy="844" rx="358.8" ry="776.48" fill="url(#welcome-mint)"/>
+  <g transform="translate(123 318) scale(0.9)" fill="url(#xinmu-brand)">
+    <path mask="url(#xinmu-heart)" d="M0 0H160V160H0Z"/>
+    <g opacity="0.62">
+      <path d="M65 145C40 145 17 139 17 131C17 125 28 122 39 122C24 126 25 131 37 135C45 139 56 143 65 145Z"/>
+      <path d="M95 145C120 145 143 139 143 131C143 125 132 122 121 122C136 126 135 131 123 135C115 139 104 143 95 145Z"/>
+    </g>
+    <g opacity="0.44">
+      <path d="M44 124C35 126 39 130 60 136C45 134 33 130 35 127C36 125 40 124 44 124Z"/>
+      <path d="M116 124C125 126 121 130 100 136C115 134 127 130 125 127C124 125 120 124 116 124Z"/>
+    </g>
+  </g>
+  <g fill="#262626" font-family="-apple-system, system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif" text-anchor="middle">
+    <text x="195" y="518" font-size="36" font-weight="600" letter-spacing="6">心沐</text>
+    <text x="195" y="560" fill="#595959" font-size="16" letter-spacing="1">关心每一次心动。</text>
+    <text x="195" y="806" fill="#666666" font-size="12">日常健康，从了解自己开始</text>
+  </g>
+</svg>
