@@ -35,6 +35,8 @@
     "src/app/preferences/types.ts",
     "src/app/startup/startupFlow.ts",
     "src/pages/home/healthPresentation.ts",
+    "src/pages/user/authFormErrors.ts",
+    "src/pages/user/signOutFeedback.ts",
     "src/shared/components/FeedbackHost/toastLifecycle.ts"
   ]
 }

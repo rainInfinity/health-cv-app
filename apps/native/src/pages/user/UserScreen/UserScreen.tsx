@@ -1,7 +1,8 @@
 /** 展示单一认证状态、账户操作与未开放功能入口。 */
 
+import { useRef, useState } from 'react'
 import { useStore } from '@nanostores/react'
-import { Bell, ChevronRight, CircleQuestionMark, FileText, ShieldCheck, SlidersHorizontal, UserRound } from 'lucide-react-native'
+import { Bell, ChevronRight, CircleQuestionMark, FileText, ShieldCheck, SlidersHorizontal, UserRound } from '@/shared/graphics'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
@@ -11,6 +12,7 @@ import { useAuthState } from '@/app/auth/useAuthState'
 import { useAppServices } from '@/app/providers/AppProviders'
 import type { RootStackParamList } from '@/app/navigation/types'
 import { authMessages } from '@/pages/user/authMessages'
+import { classifySignOutResult } from '@/pages/user/signOutFeedback'
 import { userMessages } from '@/pages/user/userMessages'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
 import { useFeedback } from '@/shared/components/FeedbackHost'
@@ -40,7 +42,9 @@ export function UserScreen() {
   const messages = useStore(userMessages)
   const authCopy = useStore(authMessages)
   const sharedCopy = useStore(feedbackMessages)
-  const { showModal, showToast } = useFeedback()
+  const { showModal, showToast, replaceToast } = useFeedback()
+  const [signingOut, setSigningOut] = useState(false)
+  const signOutLock = useRef(false)
   const isAuthenticated = authState.status === 'authenticated'
   const isRestoring = authState.status === 'restoring'
   const statusTitle = isAuthenticated ? authState.username : messages.guestName
@@ -58,18 +62,31 @@ export function UserScreen() {
 
   /** 退出本地会话并按实际远端撤销结果给出提示。 */
   async function signOut(): Promise<void> {
-    if (services == null) return
+    if (services == null || signOutLock.current) return
+    signOutLock.current = true
+    setSigningOut(true)
+    const toastId = showToast({
+      tone: 'loading',
+      message: authCopy.logoutProgressToast,
+      dismissible: false,
+    })
     try {
       const result = await services.auth.signOut()
-      if (result.credentialDeletion === 'failed') {
-        showToast({ tone: 'error', message: authCopy.logoutStorageFailed })
-      } else if (result.remoteRevocation === 'unconfirmed') {
-        showToast({ tone: 'error', message: authCopy.logoutRemoteUnconfirmed })
-      } else {
-        showToast({ tone: 'success', message: authCopy.logoutSuccess })
-      }
+      const messageKey = classifySignOutResult(result)
+      replaceToast(toastId, {
+        tone: messageKey === 'logoutSuccess' ? 'success' : 'error',
+        message: authCopy[messageKey],
+        dismissible: false,
+      })
     } catch {
-      showToast({ tone: 'error', message: authCopy.signOutError })
+      replaceToast(toastId, {
+        tone: 'error',
+        message: authCopy.signOutError,
+        dismissible: false,
+      })
+    } finally {
+      signOutLock.current = false
+      setSigningOut(false)
     }
   }
 
@@ -150,10 +167,12 @@ export function UserScreen() {
           identityContent
         ) : (
           <Pressable
+            disabled={signingOut}
             onPress={() => navigation.navigate('Login')}
             accessibilityRole="button"
             accessibilityLabel={messages.login}
             accessibilityHint={authCopy.switchToRegister}
+            accessibilityState={{ disabled: signingOut }}
           >
             {identityContent}
           </Pressable>
@@ -205,7 +224,15 @@ export function UserScreen() {
         <AppText variant="caption" tone="secondary">{messages.dataPrivacy}</AppText>
       </PrivacyFootnote>
       <AccountAction>
-        {isAuthenticated ? (
+        {signingOut ? (
+          <ActionButton
+            danger
+            label={authCopy.logoutProgressButton}
+            loading
+            disabled
+            onPress={confirmSignOut}
+          />
+        ) : isAuthenticated ? (
           <ActionButton danger label={messages.signOut} onPress={confirmSignOut} />
         ) : (
           <ActionButton label={messages.login} onPress={() => navigation.navigate('Login')} />

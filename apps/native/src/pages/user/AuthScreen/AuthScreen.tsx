@@ -1,8 +1,8 @@
-/** 使用唯一认证服务完成登录或注册并就地显示字段错误。 */
+/** 展示认证表单本地校验，并通过全局反馈呈现请求过程与结果。 */
 
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@nanostores/react'
-import { ArrowLeft, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react-native'
+import { ArrowLeft, ArrowRight, Eye, EyeOff, ShieldCheck, XinmuLogo } from '@/shared/graphics'
 import { View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
@@ -18,8 +18,6 @@ import { AppCard } from '@/shared/components/AppCard'
 import { AppInput } from '@/shared/components/AppInput'
 import { AppText } from '@/shared/components/AppText'
 import { PageContainer } from '@/shared/components/PageContainer'
-import { StatusFeedback } from '@/shared/components/StatusFeedback'
-import { XinmuLogo } from '@/shared/components/XinmuLogo'
 
 import {
   AuthAlternate,
@@ -44,13 +42,13 @@ export interface AuthScreenProps {
   initialUsername?: string
 }
 
-/** 渲染经真实认证服务提交的单一登录或注册表单。 */
+/** 渲染登录或注册表单，并将请求反馈保留在根级 Toast 中。 */
 export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
   const theme = useTheme()
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const services = useAppServices()
   const messages = useStore(authMessages)
-  const { showToast } = useFeedback()
+  const { showToast, replaceToast } = useFeedback()
   const isRegister = mode === 'register'
   const [username, setUsername] = useState(initialUsername)
   const [password, setPassword] = useState('')
@@ -61,8 +59,21 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
   const [usernameError, setUsernameError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [confirmationError, setConfirmationError] = useState<string | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
   const submitLock = useRef(false)
+  const mountedRef = useRef(true)
+  const focusGeneration = useRef(0)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  useEffect(
+    () => navigation.addListener('blur', () => {
+      focusGeneration.current += 1
+    }),
+    [navigation],
+  )
   useEffect(() => {
     if (mode !== 'login' || initialUsername == null) return
     setUsername(initialUsername)
@@ -70,15 +81,12 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
     setPasswordVisible(false)
     setUsernameError(null)
     setPasswordError(null)
-    setFormError(null)
   }, [initialUsername, mode])
-
   /** 检查仅由界面负责的必填、长度和确认密码约束。 */
   function validate(): boolean {
     setUsernameError(null)
     setPasswordError(null)
     setConfirmationError(null)
-    setFormError(null)
     let valid = true
     if (username.trim().length === 0) {
       setUsernameError(messages.usernameRequired)
@@ -98,36 +106,62 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
     return valid
   }
 
-  /** 提交凭据时只传用户名和密码，不把确认密码交给服务端。 */
+  /** 提交凭据；迟到结果只更新自己的 Toast，不覆盖后续页面反馈。 */
   async function submit(): Promise<void> {
     if (submitLock.current || services == null || !validate()) return
     submitLock.current = true
     setSubmitting(true)
+    const operationFocusGeneration = focusGeneration.current
+    const operationToastId = showToast({
+      tone: 'loading',
+      message: isRegister ? messages.registerProgressToast : messages.loginProgressToast,
+      dismissible: false,
+    })
     try {
       if (isRegister) {
         const account = await services.auth.register({ username, password })
-        showToast({ tone: 'success', message: messages.registerSuccess })
-        navigation.popTo('Login', { username: account.username })
+        replaceToast(operationToastId, {
+          tone: 'success',
+          message: messages.registerSuccess,
+          dismissible: false,
+        })
+        if (
+          mountedRef.current
+          && focusGeneration.current === operationFocusGeneration
+          && navigation.isFocused()
+        ) {
+          navigation.popTo('Login', { username: account.username })
+        }
         return
       }
       await services.auth.signIn({ username, password })
-      showToast({ tone: 'success', message: messages.loginSuccess })
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'ProductTabs', params: { screen: 'User' } }],
+      replaceToast(operationToastId, {
+        tone: 'success',
+        message: messages.loginSuccess,
+        dismissible: false,
       })
+      if (
+        mountedRef.current
+        && focusGeneration.current === operationFocusGeneration
+        && navigation.isFocused()
+      ) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'ProductTabs', params: { screen: 'User' } }],
+        })
+      }
     } catch (error) {
-      const messageKey = classifyAuthFormError(error)
-      const message = messages[messageKey]
-      if (messageKey === 'usernameExists') setUsernameError(message)
-      else if (messageKey === 'invalidCredentials') setPasswordError(message)
-      else setFormError(message)
+      const messageKey = classifyAuthFormError(error, isRegister ? 'register' : 'login')
+      replaceToast(operationToastId, {
+        tone: 'error',
+        message: messages[messageKey],
+        dismissible: false,
+      })
     } finally {
       submitLock.current = false
-      setSubmitting(false)
+      if (mountedRef.current) setSubmitting(false)
     }
   }
-
   /** 在登录与注册模式间切换并保留用户名，不保留密码。 */
   function switchMode(): void {
     if (isRegister) {
@@ -250,10 +284,11 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
               style={{ paddingRight: theme.spacing.xxxxl }}
             />
           )}
-          {formError != null && <StatusFeedback title={formError} tone="error" />}
           <AuthSubmit $register={isRegister}>
             <ActionButton
-              label={isRegister ? messages.submitRegister : messages.submitLogin}
+              label={submitting
+                ? isRegister ? messages.registeringButton : messages.loggingInButton
+                : isRegister ? messages.submitRegister : messages.submitLogin}
               loading={submitting}
               disabled={services == null || submitting}
               icon={(

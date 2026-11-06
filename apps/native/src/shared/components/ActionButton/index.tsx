@@ -1,9 +1,10 @@
 /** 提供具备触控、按压、禁用、加载和无障碍反馈的共享操作按钮。 */
 
 import { useId, useState, type ReactNode } from 'react'
-import { ActivityIndicator, type LayoutChangeEvent, type PressableProps } from 'react-native'
+import { type LayoutChangeEvent, type PressableProps } from 'react-native'
 import { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { useTheme } from 'styled-components/native'
+import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
 
 import { ButtonContent, ButtonGradient, ButtonLabel, ButtonRoot, IconSlot } from './styles'
 
@@ -63,11 +64,13 @@ export function ActionButton({
   const unavailable = disabled || loading
   const color = secondary
     ? theme.roles.button.secondary.foreground
-    : unavailable
-      ? theme.roles.button.disabled.foreground
-      : danger
-        ? theme.roles.button.danger.foreground
-        : theme.roles.button.primary.foreground
+    : loading
+      ? danger ? theme.roles.button.danger.foreground : theme.roles.button.primary.foreground
+      : unavailable
+        ? theme.roles.button.disabled.foreground
+        : danger
+          ? theme.roles.button.danger.foreground
+          : theme.roles.button.primary.foreground
   const iconContent = icon == null ? null : (
     <IconSlot accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {icon}
@@ -77,7 +80,7 @@ export function ActionButton({
   return (
     <ButtonRoot
       {...pressableProps}
-      $disabled={unavailable}
+      $disabled={disabled && !loading}
       $secondary={secondary}
       $danger={danger}
       accessibilityRole="button"
@@ -99,13 +102,13 @@ export function ActionButton({
     >
       {({ pressed }) => (
         <>
-          {!secondary && !unavailable && size.width > 0 && size.height > 0 && (
+          {!secondary && (loading || !unavailable) && size.width > 0 && size.height > 0 && (
             <ButtonGradient
               width={size.width}
               height={size.height}
               viewBox={`0 0 ${size.width} ${size.height}`}
               pointerEvents="none"
-              opacity={pressed ? 0.78 : 1}
+              opacity={loading ? 1 : pressed ? 0.78 : 1}
             >
               <Defs>
                 <LinearGradient
@@ -126,19 +129,13 @@ export function ActionButton({
           )}
           <ButtonContent>
             {loading && (
-              <ActivityIndicator
-                accessible={false}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-                color={color}
-                size="small"
-              />
+              <LoadingIndicator color={color} size={theme.icon.compact} />
             )}
-            {iconPosition === 'leading' && iconContent}
-            <ButtonLabel $disabled={unavailable} $secondary={secondary} $danger={danger}>
+            {!loading && iconPosition === 'leading' && iconContent}
+            <ButtonLabel $disabled={disabled && !loading} $secondary={secondary} $danger={danger}>
               {label}
             </ButtonLabel>
-            {iconPosition === 'trailing' && iconContent}
+            {!loading && iconPosition === 'trailing' && iconContent}
           </ButtonContent>
         </>
       )}

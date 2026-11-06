@@ -3,8 +3,7 @@
 import { useStore } from '@nanostores/react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { Pressable } from 'react-native'
-import { Code2, House, LayoutGrid, UserRound } from 'lucide-react-native'
-import Svg, { Path } from 'react-native-svg'
+import { Code2, HistoryIcon, House, LayoutGrid, UserRound } from '@/shared/graphics'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from 'styled-components/native'
 import { requestAcquisitionLeave } from '@/app/navigation/acquisitionNavigationGuard'
@@ -100,21 +99,7 @@ export function ProductTabs() {
         component={HistoryUnavailableScreen}
         options={{
           title: labels.history,
-          tabBarIcon: ({ color, size }) => (
-            <Svg
-              width={size}
-              height={size}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={color}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              accessible={false}
-            >
-              <Path d="M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2" />
-            </Svg>
-          ),
+          tabBarIcon: ({ color, size }) => <HistoryIcon color={color} size={size} />,
         }}
       />
       <Tab.Screen

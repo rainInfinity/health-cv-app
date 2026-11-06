@@ -1,4 +1,4 @@
-/** 导出非评估性的本地功能插画。 */
+/** 导出功能插画组件及其属性类型。 */
 
 export { FeatureIllustration } from './FeatureIllustration'
 export type { FeatureIllustrationProps, FeatureIllustrationKind } from './FeatureIllustration'

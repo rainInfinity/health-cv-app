@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { ViewProps } from 'react-native'
-import { CircleAlert, CircleCheck, Info, LoaderCircle } from 'lucide-react-native'
+import { CircleAlert, CircleCheck, Info, LoaderCircle } from '@/shared/graphics'
 import { useTheme } from 'styled-components/native'
 
 import { AppText } from '@/shared/components/AppText'

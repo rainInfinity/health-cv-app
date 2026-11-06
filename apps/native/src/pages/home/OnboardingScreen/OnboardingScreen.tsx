@@ -4,21 +4,19 @@ import { useState } from 'react'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useStore } from '@nanostores/react'
-import { ArrowLeft, ArrowRight, Bell, Camera, ShieldCheck } from 'lucide-react-native'
+import { ArrowLeft, ArrowRight, Bell, Camera, FeatureIllustration, ShieldCheck, XinmuLogo } from '@/shared/graphics'
 import { useTheme } from 'styled-components/native'
 
 import { onboardingCompleted } from '@/app/preferences'
 import { recordOnboardingCompletion } from '@/app/startup/startupFlow'
 import type { RootStackParamList } from '@/app/navigation/types'
 import { startupMessages } from '@/pages/home/startupMessages'
-import { FeatureIllustration } from '@/pages/features/FeatureIllustration'
-import type { FeatureIllustrationKind } from '@/pages/features/FeatureIllustration'
+import type { FeatureIllustrationKind } from '@/shared/graphics'
 import { ActionButton } from '@/shared/components/ActionButton'
 import { AppCard } from '@/shared/components/AppCard'
 import { AppText } from '@/shared/components/AppText'
 import { PageContainer } from '@/shared/components/PageContainer'
 import { useFeedback } from '@/shared/components/FeedbackHost'
-import { XinmuLogo } from '@/shared/components/XinmuLogo'
 
 import {
   BrandMini,

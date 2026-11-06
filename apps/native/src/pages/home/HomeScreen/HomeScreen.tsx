@@ -1,7 +1,7 @@
 /** 按真实认证状态展示主页健康摘要或空态。 */
 
 import { useStore } from '@nanostores/react'
-import { ArrowRight, ChevronRight } from 'lucide-react-native'
+import { ArrowRight, ChevronRight, HealthIndicatorArtwork, XinmuLogo } from '@/shared/graphics'
 import { Pressable, useWindowDimensions, View } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
@@ -10,13 +10,11 @@ import { useTheme } from 'styled-components/native'
 import { useAuthState } from '@/app/auth/useAuthState'
 import type { HealthMetric, RootStackParamList } from '@/app/navigation/types'
 import { selectHealthPresentation } from '@/pages/home/healthPresentation'
-import { HealthIndicatorArtwork } from '@/pages/home/HealthIndicatorArtwork'
 import { homeMessages } from '@/pages/home/homeMessages'
 import { ActionButton } from '@/shared/components/ActionButton'
 import { AppCard } from '@/shared/components/AppCard'
 import { AppText } from '@/shared/components/AppText'
 import { PageContainer } from '@/shared/components/PageContainer'
-import { XinmuLogo } from '@/shared/components/XinmuLogo'
 
 import { BrandGroup, BrandTitle, Disclaimer, HomeHeader, IndicatorHeading } from './styles'
 

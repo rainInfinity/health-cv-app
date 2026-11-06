@@ -1,14 +1,13 @@
 /** 展示五项健康功能及与已确认数据对应的测量间隔。 */
 
 import { useStore } from '@nanostores/react'
-import { ChevronRight } from 'lucide-react-native'
+import { ChevronRight, FeatureIllustration } from '@/shared/graphics'
 import { Pressable, View } from 'react-native'
 import { useTheme } from 'styled-components/native'
 
 import { useAuthState } from '@/app/auth/useAuthState'
 import { getMeasurementRecency, selectHealthPresentation } from '@/pages/home/healthPresentation'
 import { featuresMessages } from '@/pages/features/featuresMessages'
-import { FeatureIllustration } from '@/pages/features/FeatureIllustration'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
 import { useFeedback } from '@/shared/components/FeedbackHost'
 import { AppCard } from '@/shared/components/AppCard'

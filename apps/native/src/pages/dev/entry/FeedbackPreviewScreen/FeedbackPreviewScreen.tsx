@@ -15,7 +15,7 @@ import { PreviewActions } from './styles'
 export function FeedbackPreviewScreen() {
   const messages = useStore(devMessages)
   const sharedMessages = useStore(feedbackMessages)
-  const { showModal, showToast } = useFeedback()
+  const { showModal, showToast, replaceToast } = useFeedback()
 
   /** 用长正文验证弹窗滚动、遮罩关闭与统一关闭按钮。 */
   const showModalPreview = () => {
@@ -25,6 +25,21 @@ export function FeedbackPreviewScreen() {
       closeLabel: sharedMessages.dismiss,
       actions: [{ label: sharedMessages.dismiss, primary: true }],
     })
+  }
+  /** 模拟不可关闭的认证过程与结果，不发起真实请求。 */
+  function showAuthFlowPreview(): void {
+    const toastId = showToast({
+      tone: 'loading',
+      message: messages.authFlowLoading,
+      dismissible: false,
+    })
+    setTimeout(() => {
+      replaceToast(toastId, {
+        tone: 'success',
+        message: messages.authFlowResult,
+        dismissible: false,
+      })
+    }, 1200)
   }
 
   return (
@@ -46,6 +61,11 @@ export function FeedbackPreviewScreen() {
           label={messages.toastLoading}
           secondary
           onPress={() => showToast({ tone: 'loading', message: messages.previewMessage })}
+        />
+        <ActionButton
+          label={messages.authFlowPreview}
+          secondary
+          onPress={showAuthFlowPreview}
         />
         <ActionButton
           label={messages.toastInformation}

@@ -27,10 +27,10 @@ const requiredKeys = {
   'pages/features': ['title', 'disclaimer', 'fingertipInstructions', 'faceInstructions', 'riskInstructions'],
   'pages/history': ['title', 'message'],
   'pages/user': ['title', 'myRecords', 'personalProfile', 'helpFeedback'],
-  'pages/auth': ['brand', 'username', 'password', 'confirmPassword', 'invalidCredentials', 'usernameExists', 'networkError'],
+  'pages/auth': ['brand', 'username', 'password', 'confirmPassword', 'invalidCredentials', 'usernameExists', 'networkError', 'loggingInButton', 'registeringButton', 'loginProgressToast', 'registerProgressToast', 'loginFailed', 'registerFailed', 'logoutProgressButton', 'logoutProgressToast'],
   'pages/permissions': ['notificationsTitle', 'privacyTitle', 'cameraPurpose', 'notificationPurpose', 'unknown'],
   'pages/startup': ['brand', 'slogan', 'stepOneTitle', 'stepTwoTitle', 'skip', 'finish', 'saveFailed'],
-  'pages/dev': ['feedback', 'modalPreviewLongMessage', 'toastSuccess', 'toastError', 'toastLoading', 'toastInformation'],
+  'pages/dev': ['feedback', 'modalPreviewLongMessage', 'toastSuccess', 'toastError', 'toastLoading', 'toastInformation', 'authFlowPreview', 'authFlowLoading', 'authFlowResult'],
   'pages/language-info': ['title', 'description', 'currentLanguage', 'simplifiedChinese', 'legacyPreference'],
   'shared/feedback': ['dismiss'],
 };

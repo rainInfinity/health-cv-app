@@ -3,7 +3,7 @@
 import { useStore } from '@nanostores/react'
 import { useNavigation, useRoute } from '@react-navigation/native'
 import type { RouteProp } from '@react-navigation/native'
-import { X } from 'lucide-react-native'
+import { X } from '@/shared/graphics'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'

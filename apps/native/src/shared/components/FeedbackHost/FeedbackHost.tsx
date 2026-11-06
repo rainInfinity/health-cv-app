@@ -2,12 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Modal, Pressable, View, useWindowDimensions } from 'react-native'
-import { CircleAlert, CircleCheck, Info, LoaderCircle, X } from 'lucide-react-native'
+import { CircleAlert, CircleCheck, Info, X } from '@/shared/graphics'
 import { useStore } from '@nanostores/react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from 'styled-components/native'
 
 import { ActionButton } from '@/shared/components/ActionButton'
+import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
 import { AppText } from '@/shared/components/AppText'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
 import {
@@ -47,7 +48,7 @@ export interface FeedbackModalOptions {
   dismissOnBackdrop?: boolean
 }
 
-/** 描述单一 Toast 状态、正文和持续时间。 */
+/** 描述单一 Toast 状态、正文、持续时间和用户关闭能力。 */
 export interface FeedbackToastOptions {
   /** 成功、错误、加载或信息状态。 */
   tone: FeedbackTone
@@ -55,12 +56,16 @@ export interface FeedbackToastOptions {
   message: string
   /** 自动关闭时间，默认 3500 毫秒；加载态始终等待显式结束。 */
   durationMs?: number
+  /** 是否允许用户关闭；默认允许，认证操作反馈显式设为 false。 */
+  dismissible?: boolean
 }
 
 /** 定义供页面使用的单一弹窗和 Toast 操作契约。 */
 interface FeedbackContextValue {
-  /** 用新 Toast 立即替换旧 Toast，并重置唯一计时器。 */
-  showToast: (options: FeedbackToastOptions) => void
+  /** 用新 Toast 立即替换旧 Toast，并返回其序号。 */
+  showToast: (options: FeedbackToastOptions) => number
+  /** 仅在预期 Toast 仍显示时替换它，避免迟到结果覆盖新反馈。 */
+  replaceToast: (expectedId: number, options: FeedbackToastOptions) => number | null
   /** 关闭当前 Toast；加载操作结束时应显式调用。 */
   dismissToast: () => void
   /** 显示单一弹窗，并替换当前弹窗。 */
@@ -88,21 +93,34 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   if (toastLifecycleRef.current == null) toastLifecycleRef.current = new SingleToastLifecycle()
   const toastLifecycle = toastLifecycleRef.current
   const nextToastId = useRef(0)
+  const activeToastId = useRef<number | null>(null)
   const [modal, setModal] = useState<FeedbackModalOptions | null>(null)
   const [toast, setToast] = useState<ActiveToast | null>(null)
-
   /** 用唯一生命周期替换 Toast，自动过期回调只能关闭自己的提示。 */
-  const showToast = useCallback((options: FeedbackToastOptions) => {
+  const showToast = useCallback((options: FeedbackToastOptions): number => {
     const id = ++nextToastId.current
+    activeToastId.current = id
     setToast({ ...options, id })
     toastLifecycle.replace(
       { id, tone: options.tone, durationMs: options.durationMs },
-      (expiredId) => setToast((current) => current?.id === expiredId ? null : current),
+      (expiredId) => {
+        if (activeToastId.current !== expiredId) return
+        activeToastId.current = null
+        setToast((current) => current?.id === expiredId ? null : current)
+      },
     )
+    return id
   }, [toastLifecycle])
+
+  /** 只替换仍为当前提示的 Toast，隔离迟到的异步结果。 */
+  const replaceToast = useCallback((expectedId: number, options: FeedbackToastOptions): number | null => {
+    if (activeToastId.current !== expectedId) return null
+    return showToast(options)
+  }, [showToast])
 
   /** 显式结束 Toast 并使已排队的旧回调失效。 */
   const dismissToast = useCallback(() => {
+    activeToastId.current = null
     toastLifecycle.dismiss()
     setToast(null)
   }, [toastLifecycle])
@@ -115,13 +133,12 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   useEffect(() => () => toastLifecycle.dispose(), [toastLifecycle])
 
   const context = useMemo(
-    () => ({ showToast, dismissToast, showModal, dismissModal }),
-    [dismissModal, dismissToast, showModal, showToast],
+    () => ({ showToast, replaceToast, dismissToast, showModal, dismissModal }),
+    [dismissModal, dismissToast, replaceToast, showModal, showToast],
   )
   const iconByTone = {
     success: CircleCheck,
     error: CircleAlert,
-    loading: LoaderCircle,
     information: Info,
   } as const
   const iconColorByTone = {
@@ -130,7 +147,6 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     loading: theme.colors.feedback.loading,
     information: theme.colors.feedback.information,
   } as const
-
   return (
     <FeedbackContext.Provider value={context}>
       {children}
@@ -204,7 +220,7 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
         </Modal>
       )}
       {toast != null && (() => {
-        const Icon = iconByTone[toast.tone]
+        const Icon = toast.tone === 'loading' ? null : iconByTone[toast.tone]
         return (
           <View
             pointerEvents="box-none"
@@ -212,26 +228,38 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
           >
             <ToastSurface
               accessibilityRole={toast.tone === 'error' ? 'alert' : undefined}
+              accessibilityState={{ busy: toast.tone === 'loading' }}
               style={theme.surfaceElevation.overlay}
               accessibilityLiveRegion={toast.tone === 'error' ? 'assertive' : 'polite'}
             >
-              <Icon
-                size={theme.icon.default}
-                color={iconColorByTone[toast.tone]}
-                accessible={false}
-              />
+              {toast.tone === 'loading'
+                ? (
+                    <LoadingIndicator
+                      color={iconColorByTone.loading}
+                      size={theme.icon.default}
+                    />
+                  )
+                : Icon != null && (
+                    <Icon
+                      size={theme.icon.default}
+                      color={iconColorByTone[toast.tone]}
+                      accessible={false}
+                    />
+                  )}
               <ToastCopy>
                 <AppText>{toast.message}</AppText>
               </ToastCopy>
-              <Pressable
-                onPress={dismissToast}
-                accessibilityRole="button"
-                accessibilityLabel={sharedMessages.dismiss}
-                hitSlop={8}
-                style={{ minWidth: theme.icon.touchTarget, minHeight: theme.icon.touchTarget, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <X size={theme.icon.compact} color={theme.colors.text.secondary} />
-              </Pressable>
+              {toast.dismissible !== false && (
+                <Pressable
+                  onPress={dismissToast}
+                  accessibilityRole="button"
+                  accessibilityLabel={sharedMessages.dismiss}
+                  hitSlop={8}
+                  style={{ minWidth: theme.icon.touchTarget, minHeight: theme.icon.touchTarget, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={theme.icon.compact} color={theme.colors.text.secondary} />
+                </Pressable>
+              )}
             </ToastSurface>
           </View>
         )

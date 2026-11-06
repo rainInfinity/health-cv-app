@@ -13,7 +13,7 @@ import { StartupDelay, resolveStartupDestination } from '@/app/startup/startupFl
 import type { RootStackParamList } from '@/app/navigation/types'
 import { startupMessages } from '@/pages/home/startupMessages'
 import { PageContainer } from '@/shared/components/PageContainer'
-import { XinmuLogo } from '@/shared/components/XinmuLogo'
+import { XinmuLogo } from '@/shared/graphics'
 
 import {
   SplashArt,
