@@ -284,6 +284,7 @@ button:active:not(:disabled) { opacity: .78; }
 .password-toggle { position: absolute; right: 2px; top: 2px; height: 48px; width: 48px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--secondary); }
 .password-toggle .icon { width: 20px; height: 20px; }
 .auth-primary { margin-top: 24px; }
+.auth-primary[aria-busy=true], .account-action[aria-busy=true] { opacity: 1; cursor: wait; }
 .auth-alternate { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 16px; font-size: 14px; line-height: 20px; color: var(--secondary); }
 .auth-alternate button { border: 0; background: transparent; font-size: 14px; font-weight: 500; color: var(--action); min-height: 48px; padding: 0 4px; }
 .auth-footnote { display: flex; align-items: center; justify-content: center; text-align: center; gap: 8px; font-size: 12px; line-height: 20px; color: var(--muted); margin: 24px 8px 0; }
@@ -427,7 +428,7 @@ button:active:not(:disabled) { opacity: .78; }
   }
   button, a { transition: opacity 120ms ease, background-color 120ms ease; }
   .toast { animation: toast-appear 120ms ease-out; }
-  .toast[data-status=loading] .toast-icon .icon { animation: toast-spin 900ms linear infinite; }
+  .toast[data-status=loading] .toast-icon .icon, .button-spinner { animation: toast-spin 900ms linear infinite; }
   @keyframes toast-spin { to { transform: rotate(360deg); } }
   @keyframes toast-appear { from { opacity: 0; } to { opacity: 1; } }
 }

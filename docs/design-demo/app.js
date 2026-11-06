@@ -16,6 +16,7 @@ let lastFocus;
 let sheetAnimation;
 let sheetClosing = false;
 let registeredNames = new Set();
+let pendingAuthAction;
 
 /** 标签页内的演示状态，刷新即清除；没有真实认证含义。 */
 const state = {
@@ -85,6 +86,33 @@ function closeToast() {
   toastElement.hidden = true;
 }
 
+/** 恢复操作按钮；切页时取消尚未完成的演示，避免旧计时修改新页面。 */
+function cancelAuthAction() {
+  if (!pendingAuthAction) return;
+  const { timer, button, content } = pendingAuthAction;
+  clearTimeout(timer);
+  button.innerHTML = content;
+  button.disabled = false;
+  button.removeAttribute('aria-busy');
+  pendingAuthAction = undefined;
+  closeToast();
+}
+
+/** 按钮与 Toast 同步展示一秒加载，仅模拟本地账户操作的等待反馈。 */
+function startAuthAction(button, label, message, complete) {
+  if (pendingAuthAction) return;
+  const content = button.innerHTML;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.innerHTML = `<svg class="icon button-spinner" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${toastStates.loading.path}</svg><span>${label}</span>`;
+  toast(message, 'loading');
+  const timer = setTimeout(() => {
+    cancelAuthAction();
+    complete();
+  }, 1000);
+  pendingAuthAction = { timer, button, content };
+}
+
 /** 在手机区域内打开弹层，禁用背景页面并保留焦点返回位置。 */
 function openSheet(title, html) {
   if (!sheet.open) lastFocus = document.activeElement;
@@ -133,6 +161,7 @@ function navigate(route) {
 
 /** 基础页面与每页导航均由同一路由源生成。 */
 function render() {
+  cancelAuthAction();
   closeSheet();
   const requested = location.hash.slice(1);
   const preview = Object.hasOwn(stateViews, requested) ? stateViews[requested] : null;
@@ -373,7 +402,9 @@ function onClick(event) {
   if (['settings', 'notifications', 'privacy-settings'].includes(action)) return settings(action);
   if (action === 'language') return openSheet('语言', '<p>当前语言：简体中文。</p><p>本次设计 Demo 不包含英文翻译，正式 App 的语言能力不在此演示中模拟。</p>');
   if (action === 'feedback') return openSheet('帮助与反馈', `<p>Demo 数据不是真实健康结果。可以点击指标卡查看说明，或在历史中筛选样例。</p><form data-form="feedback"><label class="sheet-field">演示反馈<textarea name="feedback" maxlength="1000" placeholder="记录你的设计意见（不上传）" required>${escapeHtml(state.feedback)}</textarea></label><button class="cta" type="submit">暂存当前标签页</button></form>`);
-  if (action === 'logout-demo') { state.user = ''; navigate('account'); toast('已退出演示账户', 'success'); return; }
+  if (action === 'logout-demo') return startAuthAction(control, '退出中…', '正在退出登录…', () => {
+    state.user = ''; navigate('account'); toast('已退出演示账户', 'success');
+  });
   if (action === 'reset-demo') return openSheet('重置演示', '<p>清除当前标签页中的演示账户、资料、偏好和筛选条件。不会影响真实 App 或本地采集文件。</p><button type="button" class="cta" data-action="confirm-reset">确认重置</button>');
   if (action === 'confirm-reset') {
     state.user = ''; state.pendingUsername = ''; state.profile = initialProfile();
@@ -385,6 +416,7 @@ function onClick(event) {
 
 /** 本地认证演示只验证输入完整性；不替代真实服务端的密码检查。 */
 function submitAuth(form, mode) {
+  if (pendingAuthAction) return;
   const username = form.querySelector(`#${mode}-username`);
   const password = form.querySelector(`#${mode}-password`);
   const error = form.querySelector('.auth-error');
@@ -403,13 +435,16 @@ function submitAuth(form, mode) {
     invalidInput.setAttribute('aria-describedby', error.id);
     invalidInput.focus(); return;
   }
-  if (mode === 'register') {
-    registeredNames.add(name); state.pendingUsername = name;
-    form.reset(); navigate('login'); toast('演示注册完成，请登录；未创建真实账号', 'success');
-  } else {
-    state.user = name; state.pendingUsername = name;
-    form.reset(); navigate('account'); toast('已进入演示账户，非真实登录', 'success');
-  }
+  error.hidden = true;
+  startAuthAction(form.querySelector('[type="submit"]'), mode === 'register' ? '注册中…' : '登录中…', mode === 'register' ? '正在注册…' : '正在登录…', () => {
+    if (mode === 'register') {
+      registeredNames.add(name); state.pendingUsername = name;
+      form.reset(); navigate('login'); toast('演示注册完成，请登录；未创建真实账号', 'success');
+    } else {
+      state.user = name; state.pendingUsername = name;
+      form.reset(); navigate('account'); toast('已进入演示账户，非真实登录', 'success');
+    }
+  });
 }
 
 /** 表单提交仅修改演示状态，不发送网络请求。 */
