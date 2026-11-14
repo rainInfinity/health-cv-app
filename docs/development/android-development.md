@@ -1,406 +1,246 @@
-# Android 开发与验证
+# Android 开发手册
 
-## 首次构建与安装
+## 工具与工程前提
 
-在仓库根目录按锁文件安装依赖，然后在 `apps/native` 生成 Android CNG 宿主并构建、安装 development build：
+- 使用 Node.js 24、仓库指定的 `pnpm@11.22.0`、JDK 17，以及 Android Studio／SDK Command-line Tools、Platform Tools、Emulator。配置 `JAVA_HOME`、`ANDROID_HOME`；若同时设置 `ANDROID_SDK_ROOT`，应指向同一 SDK。将 `platform-tools` 和 `emulator` 加入 `PATH`。
+- 安装生成宿主所需的 Android SDK Platform、Build Tools、NDK／CMake，具体版本以 Expo／React Native 的 Gradle 配置为准，不用全局 Gradle 替代工程 wrapper。
+- 真机开启 USB 调试并确认授权；模拟器先在 Device Manager 创建并启动 AVD。用 `adb devices -l` 确认目标为 `device`，多设备时为 ADB 命令加 `-s <device-serial>`。
+- 原生采集必须使用 development build 或内部 Release，不能使用 Expo Go。Debug development build 需要 Metro；Release 包含 JS bundle，不依赖 Metro。
+- 精确依赖版本以 `pnpm-lock.yaml` 为准。升级 Expo／React Native 时同时检查 `pnpm-workspace.yaml` 的固定版本补丁；不能只按 CLI 推荐修改一个 patch 版本。`styled-components/native` 还直接依赖 `css-to-react-native`，缺失会使 Metro 打包失败。
+
+## CNG、Nitrogen 与构建
+
+### 首次 Dev 构建
+
+在仓库根目录执行：
 
 ```sh
-# 仓库根目录
 pnpm install --frozen-lockfile
-
-# apps/native
-pnpm expo prebuild --platform android --clean
-pnpm android
+pnpm --dir apps/native exec expo prebuild --platform android
+pnpm --filter @health-cv-app/native run android
 ```
 
-`prebuild --clean` 会删除并重建生成的 `apps/native/android`。`pnpm android` 会先生成采集包的 Nitrogen 绑定，再调用 Expo `run:android`；该命令使用已启动的 Android 模拟器或已连接设备。原生宿主配置应维护在 `app.json` 和 Expo config plugin 中，不要把生成目录里的手工改动当作唯一配置来源。
+`android` 脚本先生成采集包 Nitrogen 绑定，再调用 Expo `run:android` 构建、安装并启动 development build。修改原生依赖、Nitro Spec 或原生实现后需重建 APK，单独刷新 Metro 不会更新原生代码。
 
-## 内部测试 Release APK
+CNG 生成目录为 `apps/native/android`；需要彻底重建时使用 `pnpm --dir apps/native exec expo prebuild --platform android --clean`，它会删除并重建整个目录。宿主配置应维护在 `apps/native/app.json` 和 Expo config plugin 中，不把生成目录的手工改动当作唯一配置来源。
 
-在 `apps/native` 执行：
-
-```sh
-pnpm android:release
-```
-
-脚本先运行采集包的 Nitrogen 代码生成，再执行 Gradle `assembleRelease`。若 `apps/native/android` 尚未生成，先执行 `pnpm expo prebuild --platform android`。APK 输出到 `apps/native/android/app/build/outputs/apk/release/app-release.apk`。
-
-Release bundle 任务会跟踪 `.env`、`.env.local`、`.env.production`、`.env.production.local`；脚本清除 Gradle 子进程的 `CI` 并使用一次性 Gradle daemon，确保环境文件变更时 Expo 重新生成并内联配置。修改环境文件后重新运行此命令。
-
-当前 release variant 使用 `debug.keystore` 签名，适合内部安装测试，不是正式发布签名包。
-
-## Nitrogen 生成目录
-
-根目录 `.gitignore` 忽略 `packages/acquisition/nitrogen/generated/`。在 `apps/native` 执行 `pnpm android` 或 `pnpm android:release` 都会先运行 Nitrogen，再启动 Android 构建；若 Android 宿主尚未生成，Release 仍需先按上节执行 Expo prebuild。
-
-直接从 Android Studio 同步/构建，或手动执行 `./gradlew` 时，需先在仓库根目录运行：
+`packages/acquisition/nitrogen/generated/` 被 Git 忽略。直接从 Android Studio 同步／构建或手动运行 Gradle 前，先在根目录执行：
 
 ```sh
 pnpm --filter @health-cv-app/acquisition run nitrogen
 ```
 
-采集包的 Gradle/CMake 配置会在构建配置阶段加载生成文件；绕过项目脚本时，Gradle 不会自动运行 Nitrogen。Expo prebuild 生成 Android 宿主，不会替代上述绑定生成步骤。
+Gradle／CMake 配置阶段会加载生成文件，但绕过项目脚本不会自动运行 Nitrogen；Expo prebuild 也不替代绑定生成。
 
-## 后续启动 Metro
+### 内部 Release
+
+宿主已生成后，在根目录执行：
+
+```sh
+pnpm --filter @health-cv-app/native run android:release
+adb -s <device-serial> install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
+```
+
+脚本生成 Nitrogen 绑定后执行 `assembleRelease`，APK 路径如上。Release bundle 跟踪 `.env`、`.env.local`、`.env.production`、`.env.production.local`；脚本清除 Gradle 子进程的 `CI`，使用一次性 daemon。环境文件改变后重新构建，不能只重装旧 APK。
+
+当前 Release 与 Debug 都使用 `debug.keystore`，仅供内部安装，不是正式发布签名。相同签名覆盖安装可保留数据；不要为解决连接问题随意卸载、清数据或清除 AVD 用户数据，以免丢失私有采集文件。
+
+## Metro、ADB 与连接排错
 
 原生依赖未变化且 development build 已安装时，在 `apps/native` 启动 Metro：
 
 ```sh
-env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo start --localhost
+env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo start --dev-client --localhost --port 8081
 ```
 
-在交互终端按 `a` 将项目打开到 Android development build。该环境继承了 `CI=true`，所以命令显式清除 `CI` 以启用终端交互；`NODE_OPTIONS` 让 `localhost` 优先解析为 IPv4，配合 ADB 反向端口转发，避免开发客户端尝试访问不可达的虚拟网卡地址。若需确认 ADB 设备连接，可运行 `adb devices -l`。
-
-若执行环境无法把 `a` 快捷键传递给 Expo CLI，可按 CLI 当前打印的链接手动启动开发客户端；下列示例对应默认端口 8081：
+交互终端按 `a` 打开 Android。清除继承的 `CI=true` 可恢复终端交互；IPv4 优先与 ADB 反向转发可避免客户端访问不可达的虚拟网卡地址。无法传递快捷键或 Expo CLI 自动解析 deep link 失败时，按 CLI 当前链接手动打开，默认端口示例为：
 
 ```sh
-adb reverse tcp:8081 tcp:8081
-adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081' com.healthcvapp.mobile
+adb -s <device-serial> reverse tcp:8081 tcp:8081
+adb -s <device-serial> shell am start -W -a android.intent.action.VIEW \
+  -d 'exp+health-cv-app://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081' com.healthcvapp.mobile
 ```
 
-## 已验证环境与版本
+- **端口冲突／旧服务：** `run:android` 可能因 8081 占用而跳过 Metro，客户端仍连接旧服务器。另开终端选 8082，并将 Metro 的 `--port`、`adb reverse tcp:8082 tcp:8082` 及链接里的端口全部改为 8082。
+- **连接状态：** 先检查 `adb devices -l` 与 `adb -s <device-serial> reverse --list`。APK 构建完成不等于 JS 项目已加载。
+- **手动唤起：** 可用 `adb -s <device-serial> shell monkey -p com.healthcvapp.mobile 1` 打开已安装应用；Debug 仍需在开发客户端连接 Metro。
+- **Maven 网络：** `apps/native/plugins/with-aliyun-gradle-repositories.js` 与 `patches/` 为 included build、插件及子项目依赖添加 Aliyun 前置镜像，官方仓库作为后备。Google Maven 可访问时镜像配置也仍生效；排查依赖下载时应同时检查网络、镜像和锁定补丁，而非只改生成宿主。
+- **业务深链：** `healthcvapp://passive-capture` 指向开发栈的被动页，不启用服务。Expo Development Client 冷启动会先进入开发启动器，连接 Metro 时原 URL 可能丢失，不能替代独立 Release 的冷启动检查；运行中暖链接与冷启动分开处理。
 
-| 项目 | 实际值 |
+## 现行入口与最短操作
+
+启动入口是 `RootNavigator` 的 `Startup`，随后按引导状态进入产品流程，不是默认采集页。产品 Tab 与开发子栈定义在 `apps/native/src/app/navigation/`，调试页面位于 `apps/native/src/pages/dev/`。“开发”首页是“验证入口”，本地采集不要求登录、服务地址或渠道。
+
+| 入口 | 操作与边界 |
 | --- | --- |
-| 主机 | macOS 25.6.0，arm64 |
-| Node.js / pnpm | 24.18.0 / 11.22.0 |
-| JDK | Azul Zulu OpenJDK 17.0.20 |
-| Android SDK | `$ANDROID_HOME` 与 `$ANDROID_SDK_ROOT` 均为 `/Users/junsi/Library/Android/sdk`；已安装平台 android-36、android-37.0，Build Tools 36.0.0，Platform Tools 37.0.1，Emulator 37.1.11 |
-| Gradle / Android NDK | Gradle 9.3.1；该构建实际使用 NDK 27.1.12297006 |
-| 验证设备 | `Pixel_5` Android Virtual Device，Android 17 / API 37，arm64 模拟器 |
+| “功能”→“面部检测／面部心率”→准备与声音确认→面部心率检测 | 已选择“以后不再提示”时直接进入检测页，不显示准备页或声音提醒。真实原生 RPPG 进入保持 `--`、00:00 和空曲线；明确开始后才授权、挂载预览并打开／开始会话。平均只使用有效频谱窗，逐搏初步值不填入平均；不写入首页或健康历史。 |
+| 产品“指尖检测” | 仅模拟展示，不调用真实相机采集，也不停止其他原生采集。 |
+| “开发”→“验证入口”→“面部脉搏” | `RPPGScreen`：显式授权→打开前摄预览→开始人脸观察→等待正式测量结束或停止→刷新本地产物。 |
+| “开发”→“验证入口”→“主动” | `AcquisitionScreen`：原生相机 PPG 的配置、分块与双 CSV 操作，不等同于产品指尖页。 |
+| “开发”→“验证入口”→“被动 RPPG” | `PassiveCaptureScreen`：保存周期／正式时长→确认后台设置并授权启用→真实解锁→查询 RPPG 结果；历史视频单列查询。 |
+| “开发”→“验证入口”→“传感” | `SensorCaptureScreen`：查看四种能力→输入整数微秒间隔→按类型开始→停止并保存。 |
 
-应用锁文件解析出的关键依赖版本：Expo 57.0.27、`expo-dev-client` 57.0.19、React 19.2.3、React Native 0.86.3、`react-native-mmkv` 4.3.2、`react-native-nitro-modules` 0.37.1、`react-native-file-access` 4.0.4、React Navigation 7.5.0、native-stack 7.20.0、Nano Stores 1.5.5（React 绑定 2.0.1、persistent 1.3.5、i18n 1.3.3）、React Query 5.104.1、Axios 1.20.0、styled-components 6.5.3、`css-to-react-native` 3.2.0、`expo-localization` 57.0.2、NetInfo 12.0.1、`lucide-react-native` 1.64.0、`react-native-svg` 15.15.4、TypeScript 6.0.3。精确依赖树以 `pnpm-lock.yaml` 为准。
-采集模块另外固定 Nitrogen 0.37.1 与 AndroidX CameraX 1.6.2，分别由 `packages/acquisition/package.json` 和 `packages/acquisition/android/build.gradle` 管理。
+### 主动 RPPG
 
-## 验证记录与边界
-以下内容记载早期 Android foundation 与 cloud-client/auth 的历史验证，不代表本次 PPG 采集实现的验证状态。
+进入 Dev 页面不申请相机权限或打开相机，纵向列表可滚动到操作区。依次点击“显式请求相机权限”“打开前摄预览”“开始人脸观察”；就绪条件连续满足后才正式计时。预览 host 布局完成不代表 CameraX 已开始输出图像。
 
-- 已执行锁文件干净安装、Android `prebuild --clean`、`pnpm expo run:android`，并在 `Pixel_5` 模拟器安装、启动 development build。APK 中包含 MMKV 与 Nitro 相关原生库；Gradle 也编译了 `react-native-file-access`。
-- Android 运行时用短暂的入口代码对 MMKV 执行字符串写入、读回与删除，并对缓存目录文件执行创建、写入、读取和清理；读回匹配。临时代码已移除，应用重新启动后仍显示 `Hello World`。
-- 本机当时无法解析 `dl.google.com`。`apps/native/plugins/with-aliyun-gradle-repositories.js` 与 `patches/` 中的 Gradle 插件补丁为 included build、插件和子项目依赖添加 Aliyun Maven 仓库；官方仓库仍保留为后备。若网络可访问 Google Maven，这些镜像配置仍作为前置仓库。
-- 仅验证了 Android arm64 模拟器。未验证实体设备、iOS、自研 Nitro 采集模块（Spec／Nitrogen 绑定及 Kotlin/Swift 实现），也未实现或验证测量、采集和上传业务。安装 Nitro Modules 与第三方 MMKV 只证明其进入 Android 构建，不代表自研采集能力已可用。
+测量可自动结束或用“停止并完成本地产物”提前收尾；刷新本地产物读取完整发布引用。无有效心率时保留空值和拒绝原因，不解释为 0 bpm。逐搏初步值与频谱平均独立；6–10 秒仅为体验目标，不保证出值。协议、算法和文件 schema 统一见 [Android RPPG 采集说明](../acquisition/android-rppg.md)。
 
-### 前端基础设施与浅色主题首次验收（2026-10-30）
+产品与 Dev 主动页离开前均等待在途命令、相机／模型关闭和文件收尾；关闭失败应保留错误而非假报离开成功。已关闭客户端不复用，Dev 回页创建新 runtime。`PreviewView` 使用 PERFORMANCE／SurfaceView 时，关闭再打开应同时观察预览与分析帧恢复，不能只看页面状态。
 
-- 已安装并解析依赖：`expo-localization` 57.0.2、`@react-native-community/netinfo` 12.0.1、`lucide-react-native` 1.64.0、`react-native-svg` 15.15.4；`styled-components/native` 还需直接依赖 `css-to-react-native` 3.2.0，缺少时 Metro 无法打包。
-- 锁文件安装成功：`pnpm install --frozen-lockfile`。原生依赖接入后的 Android 构建命令为 `pnpm --filter @health-cv-app/acquisition run nitrogen && pnpm --filter @health-cv-app/native exec sh -c 'cd android && ./gradlew assembleDebug'`，Gradle 输出 `BUILD SUCCESSFUL`。该次构建早于补齐纯 JavaScript 的 `css-to-react-native`；补齐后锁文件安装及 Metro 实际 bundle、页面启动成功。完整集成构建仍留待后续验收。
-- `expo install --check` 报告现有 Expo 57.0.27 与 `expo-dev-client` 57.0.19 分别低于 CLI 当前推荐的 `~57.0.31`、`~57.0.20`。升级尝试因 `pnpm-workspace.yaml` 固定的 Expo 模块补丁版本不再匹配而在安装前失败；因此保留当前锁定版本。本次构建只证明现有组合可构建，不表示与 Expo CLI 推荐 patch 对齐。
-- AVD：`Pixel_5` Android 17 / API 37 / arm64。用 `adb install -r apps/native/android/app/build/outputs/apk/debug/app-debug.apk` 安装，并运行 `adb reverse tcp:8081 tcp:8081`；在 `apps/native` 启动 `CI=false EXPO_PUBLIC_API_BASE_URL= EXPO_PUBLIC_CHANNEL= pnpm --filter @health-cv-app/native exec expo start --dev-client --port 8081 --localhost`，开发客户端连接 `http://127.0.0.1:8081`。
-- 实际观察：显式清空云端地址与渠道后，主动 PPG 本地页正常显示；入口和主题化选中按钮文字可读。切换 Android 夜间模式后应用仍为浅色，随后恢复模拟器原设置。认证恢复启动顺序及服务/缓存单例由入口代码核对；未在本次运行中登录或联调真实服务。
-- 尚未验证统一导航、语言切换、被动录像、传感器操作与服务端查询；不得把本次 AVD 首屏观察外推为这些路径通过，也不代表实体设备或长期后台行为。
+Dev 共享按钮暴露文字名称与禁用／忙碌状态，进度有 `progressbar` 数值，错误有 alert 语义，波形有图片标签；相机预览不作为辅助技术图像暴露。操作时依赖文字状态而非颜色，TalkBack 顺序与最新 UI 的实际可用性需单独检查。
 
+### 原生相机 PPG
 
-### `add-cloud-client-and-auth` 跨模块验证
+1. 显式请求相机权限，枚举并选择 camera ID；枚举／查询不打开相机或创建会话。
+2. 输入 Preview + YUV 候选宽高（px）与目标 FPS，查询所选相机能力和组合。改相机、尺寸或 FPS 后重新查询；`unknown` 不等于支持，也不等于明确不支持。
+3. 按能力填写曝光时间（ns）、ISO、自动曝光补偿索引、白平衡、对焦距离（屈光度）、torch 及 `[rows, columns]` 网格。补偿 EV 为索引乘设备步长；不要把 EV 值直接当索引。
+4. 打开已选配置，核对冻结请求／提交配置、调整项、实际几何／观测 FPS 和锁状态，再开始采集；停止并保存后关闭相机。打开周期内不能编辑配置，改变参数须关闭重开。
+5. 核查单块 `[1,1]`、上下条带 `[N,1]`、左右条带 `[1,N]` 或非方形 `[2,3]` 时，PPG 每帧行数为块数，frame 文件每帧一行；按精确 `timestampFrame` 配对，不能按两个文件行号比较。
 
-- 环境：`Pixel_5` Android 17 / API 37 / arm64 模拟器；测试服务根地址 `https://test-backend.myhealthyclub.com`，显式渠道 `android-cn`。使用获授权测试账号，不在记录中保存凭据。
-- 重建命令：`env -u CI NODE_OPTIONS=--dns-result-order=ipv4first EXPO_PUBLIC_API_BASE_URL=https://test-backend.myhealthyclub.com EXPO_PUBLIC_CHANNEL=android-cn pnpm --dir apps/native exec expo run:android`。Gradle 返回 `BUILD SUCCESSFUL` 并安装 APK；`expo-secure-store`、`react-native-file-access` 原生依赖均已纳入 Android development build。
-- `run:android` 首次自动启动曾将开发客户端指向不可达的 `198.18.0.1:8081`，界面显示 Metro 流读取错误。按本机网络边界改用 ADB 反向转发后成功启动：
+权限拒绝场景可先执行 `adb -s <device-serial> shell pm revoke com.healthcvapp.mobile android.permission.CAMERA`，再在应用中显式请求并拒绝；需要恢复时由用户在系统设置或授权界面处理。详细配置、锁定／解锁失败和文件协议见 [相机 PPG 协议](../acquisition/android-ppg.md)。
 
-  ```sh
-  adb reverse tcp:8082 tcp:8082
-  adb shell am start -W -a android.intent.action.VIEW -d 'exp+health-cv-app://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8082' com.healthcvapp.mobile
-  ```
+### 被动 RPPG
 
-- 最终 APK 启动后实际显示 `Hello World`；按 Android 返回键后回到模拟器主页。`apps/native/index.ts` 在注册根组件前导入 bootstrap，已恢复的基线页面不承担会话恢复。
-- 使用受控账号完成登录与跨启动恢复、本人资料读取/更新并恢复原值、模型目录读取、草稿创建、输入文件上传/下载、提交及详情读取。任务状态为 `SUBMITTED`，详情没有 `output_files`；未能验证成功输出文件下载。文件字节、错误和进度结果见 [普通渠道云端请求接口](./cloud-client-api.md)。
-- 本次最终回归：cloud-client 类型检查与 11 项测试通过；Native 类型检查与 25 项测试通过。Native 覆盖认证状态、刷新/退出竞态、缓存隔离、迟到查询/变更和文件边界。
-- 未验证 iOS、实体设备或可成功下载的输出文件；未发布模型、切换渠道或添加任务轮询。此验证仅覆盖指定 Android 模拟器和 `android-cn` 测试环境。
+进入页面只读快照和本地结果，离页不停止服务。`intervalSeconds` 默认 7,200 秒，`measurementDurationSeconds` 默认 30 秒，观察上限默认 5 秒；完整频谱首窗理想连续输入约需 15.5 秒，短时长不保证有结果。
 
-## Android 后置相机 PPG 采集
+明确点击“授权并启用无扰采集”，按系统界面处理 `CAMERA`、`POST_NOTIFICATIONS` 与“无扰式采集状态”渠道。厂商后台设置不能自动授予；Honor 等机型按页面引导手动设置，不把该设置当作通用 Android 权限。
 
-当前默认页面是可手动操作的 `AcquisitionScreen`，不再是 Hello World。启动应用不会自动打开相机或保存数据；采集入口不要求登录、服务地址或渠道配置。
-
-### 模拟器与构建
-
-仓库当前的 `Pixel_5` AVD 后置相机配置为 `virtualscene`，可提供 Android 模拟器的虚拟场景输入。其它 AVD 可在 Android Studio Device Manager 的高级设置中将后摄设为 Virtual Scene 或可用的主机摄像头；不要手工修改生成的宿主工程来配置采集模块。检查 AVD 和连接状态：
+服务等待时相机关闭；真实解锁且周期满足时才启动无预览分析。模拟器可使用真实系统输入，不伪造 `USER_PRESENT` 广播：
 
 ```sh
+adb -s <device-serial> shell input keyevent 223
+adb -s <device-serial> shell input keyevent 224
+adb -s <device-serial> shell input keyevent 82
+```
+
+若 keyguard 未解除，需在模拟器窗口手动上滑／解锁。短周期可用于操作检查，但不能替代 7,200 秒实际等待。通知“关闭无扰采集”停止服务；系统停止或进程重启后需重新启用。新会话只生成 RPPG 三件套，旧视频仅供历史查询。触发、互斥、中断和发布规则见 [被动采集协议](../acquisition/android-passive-capture.md)。
+
+### 传感器与模拟器输入
+
+按类型输入 5,000–1,000,000 μs 的整数间隔并开始／停止；请求／注册间隔不等于稳定实际采样频率。同类型只允许一个会话，不同类型可并行。切页只解除 UI 订阅，宿主进入后台会中断传感器；返回前台需手动重新开始。
+
+模拟器可向系统传感器输入非零值，数据仍由 Android `SensorManager` 回调进入原生队列：
+
+```sh
+adb -s <device-serial> emu sensor set acceleration 1.25:2.5:3.75
+adb -s <device-serial> emu sensor set gyroscope 4.5:5.5:6.5
+adb -s <device-serial> emu sensor set magnetic-field 7.25:8.25:9.25
+```
+
+重力传感器是否可用及其派生输出以 AVD 设备为准，不把上面的加速度输入直接当成重力期望值。字段、单位、坐标系、失败与资源边界见 [传感器采集协议](../acquisition/android-sensors.md)。
+
+## 私有文件与资源核查
+
+以下 `run-as` 命令适用于可调试构建；普通非 debuggable Release 不能据此访问私有文件，应使用页面产物引用或安装相应调试构建，不用 root 绕过应用边界。不要在运行中的缓冲文件暂不可读时断言没有采样。
+
+```sh
+adb -s <device-serial> shell run-as com.healthcvapp.mobile find files/acquisition -type f -print
+adb -s <device-serial> shell run-as com.healthcvapp.mobile cat 'files/acquisition/<sessionId>/ppg.csv'
+adb -s <device-serial> shell run-as com.healthcvapp.mobile cat 'files/acquisition/<sessionId>/frame.csv'
+adb -s <device-serial> shell run-as com.healthcvapp.mobile cat 'files/acquisition/rppg/<sessionId>/session.json'
+adb -s <device-serial> shell run-as com.healthcvapp.mobile wc -l 'files/acquisition/rppg/<sessionId>/pulse.csv' 'files/acquisition/rppg/<sessionId>/hr.csv'
+adb -s <device-serial> shell run-as com.healthcvapp.mobile find files/acquisition/sensors -type f -print
+adb -s <device-serial> shell run-as com.healthcvapp.mobile find files/passive-capture -name video.mp4 -print
+adb -s <device-serial> shell dumpsys media.camera
+adb -s <device-serial> shell dumpsys sensorservice
+adb -s <device-serial> shell dumpsys activity services com.healthcvapp.mobile/com.healthcvapp.acquisition.passive.service.PassiveCaptureService
+```
+
+- **PPG：** 完成目录为 `files/acquisition/<sessionId>/`，双 CSV 均关闭并提升才是完成产物；按帧分组核对块编号与精确传感器时间戳。
+- **RPPG：** 按 [统一文件 schema](../acquisition/android-rppg.md#文件-schema-与完整发布) 核查完整标记、来源、终止／信号结论、配置／相机摘要和计数。合法中断含 `interrupted`，不等于技术失败；无有效心率不是准确率结论。
+- **传感器：** `files/acquisition/sensors/<kind>/<sessionId>/<kind>.csv` 至少有一条样本才完成；`.part` 不属于完成产物。
+- **历史视频：** `files/passive-capture/<sessionId>/video.mp4` 不转换为新 RPPG，不作为新会话结果。
+- **查询寿命：** PPG／传感器列表仅维护当前进程完成引用，重启后列表重置但文件仍保留；RPPG 查询扫描已发布最终目录。各类临时文件都不能冒充完成文件，也没有通用自动清理承诺。
+- **资源：** 主动页离开后检查相机释放；被动服务等待时不应占相机。传感器与被动服务有独立生命周期，不能要求主动相机关闭就同时停止其他源。
+
+## MCD 模拟器人脸素材
+
+### 来源、许可与缓存
+
+素材为 MCD-rPPG 的 `1020_FullHDwebcam_before`，来源是[作者仓库](https://github.com/ksyegorov/mcd_rppg)链接的[数据集页面](https://huggingface.co/datasets/kyegorov/mcd_rppg)，数据卡标注 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。使用时保留作者、来源、许可和修改说明。人脸与健康数据有隐私风险，不用于身份识别，不把调试结果解释为临床结论。
+
+缓存位于项目外 `~/Library/Caches/health-cv-app/rppg-fixtures/mcd-rppg/`，不提交 Git、不打包进 APK，也不在应用运行时下载。参考信号与元数据远端同名，本地增加后缀防止覆盖：
+
+| 本地文件 | 数据集路径 |
+| --- | --- |
+| `1020_FullHDwebcam_before.avi` | `video/1020_FullHDwebcam_before.avi` |
+| `1020_FullHDwebcam_before.ppg_sync.txt` | `ppg_sync/1020_FullHDwebcam_before.txt` |
+| `1020_FullHDwebcam_before.meta.txt` | `meta/1020_FullHDwebcam_before.txt` |
+
+首次获取或缓存被清理后，在宿主执行；命令会覆盖同名文件：
+
+```sh
+FIXTURE_DIR="$HOME/Library/Caches/health-cv-app/rppg-fixtures/mcd-rppg"
+SOURCE="https://huggingface.co/datasets/kyegorov/mcd_rppg/resolve/main"
+mkdir -p "$FIXTURE_DIR"
+curl --fail --location --retry 2 "$SOURCE/video/1020_FullHDwebcam_before.avi" \
+  --output "$FIXTURE_DIR/1020_FullHDwebcam_before.avi"
+curl --fail --location --retry 2 "$SOURCE/ppg_sync/1020_FullHDwebcam_before.txt" \
+  --output "$FIXTURE_DIR/1020_FullHDwebcam_before.ppg_sync.txt"
+curl --fail --location --retry 2 "$SOURCE/meta/1020_FullHDwebcam_before.txt" \
+  --output "$FIXTURE_DIR/1020_FullHDwebcam_before.meta.txt"
+shasum -a 256 "$FIXTURE_DIR/1020_FullHDwebcam_before."*
+```
+
+以下为固定素材身份元数据，缓存重建后据此校验，不表示某次下载或采集验收结果：
+
+| 本地文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `1020_FullHDwebcam_before.avi` | 81526784 | `b17e07cb9c56b771ad8ff3668fd78790f4732b2e63557a803ee40dfebd4b1592` |
+| `1020_FullHDwebcam_before.ppg_sync.txt` | 64191 | `6d23ac6be31ba2d5edb13189a3df03e3edf691200da9559c00e08aeabeda6ce5` |
+| `1020_FullHDwebcam_before.meta.txt` | 182459 | `3b9bf46bc854657ae39cc3007ce0052ee44890de8fe19b842628ae99a193c215` |
+
+### 变换与模拟器前摄输入
+
+原文件是 640 × 480 的 MPEG-4／YUV420P AVI。供模拟器输入的 `1020_FullHDwebcam_before-center80-h264.mp4` 使用如下变换：逐帧解码，从 `x=0,y=48` 裁取 512 × 432，缩放至 640 × 480，以 H.264／YUV420P 编码并保留原始帧 PTS。该变体仅扩大人脸在画面中的占比，不重采样帧率、不拼接或循环，不用于信号精度比较；重建时需自行准备视频转码工具，如 PyAV。未裁剪的 H.264 版本与该裁剪版本不能混用为同一输入。
+
+先正常关闭同名 AVD，再从宿主启动可见窗口；不使用 `-no-window`，不清除用户数据：
+
+```sh
+FIXTURE_DIR="$HOME/Library/Caches/health-cv-app/rppg-fixtures/mcd-rppg"
 emulator -list-avds
-adb devices -l
+emulator -help-camera-front
+emulator -avd <AVD名称> \
+  -camera-front "videofile:$FIXTURE_DIR/1020_FullHDwebcam_before-center80-h264.mp4" \
+  -no-snapshot-load
 ```
 
-从仓库根目录安装锁文件依赖，在 `apps/native` 生成 Android 宿主并安装 development build：
+先用本机 Emulator 帮助确认支持 `videofile:<filename>`。应用只接收模拟器通过 CameraX 提供的帧，不直接读取宿主视频文件；请求尺寸／FPS 与实际交付不相同。画面方向、裁剪、播放结束行为及时间轴应按当前 AVD 检查，不能外推到其他模拟器或真机。后摄可在 Device Manager 高级设置选择 Virtual Scene／主机摄像头，虚拟场景不代表指尖生理信号。
+
+同步参考 PPG 和采集元数据仅能在建立明确时间映射后用于对照。模拟器墙钟不能直接匹配原始参考信号；解码、相机重采样与丢帧都可能改变对应关系。
+
+## ECharts 脉搏波依赖
+
+产品脉搏波使用 ECharts 6.0.0、`@wuba/react-native-echarts` 3.1.1、zrender 6.0.0 和已有 SVG 15.15.4。`pnpm-workspace.yaml` 仅将 ECharts／zrender 的 `tslib` 依赖固定为 2.8.1，避免旧版本导出导致 Metro 启动错误，不覆盖其他依赖的解析。
+
+## 待真机验证的限制
+
+文档描述现行接口与操作，不记录历史验收结论。模拟器、合成输入、模型推理、文件存在和初步 bpm 均不能代替人体或实体设备验证。
+
+- 记录机型／厂商、Android／API、应用版本／target SDK、权限与通知渠道、后台设置，分别检查主动相机、被动前台服务和传感器的生命周期。
+- 在不同肤色／照明下检查当前 `BT601_LIMITED_V1` 颜色假设、曝光、覆盖提示与对焦；记录实际 FPS、模型延迟、流畅度、温升、耗电和持续运行表现。
+- 被动服务需实际检查默认两小时等待、周期内解锁抑制、通知关闭、锁屏／系统停止及重启后不自动恢复；旧录像阶段行为不能代替当前 RPPG 验证。
+- 用独立参考心率仪器同步采样并建立时间对齐，分别评估逐搏值、频谱有效窗与拒绝原因；6–10 秒不是保证，缺值不等于准确、有效读数也不等于医学有效。
+- 检查有值／缺值布局、预览重开、窄屏与 TalkBack；产品面部真实路径、Dev 调试页和指尖模拟展示分别检查，不能相互替代。
+
+## 按需代码检查
+
+在仓库根目录执行包级检查；这些命令不替代设备操作和文件核查：
 
 ```sh
-# 仓库根目录
-pnpm install --frozen-lockfile
-
-# apps/native
-pnpm expo prebuild --platform android --clean
-env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm android
-```
-
-`prebuild --clean` 会重建生成的 `apps/native/android`；采集源码和自动链接配置保留在 `packages/acquisition`，相机权限由 `apps/native/app.json` 声明。该链路必须使用 development build，不使用 Expo Go。
-
-**端口冲突：** 如果 `run:android` 发现 8081 已被占用并跳过 Metro，development build 可能仍指向旧服务器。在 `apps/native` 另开终端，用本机回环地址启动 Metro 并打开 Android：
-
-```sh
-adb reverse tcp:8082 tcp:8082
-env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo start --localhost --port 8082 --android
-```
-
-### 本次模拟器运行记录（2026-10-20）
-
-- 设备：`Pixel_5` AVD，Android 17 / API 37 / arm64，后摄输入为 `virtualscene`；`emulator -list-avds` 和 `adb devices -l` 分别确认 AVD 与 `emulator-5554`。未配置服务地址／渠道，也未登录。
-- 构建：`pnpm install --frozen-lockfile`、`pnpm expo prebuild --platform android --clean` 均成功；`env -u CI NODE_OPTIONS=--dns-result-order=ipv4first pnpm expo run:android` 的 Gradle 构建为 `BUILD SUCCESSFUL` 并安装 development build。此次 8081 已占用，首次打开时未加载项目；按上面的 8082 本地 Metro 步骤启动后，`AcquisitionScreen` 正常加载。
-- 实际操作：手动打开后摄、开始并停止采集；预览显示 `1280 × 960` 虚拟场景。`dumpsys media.camera` 显示 `SurfaceView` 预览和 `ImageReader` 分析输出；关闭后 `Active Camera Clients` 为空，再打开后两路输出恢复。停止后页面返回预览状态。
-- 文件结果：两次采集分别产生 `files/acquisition/33a17cda-c834-450a-87a6-c16fe96a6f35/ppg.csv`（12990 bytes）和 `files/acquisition/7a496e07-b683-4eb0-a3f2-42f852b3196b/ppg.csv`（11669 bytes），路径不同、互不覆盖。文档中的 `run-as find` 命令实际列出这两个文件。
-- 回归：`./gradlew :health-cv-app_acquisition:testDebugUnitTest` 成功；Native 测试 25/25、cloud-client 测试 11/11；`@health-cv-app/native`、`@health-cv-app/cloud-client`、`@health-cv-app/acquisition` 类型检查成功。
-- 边界：`virtualscene` 只验证模拟器相机输入、处理和文件写入链路，不是生理 PPG。未验证实体设备信号、目标 FPS、覆盖准确率或发热表现；这些不是本次变更的待办验收项。
-
-### 预览生命周期注意事项
-
-预览使用 `PreviewView.ImplementationMode.PERFORMANCE` 的 `SurfaceView` 实现。验证关闭后在同一页面重新打开时，应确认预览画面和图像分析流都恢复；仅凭页面状态不能证明 CameraX 已重新输出帧。
-
-### 页面操作、参数／网格验收与文件查询
-
-在 `主动 PPG` 页按此顺序操作：
-
-1. 点击“显式请求相机权限”，再单独点击“枚举可选相机”；这两步不会打开相机、启用补光或创建会话。
-2. 选择本次使用的 camera ID。设置 Preview + YUV 候选宽度／高度（px）与目标 FPS，点击“查询所选相机能力与组合”。查询只适用于当前 camera ID、尺寸和 FPS；切换相机或改动尺寸／FPS 后重新查询。静态模式、数值范围、布尔能力及组合结果分别显示 `支持`、`明确不支持` 或 `未知`，数值范围附单位。
-3. 在“本次配置草稿”选择有支持证据的曝光、白平衡、对焦及 torch 模式，按设备范围填写手动曝光时间（ns）、ISO、曝光补偿步长、手动对焦距离（屈光度）；编辑 `rows`、`columns` 网格。运行中这些输入不可编辑，打开时配置冻结。
-4. 点击“打开已选相机配置”，核对当前周期冻结配置、相机 ID、实际帧尺寸／观测 FPS 和 AE／AWB 锁定阶段。正式采集须另行点击“开始采集”；正常完成用“停止并保存”，随后“关闭相机”。未授权、未查询或候选组合不匹配时不应显示可用的打开操作；无云端登录仍可完成本地采集。
-5. 至少运行 `[1,1]`、上下条带 `[N,1]`、左右条带 `[1,N]` 和非方形网格（如 `[2,3]`）。尺寸／FPS 或相机变更后重新查询；非法网格应显示错误且不开始会话、不产出完成 CSV。确认 `[rows, columns]` 下每个正式帧有 `rows × columns` 条 PPG 行，`blockIndex` 按行优先从 0 连续排列，而 `frame.csv` 仍每帧一行。
-
-验证权限拒绝时，可先撤销模拟器中的权限，再从应用里请求并拒绝：
-
-```sh
-adb shell pm revoke com.healthcvapp.mobile android.permission.CAMERA
-```
-
-拒绝后页面应保持关闭状态并显示错误；该次请求不新增采集会话或完成文件。需要再次允许时，从 Android 应用权限设置授予相机权限。
-
-用 `run-as` 检查应用私有目录中的完成产物；停止返回的路径以 `/files/` 后的相对部分对应 `files/acquisition/<sessionId>/`：
-
-```sh
-adb shell run-as com.healthcvapp.mobile find files/acquisition -type f \( -name ppg.csv -o -name frame.csv \) -print
-```
-检查同一会话中的文件表头及对应记录时，把 `<会话ID>` 替换为查询结果中的目录名：
-
-```sh
-SESSION_ID=替换为会话ID
-adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/ppg.csv"
-adb shell run-as com.healthcvapp.mobile cat "files/acquisition/${SESSION_ID}/frame.csv"
-```
-
-PPG CSV 中同一 `frameIndex` 的多块记录共享 `timestampFrame`，按帧分组后核对 `blockIndex`；每组 `timestampFrame` 必须与 `frame.csv` 的 `timestampFrame` 精确对应。不要按两份 CSV 的行号比较：frame 文件每帧一行，PPG 文件每帧可有多行。预览、未完成采集或失败中的 `.part` 不属于成功产物；只有正常停止、关联队列排空、两个文件关闭并同时发布后才显示完成文件。
-
-该验证只检查相机配置、页面状态和文件协议；CSV 数值不证明真实 PPG，不代表目标 FPS、覆盖准确率、实体设备兼容或发热表现。
-
-### Pixel_5 模拟器实测（2026-10-20）
-
-在 Pixel_5 AVD 中手动打开后置相机、开始采集并正常停止。会话 `f6202159-ec77-4001-ae78-f698656107e2` 返回预览状态，页面显示 `ppg.csv` 为 25,008 bytes、`frame.csv` 为 17,880 bytes。两份文件各 239 行（含表头），共 238 条数据；逐行 `timestampFrame` 完全一致且递增，PPG `frameIndex` 从 0 连续至 237。
-
-该结果验证模拟器中的相机回调、精确关联、双文件落盘和页面产物引用；模拟器画面不代表真实 PPG，未验证实体设备、传感器信号质量或性能。
-
-### 架构重构后 Pixel_5 AVD 回归（2026-10-21）
-
-使用 `Pixel_5` AVD（`emulator-5554`，Android 17／API 37／arm64）运行本次 Android development build。两次主动采集都从界面正常停止，关闭后重新读取各自独立会话目录中的两份 CSV：
-
-| 会话 ID | `ppg.csv` 数据行 | `frame.csv` 数据行 | 文件大小（PPG／frame） |
-| --- | ---: | ---: | ---: |
-| `0dc9a330-6919-4d05-b55e-6f5e522eb965` | 295 | 295 | 31,053／22,125 bytes |
-| `f8b11e1a-749f-4e6e-bfc9-863a5e42ddf8` | 400 | 400 | 42,129／29,959 bytes |
-
-PPG 表头为 `timestamp,timestampFrame,timestampSystem,avgY,avgU,avgV,frameIndex,blockIndex`；frame 表头为 `timestamp,timestampFrame,timestampSystem,exposureTime,durationTime,rollingShutterSkewTime,iso,whiteBalanceMode`。每次采集的两份文件逐行 `timestampFrame` 完全一致，PPG `frameIndex` 分别从 0 连续至 294、399。停止后立即再次点击同一控件位置，页面回到预览且未出现第三份会话产物；两个已完成会话的 CSV 均可在相机关闭后读取。
-
-AVD 使用虚拟场景，只验证模拟器相机回调、逐帧配对与文件落盘；不代表真实人体 PPG、实体设备信号或性能。
-
-### 可配置相机与网格采集验证（2026-10-23）
-
-设备为 `Pixel_5` AVD（`emulator-5554`、Android 17／API 37、arm64，后摄 `virtualscene`）；应用未登录、未配置云端。界面枚举 cameraId `1`（前摄、方向 270°）和 `10`（后摄、方向 90°）。cameraId `1` 实测支持手动曝光／ISO、AWB 预设、手动 AF、torch 及 AE／AWB 锁；cameraId `10` 对手动曝光／ISO、torch 和两种锁返回明确不支持，未提交这些请求。
-
-从界面分别提交两组手动曝光配置。完成文件停止相机后从应用私有目录读取；`frame.csv` 的曝光、ISO 和白平衡值来自真实 Camera2 结果，不是 JS 配置回显：
-
-| 会话 ID | 冻结请求 | `frame.csv` 数据行 | Camera2 实际曝光／ISO／AWB 模式 | `ppg.csv` 数据行 |
-| --- | --- | ---: | --- | ---: |
-| `b3b9ff06-1221-4678-85a8-637669ede4c0` | cameraId `1`；目标 640×720／30 FPS；manual 10,000,000 ns／ISO 200；daylight；manual focus 0 屈光度；torch 开；`[2,3]` | 694 | 10,000,000 ns／200／5 | 4,164 |
-| `60ea14d9-e51c-49fb-9dab-7e7e697dcf89` | cameraId `1`；manual 30,000,000 ns／ISO 400；daylight；`[2,3]` | 262 | 30,000,000 ns／400／5 | 1,572 |
-
-两次相机帧均为 1024×768、有效 crop `(0,0) 1024×768`；请求的 30 FPS 是目标，不是模拟器的交付保证。CameraService dump 同时观察到 torch `TORCH`、手动对焦 `AF_MODE_OFF`／0 屈光度；关闭 torch 的默认预览观察到 `OFF`。白平衡模式值 `5` 对应该设备实际提交的 daylight 模式。
-
-下表中的 CSV 均在相机关闭后直接读取，表头仍为既有八列；逐帧核验 `frameIndex` 连续、PPG 的 `timestampFrame` 与 `frame.csv` 精确对应、块编号按行优先排列，且会话目录没有 `.part` 文件：
-
-| 网格 | 会话 ID | PPG 数据行 | frame 数据行 | 独立核对 |
-| --- | --- | ---: | ---: | --- |
-| `[1,1]` | `a2e31171-c358-4735-b977-d1b536fd304d` | 563 | 563 | 563 组，每帧仅块 0 |
-| `[3,1]` | `ec1883bc-365b-478e-a3b6-11a1ab62a694` | 1,218 | 406 | 每帧块 0–2，时间戳精确分组 |
-| `[1,3]` | `9b937a71-99c1-479b-a503-d70aa11ecb3f` | 267 | 89 | 每帧块 0–2，时间戳精确分组 |
-| `[2,3]` | `60ea14d9-e51c-49fb-9dab-7e7e697dcf89` | 1,572 | 262 | 每帧块 0–5，时间戳精确分组 |
-
-模拟器 UI 把行数设为 `65`、列数设为 `1` 后，打开操作显示“分块网格超过已查询的最大块数或目标尺寸约束。”；运行状态仍为关闭，`dumpsys media.camera` 没有活动客户端，完成 PPG 文件数未增加。恢复 `[1,1]` 后按相同查询、打开、开始、停止路径再次成功。已知像素夹具的独立均值和共享色度边界数值见[相机 PPG 协议](../acquisition/android-ppg.md#二维分块坐标与色度边界)；AVD 虚拟场景不作为像素夹具或真实生理信号。
-另按此流程复测单块会话 `4923331c-54a4-45a5-bfaa-aa7cbaecced6`：`Pixel_5` AVD（Android 17／API 37／arm64）选择前摄 cameraId `1`，请求 640×720 px、目标 30 FPS、自动曝光／白平衡／对焦、`[1,1]`，未登录或配置云端。预览显示冻结请求、实际 1024×768 帧和观测 FPS；开始后按钮变为“停止并保存”，停止后恢复“开始采集”。采集中滚至配置区并点击行数输入框，控件保持禁用、值仍为 `[1,1]`。关闭后从 `files/acquisition/4923331c-54a4-45a5-bfaa-aa7cbaecced6/` 读取到两份完成 CSV，各 1,739 条数据行，PPG 块编号均为 0，逐行 `timestampFrame` 相同，Camera2 实际结果为约 2,099,223 ns／ISO 100／AWB 模式 1；两文件分别为 200,399／149,113 bytes。`dumpsys media.camera` 显示活动客户端为空。另在撤销相机权限并重启后，页面显示“尚未通过本页确认”、能力查询按钮禁用；经页面显式请求并在系统弹窗允许后，权限恢复，但仍须枚举和查询才能打开相机。
-按同一页面步骤再运行非方形网格 `[2,3]` 会话 `379dcf99-580b-45a7-b4e0-7b434f7d1c76`：Pixel_5 AVD（Android 17／API 37／arm64）、cameraId `1`、请求 640×720 px／30 FPS，自动曝光／白平衡／对焦。打开时 UI 显示冻结的 `[2,3]` 配置；开始、停止并保存后关闭相机。直接从应用目录读取到仅有 `ppg.csv`（308,214 bytes）和 `frame.csv`（38,400 bytes），无 `.part`；两文件分别有 2,682 和 447 条数据，PPG 的 `frameIndex` 连续为 0–446，每帧恰有按行优先排列的块 0–5。447 组 PPG `timestampFrame` 均与 `frame.csv` 一一匹配；相机关闭后 `dumpsys media.camera` 的 `Active Camera Clients` 为空。首帧六块的 `avgY` 分别为 150.8833、159.2741、226.8075、84.4455、102.0970、222.0528；这是虚拟场景测值，不作为真实生理信号或实体像素夹具预期值。
-随后再次通过 `run-as` 从应用私有目录读取表中四种网格以及本次 `[1,1]`、`[2,3]` 复测的六个会话，不使用 JS 样本缓存：每个目录只有完成的 `ppg.csv`／`frame.csv`，表头与上列协议一致；各会话的 `frameIndex` 从 0 连续递增，PPG 每帧行数等于网格块数、`blockIndex` 连续行优先排列，PPG 与 frame 的唯一帧时间戳集合双向完全对应。所有已采样的 Y／U／V 均值为有限值且在 0–255 范围。独立像素夹具测试 `PixelBlockStatisticsTest` 还断言 `[2,3]` 各块的 Y/U/V 均值和整帧值，覆盖带行填充、非零 crop、共享交错色度单元的情况。
-
-### 类型检查、Nitro 与 Android 回归（2026-10-23）
-
-从仓库根目录依次运行 `pnpm --filter @health-cv-app/acquisition run nitrogen`、`pnpm --filter @health-cv-app/acquisition run typecheck`、`pnpm --filter @health-cv-app/native run typecheck` 和 `pnpm --filter @health-cv-app/native run test`。Nitro 生成 4／4 个 HybridObject；两项类型检查成功；Native 行为测试 28／28 通过。
-
-在 `apps/native/android` 执行 `./gradlew :health-cv-app_acquisition:testDebugUnitTest :app:assembleDebug`，结果为 `BUILD SUCCESSFUL`。JUnit 报告共 31 个测试套件、120 项测试，失败／错误／跳过均为 0；包含相机配置校验、捕获锁定／解锁、像素网格与色度均值、帧关联、多行 CSV writer、CameraUseGuard 和传感器配置／六列 CSV。Debug APK 编译完成。构建输出有 Expo 未设置 `NODE_ENV` 的提示，以及 Nitro 生成 C++ 的未使用参数 warning，均未阻断构建。
-
-自动 AE 与 AWB 锁的 UI 采集在每次正式开始前显示 `locked`；Camera2 结果为 AE／AWB `ON`、`LOCKED`。两次正常停止后新结果均为 AE／AWB `OFF`、`CONVERGED`，第二次开始重新得到当前周期锁确认；关闭相机后活动客户端为空。Pixel_5 只验证成功解锁；无法稳定注入设备级解锁失败，该分支由 `CaptureLockReleaseTest` 覆盖：解锁失败保留已完成产物并调用关闭当前周期的收尾。
-
-### 主动／被动相机与传感器并行验证（2026-10-23）
-
-被动页在服务关闭时保存 5 秒周期、1 秒录像时长；保存后仍为 disabled，CameraService 没有活动客户端。通过页面显式启用并确认 AVD 设置后，`PassiveCaptureService` 进入前台等待，期间相机空闲。被动服务等待时打开 PPG 页查询并打开 cameraId `1`，前台服务仍运行、未提前打开相机；活动客户端仅为 PPG 的 cameraId `1`。返回桌面后 PPG 客户端释放，服务仍等待；之后通过 AVD 实际锁屏／唤醒手势触发系统解锁事件，CameraService 记录被动录像相机连接后释放。被动页显示“视频已完成收尾并发布”，会话 `050a26d3-8ee0-404a-b1b1-5d27263c8b80` 为 1280×720、1.944 秒、662,688 bytes；本次未重新完整解码视频。测试结束后从页面关闭服务，服务列表无 `PassiveCaptureService`，相机活动客户端为空。
-另在被动服务保持关闭时复查隔离：被动页显示“未启用”，ActivityManager 服务列表为 `(nothing)`；返回 PPG 页枚举 cameraId `1` 并成功查询 720×720／30 FPS 组合，将草稿曝光从 auto 切为 supported manual 再恢复 auto。整个查询／草稿编辑期间 `dumpsys activity services com.healthcvapp.mobile` 仍无服务、`dumpsys media.camera` 的活动客户端为 `[]` 且 cameraId `1`／`10` 均关闭；`files/acquisition` 最新会话仍是先前的 `379dcf99-580b-45a7-b4e0-7b434f7d1c76`，未新增会话目录。
-
-另一次在锁定准备期间把 PPG 放到后台，CameraService 断开 PPG 相机，后续真实解锁由等待中的被动服务连接并释放 cameraId `1`；被中断 PPG 会话只有 `.part`，没有作为成功产物发布。Android 单元测试 `CameraUseGuardTest` 覆盖主动／被动竞争、旧租约迟到释放不能解除新持有者和打开失败后释放；模拟器观察到前一相机断开后服务才能取得相机，未见旧客户端重新打开。
-
-传感器与 PPG 独立启停：加速度计会话 `bc5852f5-f57c-4c3b-b78e-50305fd483dc` 在 PPG 页面打开、采集和停止期间继续运行，之后从应用私有目录读取到 10,833 条数据行。`accelerometer.csv` 表头为 `timestamp,timestampEvent,timestampSystem,accX,accY,accZ`，每条记录均为六列；PPG 停止没有停止该传感器会话。
-
-复查相机和 CSV 的命令：
-
-```sh
-adb shell dumpsys media.camera
-adb shell run-as com.healthcvapp.mobile find files/acquisition -type f \( -name ppg.csv -o -name frame.csv \) -print
-adb shell run-as com.healthcvapp.mobile cat "files/acquisition/<会话ID>/ppg.csv"
-adb shell run-as com.healthcvapp.mobile cat "files/acquisition/<会话ID>/frame.csv"
-```
-
-以上结果仅验证 Pixel_5 AVD 的相机、租约、传感器回调、页面状态和文件协议；不代表真实人体 PPG、实体设备兼容性或目标帧率。
-
-## Android 无扰式被动采集
-
-### Pixel_5 模拟器实测（2026-10-20）
-
-- 设备：`Pixel_5` AVD，`emulator-5554`，Android 17 / API 37 / arm64；应用 target SDK 36。验证安装内部 Release APK，未运行 Metro。未登录或配置云端服务。
-- 权限：在应用和 Android 系统界面中手动完成相机、通知授权；未使用 `adb grant`。通知渠道关闭时，应用明确报错且没有启动服务或打开相机；恢复渠道后通过界面重新启用。
-- 配置：周期 12 秒、目标录像 2 秒；另用 15 秒与 60 秒配置验证不同长度的完整媒体。实际文件、尺寸、时长、大小与解码帧数见 [Android 无扰式被动采集协议](../acquisition/android-passive-capture.md)。
-- 解锁：使用 `input keyevent 223`、`224`、`82` 让 AVD 睡眠、唤醒并解锁，观察到系统真实 `USER_PRESENT`，未发送伪造广播。临时测量构建在动态接收器 `onReceive` 与 CameraX `VideoRecordEvent.Start` 读取 `SystemClock.elapsedRealtime()`；本次样本分别为 `5,442,799 ms` 和 `5,443,059 ms`，事件到 Start 为 `260 ms`。该数值仅是模拟器单次观测，不代表真机延迟。CameraService 显示 Camera ID 1、前摄。
-- 等待：`dumpsys activity services` 显示前台 `PassiveCaptureService`；`dumpsys media.camera` 的 `Active Camera Clients` 为空。解锁录像期间 CameraService 显示 Camera ID 1、前摄。切换 PPG／被动页面不关闭等待服务。
-- 通知关闭：分别在等待和实际录像中点击“关闭无扰采集”。等待关闭后服务结束；录像中关闭后完成文件数保持 6 → 6，未完成片段未发布且相机释放。重新启用并真实解锁后，文件数 6 → 7。另验证禁用状态下真实解锁不增加文件。
-- 启动失败：暂时禁用服务组件后在页面尝试启用，状态显示 `FOREGROUND_SERVICE_START_TIMEOUT`，没有报告运行中；系统服务列表为空、相机无活动客户端。随后用 `pm default-state` 恢复服务组件。
-- 系统停止：执行 `am force-stop com.healthcvapp.mobile` 后无被动服务或相机客户端；重新进入应用仍未启用，之前的视频仍可查询。
-- 录像状态回归：实测重复 `USER_PRESENT` 曾使忙碌分支把界面状态错误回退为等待，而实际录像仍在继续。修复后再次覆盖通知状态，确认录像状态仍显示“无扰式采集进行中”，关闭录像不会发布未完成片段。
-- 相机互斥：将被动时长设为 60 秒并在录像时切到主动 PPG，点击“打开后置相机”显示“相机正被另一种采集会话使用。”；PPG 保持关闭，CameraService 只有被动录像的一个 Camera ID 1 客户端，被动前台服务继续运行。切回被动页仍显示“前摄正在录像”。
-
-Release APK 与核心诊断命令：
-
-```sh
-pnpm --dir apps/native exec expo prebuild --platform android
-pnpm --filter @health-cv-app/native run android:release
-adb -s emulator-5554 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
-adb -s emulator-5554 shell dumpsys activity services com.healthcvapp.mobile/com.healthcvapp.acquisition.passive.service.PassiveCaptureService
-adb -s emulator-5554 shell dumpsys media.camera
-adb -s emulator-5554 shell input keyevent 223
-adb -s emulator-5554 shell input keyevent 224
-adb -s emulator-5554 shell input keyevent 82
-adb -s emulator-5554 shell am force-stop com.healthcvapp.mobile
-```
-
-### 回归命令与结果
-
-```sh
-./gradlew :health-cv-app_acquisition:testDebugUnitTest # 工作目录：apps/native/android
+pnpm --filter @health-cv-app/acquisition run nitrogen
+pnpm --filter @health-cv-app/acquisition run typecheck
+pnpm --filter @health-cv-app/native run typecheck
+pnpm --filter @health-cv-app/cloud-client run typecheck
 pnpm --filter @health-cv-app/native test
 pnpm --filter @health-cv-app/cloud-client test
-pnpm --filter @health-cv-app/native run typecheck
-pnpm --filter @health-cv-app/acquisition run typecheck
-pnpm --filter @health-cv-app/cloud-client run typecheck
 ```
 
-Nitro 绑定生成、CNG 重建、Release 构建及安装成功。Gradle 原生采集测试 `BUILD SUCCESSFUL`；Native 测试 25/25、cloud-client 测试 11/11；三项 TypeScript 类型检查均成功。
-
-模拟器中服务启动失败显示 `FOREGROUND_SERVICE_START_TIMEOUT`，通知渠道关闭时拒绝启动；两项均确认服务未运行且相机未打开。运行中撤销权限、通知划除与通知声／振动／悬浮提醒等项目的模拟器结果未覆盖；Honor 真机验收见下文。
-
-模拟器结果只适用于 Pixel_5 AVD。Honor PPG-AN00 的最终真机验收见下文；其他厂商限制仍未验证。模拟器虚拟画面不证明真实人体信号或 rPPG 有效。
-
-### 架构重构后 Pixel_5 AVD 回归（2026-10-21）
-
-本次在同一 `Pixel_5` AVD 上用界面启动已迁移的前台服务；设置周期 12 秒、目标时长 15 秒及 60 秒后，通过系统睡眠、唤醒和解锁按键序列触发真实 `USER_PRESENT`，没有发送伪造广播。被动页面等待时 `Active Camera Clients` 为空；录像使用前摄 Camera ID 1。
-
-被动录像、通知取消及原目录复查的详细结果见 [架构重构后 Pixel_5 AVD 回归记录](../acquisition/android-passive-capture.md#架构重构后-pixel_5-avd-回归2026-10-21)。本次只验证 AVD 短周期运行路径，不重做 Honor 真机验收或 7200 秒长待机；模拟器虚拟画面不证明真实人体信号。
-
-### Honor PPG-AN00 真机授权与后台策略复测（2026-10-20）
-
-- 设备：Honor PPG-AN00，Android 16／API 36，`targetSdk=36`；安装包含 JS bundle 的内部 Release，不依赖 Metro。
-- 启用后台设置：手动管理，打开“允许后台活动”，保持“允许自启动”和“允许关联启动”关闭。页面提示仅在点击“授权并启用无扰采集”时显示；打开应用设置入口进入 `com.android.settings/.applications.InstalledAppDetails`。用户确认后服务进入等待态。
-- 构建及安装：
-
-  ```sh
-  pnpm --filter @health-cv-app/native run android:release
-  adb -s <device-serial> install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
-  ```
-
-- `dumpsys activity services com.healthcvapp.mobile` 显示 `isForeground=true`、通知 ID `7312`。设备退到桌面并锁屏时，相机客户端为空；设备主人真实解锁后，CameraService 记录两次应用客户端连接／释放：20:18:11–20:18:17 与 20:18:58–20:19:05。20:19:18 检查时前台仍为 Honor Launcher，活动相机客户端为空。系统广播记录在 20:18:11 入队，存在于 20:18:58 完成的延后记录；没有独立记录实际解锁次数，因此不据此断言发生了两次物理解锁。
-- 该次记录是 2026-10-20 的初步观察，仅证明该机在上述设置下能够后台打开并释放相机；没有导出或完整解码视频。后续最终验收结论见下一节。
-
-### Honor PPG-AN00 剩余真机验收补充（2026-10-21）
-
-设备、Release 构建和 Honor 后台活动设置同上一节。本助手此前在 30 秒周期／5 秒时长下观察到两次设备解锁机会：`USER_PRESENT` 于 13:24:03 和 13:29:42 入队；CameraService 分别在 13:24:03–13:24:09 与 13:29:43–13:29:49 连接应用相机后释放。第一次发生于后台等待，第二次在应用页面可见时；两段之间相机为空。这只记录短周期观测，不单独证明媒体解码或 7200 秒验收。
-
-设备操作者确认剩余真机验收项目均通过，包括：
-
-- 通知安静显示、状态入口和不依赖页面执行的关闭操作；无声音、振动或悬浮提醒；通知划除、通知权限／渠道禁用及系统停止应用可区分。
-- Release 应用在真实解锁时后台录像；周期内不录像、周期到期但没有解锁不录像、应用可见时解锁仍触发；切换其他 App 不终止录像，录像中重新锁屏会结束未完成片段，必要条件失效后停止接受采集。
-- 按目标 7200 秒周期完成后台等待及前后两次解锁录像，等待期间相机无占用；两份真机视频已完成媒体探测、完整解码和画面检查。
-
-以上最终验收结论来自设备操作者确认。本次交接未包含两小时等待的精确起止时刻、服务状态快照、两份视频的会话标识及详细媒资数值，因此不补写这些读数。设备范围仅为 Honor PPG-AN00；其他厂商未验证，视频可读不代表 rPPG 有效。
-
-## Android 传感器采集
-
-SensorManager 采集协议、错误、设备边界和 Pixel_5 AVD 实测记录见[Android 传感器采集](../acquisition/android-sensors.md)。Android 传感器采集已接入 `@health-cv-app/acquisition` Nitro 绑定及独立验证页；不需要 Expo Go。传感器 API 本身没有新增权限，应用既有 `CAMERA`、`POST_NOTIFICATIONS` 和前台服务权限仍供相机与被动采集使用。
-
-从仓库根目录生成绑定、检查 TypeScript 并构建 Android development build：
+原生单元测试和 Debug APK 构建在 `apps/native/android` 执行；运行前须完成 Nitrogen 生成：
 
 ```sh
-pnpm --filter @health-cv-app/acquisition run nitrogen
-pnpm --filter @health-cv-app/acquisition run typecheck
-pnpm --filter @health-cv-app/native run typecheck
-pnpm --filter @health-cv-app/native run android
+./gradlew --no-daemon :health-cv-app_acquisition:testDebugUnitTest :app:assembleDebug
 ```
 
-直接运行原生测试时在 `apps/native/android` 执行：
-
-```sh
-./gradlew :health-cv-app_acquisition:testDebugUnitTest
-```
-
-### 本次传感器变更最终回归
-
-仓库根目录执行包与应用类型检查及 Nitro 绑定生成；最后一条 Gradle 命令在 `apps/native/android` 执行：
-
-```sh
-pnpm --filter @health-cv-app/acquisition run typecheck
-pnpm --filter @health-cv-app/native run typecheck
-pnpm --filter @health-cv-app/acquisition run nitrogen
-./gradlew :health-cv-app_acquisition:testDebugUnitTest :app:assembleDebug
-```
-
-两项类型检查与 Nitro 绑定生成成功；Gradle 输出 `BUILD SUCCESSFUL`，共 491 项任务（67 executed、424 up-to-date）。
-
-本次 AVD 使用 `emulator-5554`、Android 17／API 37。`run:android` 的 APK 构建成功，但 Expo CLI 自动解析 development-client deep link 失败；通过 `adb shell monkey -p com.healthcvapp.mobile 1` 手动打开已安装应用后，传感器页正常加载并完成实际采集。模拟器传感器输入、CSV 读取及各会话数据行数见传感器协议文档；这只验证 Android Emulator 的系统回调，不代表实体设备传感器。
-
-## 原生产品页与冷启动最终验收（2026-11-03）
-
-验证设备仍为 `Pixel_5` AVD（`emulator-5554`，Android 17／API 37／arm64），包名保持 `com.healthcvapp.mobile`。本次使用内部 Release variant，执行命令（工作目录 `apps/native/android`）：
-
-```sh
-EXPO_PUBLIC_API_BASE_URL=https://test-backend.myhealthyclub.com EXPO_PUBLIC_CHANNEL=android-cn ./gradlew :app:assembleRelease
-adb -s emulator-5554 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk
-```
-
-Gradle 命令退出码为 0，APK 安装成功。冷启动验收使用 Android 次级用户隔离首次引导状态，未清除主用户应用数据；验收后移除该测试用户并恢复当前源码构建的 Development Build。主用户既有 PPG、传感器和被动视频文件均未删除。Release 与 Debug 均使用本地 `debug.keystore` 签名，因此安装替换时保留应用数据；该签名仅供内部测试。
-
-用户资料测试使用测试服务 `https://test-backend.myhealthyclub.com`、渠道 `android-cn`；注册账号保留事实见[认证会话记录](./native-auth-session.md)，不在此重复账号凭据。桌面显示名称“心沐”、图标及原生产品页路径均在安装后的 AVD 检查；截图证据见[前端开发验收](./frontend-development.md)。
-
-冷启动深链回归：次级用户首次引导未完成时，`am start -a android.intent.action.VIEW -d healthcvapp://passive-capture` 返回 `LaunchState: COLD`；静态品牌开屏后进入“被动录像”，显示“未启用”。Android 返回键回到“验证入口”；再次普通冷启动回到首次引导第 1 步。深链没有完成引导或启动服务，也没有生成新视频。此路径在独立 Release variant 验收；Expo Development Client 的冷启动会先进入开发启动器，连接 Metro 后原 URL 丢失，不能用来代替 Release 冷启动结论。运行中暖启动深链及主动相机离页收尾另按产品路径检查。
-
-Android API 37 的相机、运行时通知权限、应用通知总开关和被动通知渠道操作与回页刷新见前端验收记录。通知请求只触发通知系统权限，不申请相机、不启用被动采集；进入权限页只读系统状态。主动相机和传感器采集仅验证 Goldfish AVD 生命周期、页面切换和文件收尾；被动服务取消后未生成新视频，既有文件保留。
-
-以上只证明 Pixel_5 AVD 上的原生 UI、权限和导航行为。虚拟相机／传感器不是人体或实体设备输入；不据此宣称生理测量有效、实体机厂商兼容或长期后台录像通过。Release APK 的 Activity 启动耗时不等同于应用可见品牌开屏的两秒时长；开屏可见计时和后台暂停边界由 `startup-flow.test.cjs` 的确定性时钟测试覆盖。
-
-### Development Build 开屏与前后台实测（2026-11-03）
-
-在保留 user0 应用数据的 Pixel_5 AVD（Android 17／API 37）中，通过 `adb shell am force-stop` 后 `adb shell monkey -p com.healthcvapp.mobile 1` 普通冷启动；主机单调时钟记录到首次采样品牌页约 4.8 秒、首次采样首页约 7.18 秒，两次采样相差约 2.38 秒。该采样差包含 ADB 截屏轮询和帧调度，不作为精确页面时长；Development Build 的命令到品牌页耗时也不代表 Release Activity 启动时间。模拟器只观察到一段静态品牌页后进入首页。
-
-品牌页可见约 0.8 秒后按 Home，后台停留约 2.5 秒再恢复：恢复后的首帧仍为原品牌页，约 1 秒后进入首页，没有重播或重复入栈。`startup-flow.test.cjs` 的确定性时钟用例另验证前台累计恰为 2,000 ms、后台暂停和单次推进；这与系统 Activity 启动耗时分开计算。
-
-### Release 开屏 Demo 对齐验收（2026-11-03）
-
-在 Pixel_5 AVD（`emulator-5556`，Android 17／API 37／arm64，1080×2340、440 dpi）使用 `pnpm --filter @health-cv-app/native android:release` 构建 Release；通过 `adb -s emulator-5556 install -r apps/native/android/app/build/outputs/apk/release/app-release.apk` 覆盖安装，未清除应用数据。预构建资源确认原生底色为 `#FFFFFF`，`splash-bridge.png` 使用 180 dp 图宽，图形完整位于 Android 192 dp 系统安全圆内；品牌页及 Demo 的标志均为 144 dp。
-
-从桌面冷启动并连续采样：完整品牌页稳定显示，约两秒后进入已有游客首页；采样帧未见 Logo 裁切、空白页或原生／React 标志叠影。底部 Tab 点击仅切换页面和选中颜色，没有按压波纹；主页卡片阴影收紧到 Demo 的轮廓。将 Android 原生退出时长设为 0 后复测，没有额外等待。该结果仅覆盖 Pixel_5 AVD，不代表实体设备或 iOS。
-
+Debug APK 位于 `apps/native/android/app/build/outputs/apk/debug/app-debug.apk`；需要安装到已连接目标时，可将 `:app:assembleDebug` 改为 `:app:installDebug`。

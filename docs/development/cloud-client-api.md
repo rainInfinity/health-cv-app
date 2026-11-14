@@ -56,7 +56,17 @@ const client = createCloudClient({
 
 任务详情的 `qualityFailure` 仅表示算法质量拒绝：`LOW_SCORE` 携带 `{ score, threshold }`，`NO_VALID_SIGNAL` 的 `details` 为 `null`。成功任务、普通失败，以及没有有效历史质量明细的任务均为 `null`；任务摘要和列表项不包含 `qualityFailure`。`FAILED` 仍是正常取得的业务状态，不代表 HTTP 或请求失败。
 
-任务输入和输出使用独立的文件接口，不由 JSON 方法自动串联：上传路由为 `POST /tasks/{task_id}/files`，由 `tasks.uploadFile(taskId, { logicalName, file: { uri, name, type } }, options)` 每次发送一个 `logicalName` 和一个 React Native 文件引用。已有 URI scheme 保持不变，裸本地路径规范化为 `file://` URI；SDK 不读取整文件或编码 Base64，由运行时生成 multipart boundary。上传返回服务端 `fileId`、`logicalName`、`sizeBytes`（字节）、`uploadedAt` 和 `isSelected`。输入下载为 `GET /tasks/{task_id}/files/{file_id}/download`，输出下载为 `GET /tasks/{task_id}/outputs/{logical_name}/download`；输出名按单一路径段编码。下载返回 `{ body: Blob, contentType, contentDisposition }`，成功载荷是二进制，不是 JSON 业务包装，也不自动落盘。
+## 文件传输
+
+上传路由为 `POST /tasks/{task_id}/files`，调用 `tasks.uploadFile(taskId, { logicalName, file: { uri, name, type } }, options)`，每次发送一个输入逻辑名和一个文件。已有 URI scheme 保持不变，裸本地路径转成 `file://`；SDK 不读取整文件或编码 Base64，不手写 `Content-Type`，由 React Native 生成 multipart boundary。
+
+上传返回 `fileId`、`logicalName`、`sizeBytes`（字节）、`uploadedAt` 和 `isSelected`。后端合同要求文件非空，默认上限为 `52,428,800` 字节（50 MiB），实际部署及代理限制可能不同，接口不提供上限查询。仅可上传到本人当前渠道的 `DRAFT` 任务。
+
+同一 `logicalName` 再次上传会选择新文件记录，旧记录和文件仍保留；超时重传可能新增记录，不是覆盖或幂等重放。普通用户没有输入文件列表接口，任务详情也不返回完整输入集合，调用方需保存回执，不能仅靠详情恢复上传历史。
+
+输入下载为 `GET /tasks/{task_id}/files/{file_id}/download`，输出下载为 `GET /tasks/{task_id}/outputs/{logical_name}/download`；输出名按单一路径段编码。下载返回 `{ body: Blob, contentType, contentDisposition }`，成功载荷是二进制，不是 JSON 业务包装，也不自动落盘。
+
+进度通过单次请求的 `onProgress({ loadedBytes, totalBytes? })` 提供，字节数来自 Axios 事件，总量无法可靠取得时省略。SDK 不合成百分比或定时进度，上传到 100% 后仍可能返回业务错误。请求结束或取消后不再发出迟到进度；`signal` 只终止本地传输，不撤销已到达服务端的操作，进度也不代表云端处理或上层落盘。
 
 不存在普通用户的管理模型、任务取消、任务删除或文件列表接口。不要调用 `/manager/...`，也不要把取消本地传输描述成服务端撤销任务。
 
@@ -78,20 +88,6 @@ OpenAPI 对两个下载路由的 HTTP 200 只声明状态说明，没有声明 J
 
 React Native 的 Blob 可能没有标准 `text()` 方法；读取下载错误时，SDK 使用平台 `FileReader.readAsText` 解析 JSON，并在完成后释放失败响应 Blob。成功下载的 Blob 由调用方负责消费和按平台能力释放；SDK 不复制或落盘。
 
-文件传输可在单次请求选项中提供 `onProgress({ loadedBytes, totalBytes? })` 与 `signal`。字节数来自 Axios 实际传输事件；总量无法可靠取得时不提供 `totalBytes`，SDK 不合成百分比或定时进度。响应成功、传输到 100% 和服务端业务成功是不同事实：上传到 100% 后仍可能返回业务错误。请求结束或取消后不再发出迟到进度；取消只终止本地传输观察，不撤销已经到达服务端的业务操作。进度不代表后端处理或上层落盘。下载仍返回 Blob，不在 SDK 中读入 Base64、创建本地文件或调用文件保存能力。
-
-## Android RN 实际传输验证
-
-在 `Pixel_5` Android 17 / API 37 arm64 模拟器、Expo development build、测试后端 `android-cn` 渠道完成以下验证。请求使用已授权测试账号；文档不记录凭据。
-
-| 场景 | 实测结果 |
-| --- | --- |
-| PPG 输入 | 使用后端文档中的合成 `ppg.csv`（188 字节）原生文件 URI 上传；服务端回执的 `logicalName=ppg`、`sizeBytes=188` 与实际文件一致。原输入下载返回 188 字节 Blob，读取后的文本与 fixture 完全一致，媒体类型为 `application/octet-stream`。上传和下载各观察到 1 次进度回调；这两个小文件的 `totalBytes` 未从联调界面留存。 |
-| 传输总量 | 使用 8 MiB 本地文件和非法逻辑名验证错误响应。上传实际收到 9 次事件，末次 `loadedBytes=8,388,948`、`totalBytes=8,388,948`；之后服务端返回 HTTP 422，说明传输完成不等于业务成功。 |
-| 取消 | 原生上传在首个进度事件后调用 `AbortController.abort()`；取消结果为 `cancelled`，取消时 1 次事件，等待 200 ms 后新增事件为 0。 |
-| 输出文件 | 已提交示例任务的详情为 `SUBMITTED` 且没有 `output_files`；缺失输出名下载得到结构化 `404 / NOT_FOUND`。当前环境没有成功输出文件可验证，因此未宣称 RN 输出下载成功。 |
-
-上述记录只覆盖该 Android 模拟器与测试渠道；没有验证 iOS 或实体设备。
 
 ## 只读错误路径验证
 
@@ -117,6 +113,5 @@ try {
 }
 ```
 
-只读验证记录：使用测试后端 `ios-cn` 渠道且不提供 Access Token 执行上述 GET，收到 HTTP 401、业务码 `INVALID_TOKEN`，SDK 返回 `kind=api`。这是 Node 请求 smoke，不代表 React Native 运行时验证。
 
 只记录错误类别、状态、业务码和请求标识；不要输出凭据、完整资料、请求配置或原始响应。无凭据错误不替代使用受控账号验证成功路径。
