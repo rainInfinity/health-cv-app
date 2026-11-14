@@ -1,6 +1,6 @@
 /** 按原生 plane 偏移、行步长与像素步长读取有效 YUV 样本。 */
 
-package com.healthcvapp.acquisition.ppg.pixels
+package com.healthcvapp.acquisition.pixels
 
 /** 只读借用指定 PixelFrameView 的 Y、U、V 样本。 */
 class PixelReader internal constructor(private val frame: PixelFrameView) {

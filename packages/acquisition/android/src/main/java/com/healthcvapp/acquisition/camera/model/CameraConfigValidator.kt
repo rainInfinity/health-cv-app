@@ -1,16 +1,15 @@
 /** 校验相机请求与已知能力，所有失败均发生在取得相机资源之前。 */
 
-package com.healthcvapp.acquisition.ppg.model
+package com.healthcvapp.acquisition.camera.model
 
 /** 对完整相机请求执行纯值校验，不访问设备、互斥锁或文件系统。 */
 object CameraConfigValidator {
   private const val MAX_SAFE_JS_INTEGER = 9_007_199_254_740_991L
 
-  /** 校验配置模式、数值范围、能力状态和二维网格限制。 */
+  /** 校验相机设备模式、数值范围与设备能力。 */
   fun validate(
     config: CameraConfig,
     capabilities: CameraCapabilities,
-    captureOptions: CameraCaptureOptions?,
   ) {
     if (config.cameraId.isBlank()) invalid("必须选择当前设备枚举得到的相机标识。")
     if (capabilities.cameraId != config.cameraId) unavailable("所选相机没有匹配的能力查询结果。")
@@ -88,28 +87,6 @@ object CameraConfigValidator {
     }
 
     if (config.torchEnabled) requireEnabled(capabilities.torch, "补光灯")
-    validateProcessing(config, captureOptions)
-  }
-
-  /** 校验分块行列对和乘积均落在当前查询的有限处理范围内。 */
-  private fun validateProcessing(config: CameraConfig, options: CameraCaptureOptions?) {
-    val selectedOptions = options ?: unavailable("分块限制尚未查询，不能确认当前网格可用。")
-    if (selectedOptions.cameraId != config.cameraId) {
-      unavailable("分块限制不属于当前所选相机。")
-    }
-    val limits = selectedOptions.processing
-    if (limits.maxBlockCount <= 0 || limits.maxColumns <= 0 || limits.maxRows <= 0) {
-      unavailable("能力查询未返回有效的本地分块限制。")
-    }
-    val layout = config.processing
-    val blockCount = layout.rows.toLong() * layout.columns.toLong()
-    if (
-      blockCount > limits.maxBlockCount.toLong()
-      || layout.rows > limits.maxRows
-      || layout.columns > limits.maxColumns
-    ) {
-      invalid("分块网格超过已查询的最大块数或目标尺寸约束。")
-    }
   }
 
   private fun requireMode(capability: CameraModeCapability, mode: String, field: String) {

@@ -1,6 +1,6 @@
 /** 保存原生 YUV 帧布局元数据，并限制像素只在借用作用域内读取。 */
 
-package com.healthcvapp.acquisition.ppg.pixels
+package com.healthcvapp.acquisition.pixels
 
 import java.nio.ByteBuffer
 
@@ -63,9 +63,9 @@ class PixelFrameView internal constructor(
   val mirrored: Boolean,
   /** 可取得的颜色空间名称；未知时为空。 */
   val colorSpace: String?,
-  /** 当前采集会话标识。 */
+  /** 当前帧所属的处理会话标识。 */
   val sessionId: String,
-  /** 当前正式采集中的交付帧序号，从 0 开始。 */
+  /** 当前处理路径中的交付帧序号；非正式采集帧可为负值。 */
   val frameIndex: Long,
   /** 原生帧携带的采集时间，单位为纳秒。 */
   val timestampFrameNanos: Long,
@@ -93,7 +93,7 @@ class PixelFrameView internal constructor(
     require(vPlane.width >= (width + 1) / 2 && vPlane.height >= (height + 1) / 2) { "V plane must cover 4:2:0 samples" }
   }
 
-  /** 由 FramePipeline 在释放平台帧前结束借用作用域。 */
+  /** 同步处理结束后使借用作用域失效。 */
   internal fun expire() {
     active = false
   }

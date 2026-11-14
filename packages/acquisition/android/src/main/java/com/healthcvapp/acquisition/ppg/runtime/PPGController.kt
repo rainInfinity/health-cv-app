@@ -22,24 +22,27 @@ import com.margelo.nitro.acquisition.Variant_NullType_AcquisitionArtifact
 import com.margelo.nitro.acquisition.Variant_NullType_String
 import com.margelo.nitro.acquisition.Variant_NullType_CameraConfigSummary
 import com.margelo.nitro.acquisition.toNitro
-import com.healthcvapp.acquisition.ppg.camera.CameraSource
-import com.healthcvapp.acquisition.ppg.camera.CameraSourceException
-import com.healthcvapp.acquisition.ppg.camera.CameraSourceListener
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraSource
+import com.healthcvapp.acquisition.camera.CameraSourceException
+import com.healthcvapp.acquisition.camera.CameraSourceListener
 import com.healthcvapp.acquisition.camera.ownership.CameraUseGuard
 import com.healthcvapp.acquisition.camera.ownership.CameraUseLease
+import com.healthcvapp.acquisition.camera.model.CameraCapabilities
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOptionsRequest
+import com.healthcvapp.acquisition.camera.model.CameraFrameBackpressure
+import com.healthcvapp.acquisition.camera.model.CameraConfigFailure
+import com.healthcvapp.acquisition.camera.model.CameraDescriptor
+import com.healthcvapp.acquisition.camera.model.CameraFrameGeometry
+import com.healthcvapp.acquisition.camera.model.CameraLockPhase as ModelCameraLockPhase
+import com.healthcvapp.acquisition.camera.model.CameraLockStatus as ModelCameraLockStatus
 import com.healthcvapp.acquisition.ppg.model.PPGArtifact
-import com.healthcvapp.acquisition.ppg.model.CameraDescriptor
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilities
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptions
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptionsRequest
-import com.healthcvapp.acquisition.ppg.model.CameraConfig as ModelCameraConfig
-import com.healthcvapp.acquisition.ppg.model.CameraConfigFailure
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary as ModelCameraConfigSummary
-import com.healthcvapp.acquisition.ppg.model.CameraFrameGeometry
-import com.healthcvapp.acquisition.ppg.model.CameraLockPhase as ModelCameraLockPhase
-import com.healthcvapp.acquisition.ppg.model.CameraLockStatus as ModelCameraLockStatus
+import com.healthcvapp.acquisition.ppg.model.PPGCaptureOptions
+import com.healthcvapp.acquisition.ppg.model.PPGConfig as ModelPPGConfig
+import com.healthcvapp.acquisition.ppg.model.PPGConfigSummary as ModelPPGConfigSummary
+import com.healthcvapp.acquisition.ppg.model.PPGConfigValidator
+import com.healthcvapp.acquisition.ppg.model.withPpgProcessingLimits
 import com.healthcvapp.acquisition.ppg.processing.CoverageHint
 import com.healthcvapp.acquisition.ppg.processing.CoverageHintProcessor
 import com.healthcvapp.acquisition.ppg.processing.FramePipeline
@@ -98,7 +101,7 @@ internal class PPGController(context: ReactContext) {
   private var torchAvailable = false
   private var hint = CoverageHint(null, null)
   private var lastArtifact: PPGArtifact? = null
-  private var cameraConfigSummary: ModelCameraConfigSummary? = null
+  private var cameraConfigSummary: ModelPPGConfigSummary? = null
   private var cameraLockStatus = ModelCameraLockStatus(
     phase = ModelCameraLockPhase.NOT_REQUESTED,
     aeLocked = null,
@@ -152,14 +155,23 @@ internal class PPGController(context: ReactContext) {
   suspend fun getCameraCapabilities(cameraId: String): CameraCapabilities =
     cameraSource.getCameraCapabilities(cameraId)
 
-  /** 查询未绑定的 Preview + YUV 组合和本地分块边界，不申请相机租约。 */
+  /** 查询未绑定的 Preview + YUV 组合与 PPG 网格边界，不申请相机租约。 */
   suspend fun getSupportedCaptureOptions(
     cameraId: String,
     request: CameraCaptureOptionsRequest,
-  ): CameraCaptureOptions = cameraSource.getSupportedCaptureOptions(cameraId, request)
+  ): PPGCaptureOptions {
+    val cameraOptions = cameraSource.getSupportedCaptureOptions(
+      cameraId,
+      request,
+      CameraFrameBackpressure.BLOCK_PRODUCER,
+    )
+    val resolution = cameraOptions.options.firstOrNull()?.resolution
+      ?: throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", "相机查询未返回可用于计算网格限制的尺寸。")
+    return cameraOptions.withPpgProcessingLimits(resolution)
+  }
 
   /** 按显式相机配置打开原生预览；配置校验完成后才申请互斥租约。 */
-  suspend fun openCamera(config: ModelCameraConfig): AcquisitionCommandResult = commandMutex.withLock {
+  suspend fun openCamera(config: ModelPPGConfig): AcquisitionCommandResult = commandMutex.withLock {
     synchronized(lock) {
       if (state != AcquisitionState.CLOSED) {
         return@withLock commandResult("CAMERA_STATE_INVALID", "当前相机周期未关闭，不能提交新配置。")
@@ -171,7 +183,15 @@ internal class PPGController(context: ReactContext) {
     val owner = reactContext.currentActivity as? LifecycleOwner
       ?: return@withLock commandResult("ACTIVITY_UNAVAILABLE", "当前界面无法绑定 Android 相机生命周期。")
     val validatedSummary = try {
-      cameraSource.validateConfiguration(config)
+      val validation = cameraSource.validateConfiguration(
+        config.cameraConfig,
+        CameraFrameBackpressure.BLOCK_PRODUCER,
+      )
+      PPGConfigValidator.validateProcessing(
+        config,
+        validation.captureOptions.withPpgProcessingLimits(config.cameraConfig.targetResolution),
+      )
+      ModelPPGConfigSummary(validation.configSummary, config.blockLayout)
     } catch (error: Throwable) {
       val details = cameraError(error)
       return@withLock commandResult(details.first, details.second)
@@ -207,11 +227,16 @@ internal class PPGController(context: ReactContext) {
     coverageProcessor.update(null)
 
     try {
+      val cameraListener = createCameraListener(newCameraSessionId)
       val capabilities = cameraSource.open(
-        config = config,
+        config = config.cameraConfig,
         previewView = activePreview,
         owner = owner,
-        listener = createCameraListener(newCameraSessionId),
+        listener = cameraListener,
+        backpressureStrategy = CameraFrameBackpressure.BLOCK_PRODUCER,
+        onHostStopped = {
+          cameraListener.onInterrupted("APP_BACKGROUND", "应用进入后台，相机已停止。")
+        },
       )
       var openFailure: Pair<String, String>? = null
       synchronized(lock) {
@@ -220,7 +245,7 @@ internal class PPGController(context: ReactContext) {
         } else {
           state = AcquisitionState.PREVIEW
           torchAvailable = capabilities.torchAvailable
-          cameraConfigSummary = capabilities.configSummary
+          cameraConfigSummary = ModelPPGConfigSummary(capabilities.configSummary, config.blockLayout)
         }
         dispatchSnapshot(snapshotLocked())
       }
@@ -359,13 +384,20 @@ internal class PPGController(context: ReactContext) {
       }
       val openedCameraSessionId = cameraSessionId
         ?: return@withLock commandResult("CAMERA_NOT_READY", "当前相机周期标识缺失。")
-      val config = cameraConfigSummary?.requestedConfig
-        ?: return@withLock commandResult("CAMERA_CONFIGURATION_UNAVAILABLE", "当前相机周期没有冻结配置。")
+      val config = cameraConfigSummary?.let { summary ->
+        ModelPPGConfig(
+          cameraConfig = summary.cameraSummary.requestedConfig,
+          blockLayout = summary.blockLayout,
+        )
+      } ?: return@withLock commandResult(
+        "CAMERA_CONFIGURATION_UNAVAILABLE",
+        "当前相机周期没有冻结配置。",
+      )
       openedCameraSessionId to config
     }
     val (openedCameraSessionId, config) = captureConfiguration
-    val requestsAeLock = config.exposure.locked
-    val requestsAwbLock = config.whiteBalance.locked
+    val requestsAeLock = config.cameraConfig.exposure.locked
+    val requestsAwbLock = config.cameraConfig.whiteBalance.locked
 
     if (requestsAeLock || requestsAwbLock) {
       try {
@@ -403,7 +435,7 @@ internal class PPGController(context: ReactContext) {
     val newSession = PPGCaptureSession(
       filesDirectory = applicationContext.filesDir,
       sessionId = newSessionId,
-      blockLayout = config.processing,
+      blockLayout = config.blockLayout,
       onFailure = { failure -> onCaptureFailure(newSessionId, failure) },
     )
     try {
@@ -464,7 +496,7 @@ internal class PPGController(context: ReactContext) {
       Triple(session, openedCameraSessionId, configSummary)
     }
     val (session, openedCameraSessionId, configSummary) = stopContext
-    val config = configSummary.requestedConfig
+    val config = configSummary.cameraSummary.requestedConfig
     if (!session.isCapturing) {
       val failure = session.terminalFailure
       return@withLock stopResult(
@@ -675,10 +707,14 @@ internal class PPGController(context: ReactContext) {
           cameraWidth = geometry.width.toInt()
           cameraHeight = geometry.height.toInt()
           this@PPGController.framesPerSecond = framesPerSecond
-          cameraConfigSummary = cameraConfigSummary?.copy(
-            actualFrame = geometry,
-            observedFps = framesPerSecond.takeIf { it > 0.0 },
-          )
+          cameraConfigSummary = cameraConfigSummary?.let { summary ->
+            summary.copy(
+              cameraSummary = summary.cameraSummary.copy(
+                actualFrame = geometry,
+                observedFps = framesPerSecond.takeIf { it > 0.0 },
+              ),
+            )
+          }
         }
       }
     }

@@ -2,11 +2,11 @@
 
 package com.healthcvapp.acquisition.ppg.session
 
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.correlation.FrameCorrelationFailure
 import com.healthcvapp.acquisition.ppg.correlation.FrameMetadataCorrelator
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
+import com.healthcvapp.acquisition.ppg.model.PPGConfigSummary
 import com.healthcvapp.acquisition.ppg.model.PPGArtifact
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
 import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
@@ -224,7 +224,7 @@ internal class PPGCaptureSession(
   /** 停止收帧、等待配对与两份 CSV 排空、关闭并完成后才返回产物。 */
   suspend fun stop(
     finishedAtMillis: Long,
-    cameraConfigSummary: CameraConfigSummary? = null,
+    cameraConfigSummary: PPGConfigSummary? = null,
   ): PPGArtifact = commands.withLock {
     var shouldWaitForFrames: CompletableDeferred<Unit>? = null
     var currentFailure: PPGCaptureFailure? = null

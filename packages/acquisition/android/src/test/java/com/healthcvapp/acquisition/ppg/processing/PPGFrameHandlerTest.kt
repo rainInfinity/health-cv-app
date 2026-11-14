@@ -6,10 +6,10 @@ import android.graphics.ImageFormat
 import android.graphics.Rect
 import androidx.camera.core.ImageInfo
 import androidx.camera.core.ImageProxy
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
-import com.healthcvapp.acquisition.ppg.pixels.PixelReader
+import com.healthcvapp.acquisition.pixels.PixelReader
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureSession
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method

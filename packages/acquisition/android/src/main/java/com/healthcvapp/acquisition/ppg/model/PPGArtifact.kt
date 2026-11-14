@@ -27,7 +27,7 @@ data class PPGArtifact(
   /** 按 PPG、逐帧元数据顺序列出的已完成文件。 */
   val files: List<PPGArtifactFile>,
   /** 本次会话的冻结配置、协商结果、实际帧几何与分块布局。 */
-  val cameraConfigSummary: CameraConfigSummary?,
+  val cameraConfigSummary: PPGConfigSummary?,
   /** 采集开始时的单调时间，单位毫秒。 */
   val startedAtMillis: Long,
   /** 文件关闭时的单调时间，单位毫秒。 */

@@ -1,16 +1,16 @@
 /** 将 Camera2 静态元数据归一化为带未知状态的相机能力。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CameraCharacteristics
-import com.healthcvapp.acquisition.ppg.model.CameraBooleanCapability
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilities
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus
-import com.healthcvapp.acquisition.ppg.model.CameraModeCapability
-import com.healthcvapp.acquisition.ppg.model.CameraNumberRange
-import com.healthcvapp.acquisition.ppg.model.CameraNumericCapability
-import com.healthcvapp.acquisition.ppg.model.CameraRational
+import com.healthcvapp.acquisition.camera.model.CameraBooleanCapability
+import com.healthcvapp.acquisition.camera.model.CameraCapabilities
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraModeCapability
+import com.healthcvapp.acquisition.camera.model.CameraNumberRange
+import com.healthcvapp.acquisition.camera.model.CameraNumericCapability
+import com.healthcvapp.acquisition.camera.model.CameraRational
 
 /** 表示 Camera2 元数据的单项读取状态，区分权限不足与元数据缺失。 */
 internal sealed class CameraMetadataValue<out T> {

@@ -2,10 +2,10 @@
 
 package com.healthcvapp.acquisition.ppg.processing
 
+import com.healthcvapp.acquisition.pixels.PixelCropRect
+import com.healthcvapp.acquisition.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelPlane
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.pixels.PixelCropRect
-import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
-import com.healthcvapp.acquisition.ppg.pixels.PixelPlane
 import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Test

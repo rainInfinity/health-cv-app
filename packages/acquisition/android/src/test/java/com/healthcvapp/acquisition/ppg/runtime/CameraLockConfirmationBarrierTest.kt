@@ -2,7 +2,7 @@
 
 package com.healthcvapp.acquisition.ppg.runtime
 
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async

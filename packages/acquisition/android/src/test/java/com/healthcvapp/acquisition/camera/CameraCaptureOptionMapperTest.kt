@@ -1,10 +1,10 @@
 /** 验证预览与分析的单项组合查询不把不兼容或未知伪装为支持。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus
-import com.healthcvapp.acquisition.ppg.model.CameraFpsRange
-import com.healthcvapp.acquisition.ppg.model.CameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraFpsRange
+import com.healthcvapp.acquisition.camera.model.CameraResolution
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

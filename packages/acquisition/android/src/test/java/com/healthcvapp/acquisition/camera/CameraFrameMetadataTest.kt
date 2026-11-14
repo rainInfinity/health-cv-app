@@ -1,6 +1,6 @@
 /** 验证 Camera2 完成结果映射和可选字段的旧版零值兜底。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

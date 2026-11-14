@@ -5,21 +5,21 @@ package com.margelo.nitro.acquisition
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
 import com.healthcvapp.acquisition.ppg.runtime.PPGRuntime
-import com.healthcvapp.acquisition.ppg.model.CameraFacing as ModelCameraFacing
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilities as ModelCameraCapabilities
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus as ModelCameraCapabilityStatus
-import com.healthcvapp.acquisition.ppg.model.CameraModeCapability as ModelCameraModeCapability
-import com.healthcvapp.acquisition.ppg.model.CameraNumericCapability as ModelCameraNumericCapability
-import com.healthcvapp.acquisition.ppg.model.CameraBooleanCapability as ModelCameraBooleanCapability
-import com.healthcvapp.acquisition.ppg.model.CameraNumberRange as ModelCameraNumberRange
-import com.healthcvapp.acquisition.ppg.model.CameraRational as ModelCameraRational
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptions as ModelCameraCaptureOptions
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOption as ModelCameraCaptureOption
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptionsRequest as ModelCameraCaptureOptionsRequest
-import com.healthcvapp.acquisition.ppg.model.CameraFpsRange as ModelCameraFpsRange
+import com.healthcvapp.acquisition.camera.model.CameraFacing as ModelCameraFacing
+import com.healthcvapp.acquisition.camera.model.CameraCapabilities as ModelCameraCapabilities
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus as ModelCameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraModeCapability as ModelCameraModeCapability
+import com.healthcvapp.acquisition.camera.model.CameraNumericCapability as ModelCameraNumericCapability
+import com.healthcvapp.acquisition.camera.model.CameraBooleanCapability as ModelCameraBooleanCapability
+import com.healthcvapp.acquisition.camera.model.CameraNumberRange as ModelCameraNumberRange
+import com.healthcvapp.acquisition.camera.model.CameraRational as ModelCameraRational
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOption as ModelCameraCaptureOption
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOptionsRequest as ModelCameraCaptureOptionsRequest
+import com.healthcvapp.acquisition.camera.model.CameraFpsRange as ModelCameraFpsRange
+import com.healthcvapp.acquisition.camera.model.CameraResolution as ModelCameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraConfigFailure
 import com.healthcvapp.acquisition.ppg.model.CameraProcessingLimits as ModelCameraProcessingLimits
-import com.healthcvapp.acquisition.ppg.model.CameraResolution as ModelCameraResolution
-import com.healthcvapp.acquisition.ppg.model.CameraConfigFailure
+import com.healthcvapp.acquisition.ppg.model.PPGCaptureOptions as ModelPPGCaptureOptions
 import com.margelo.nitro.core.NullType
 import com.margelo.nitro.acquisition.Variant_NullType_Double
 
@@ -162,10 +162,10 @@ class HybridAcquisition : HybridAcquisitionSpec() {
     targetFps = targetFps?.asSecondOrNull(),
   )
 
-  /** 转换尺寸、帧率候选及独立的本地处理限制。 */
-  private fun ModelCameraCaptureOptions.toNitro() = CameraCaptureOptions(
-    cameraId = cameraId,
-    options = options.map { it.toNitro() }.toTypedArray(),
+  /** 转换共用相机查询结果及 PPG 专属网格限制。 */
+  private fun ModelPPGCaptureOptions.toNitro() = CameraCaptureOptions(
+    cameraId = cameraOptions.cameraId,
+    options = cameraOptions.options.map { it.toNitro() }.toTypedArray(),
     processing = processing.toNitro(),
   )
 

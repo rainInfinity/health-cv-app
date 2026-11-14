@@ -1,11 +1,11 @@
 /** 验证 Camera2 能力映射保留真实范围、明确不支持和未知状态。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus
-import com.healthcvapp.acquisition.ppg.model.CameraRational
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraRational
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

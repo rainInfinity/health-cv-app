@@ -2,84 +2,86 @@
 
 package com.margelo.nitro.acquisition
 
+import com.healthcvapp.acquisition.camera.model.CameraConfig as ModelCameraConfig
+import com.healthcvapp.acquisition.camera.model.CameraConfigAdjustment as ModelCameraConfigAdjustment
+import com.healthcvapp.acquisition.camera.model.CameraExposureConfig as ModelCameraExposureConfig
+import com.healthcvapp.acquisition.camera.model.CameraExposureMode as ModelCameraExposureMode
+import com.healthcvapp.acquisition.camera.model.CameraFocusConfig as ModelCameraFocusConfig
+import com.healthcvapp.acquisition.camera.model.CameraFocusMode as ModelCameraFocusMode
+import com.healthcvapp.acquisition.camera.model.CameraFrameCrop as ModelCameraFrameCrop
+import com.healthcvapp.acquisition.camera.model.CameraFrameGeometry as ModelCameraFrameGeometry
+import com.healthcvapp.acquisition.camera.model.CameraLockPhase as ModelCameraLockPhase
+import com.healthcvapp.acquisition.camera.model.CameraLockStatus as ModelCameraLockStatus
+import com.healthcvapp.acquisition.camera.model.CameraResolution as ModelCameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceConfig as ModelCameraWhiteBalanceConfig
+import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceMode as ModelCameraWhiteBalanceMode
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout as ModelCameraBlockLayout
-import com.healthcvapp.acquisition.ppg.model.CameraConfig as ModelCameraConfig
-import com.healthcvapp.acquisition.ppg.model.CameraConfigAdjustment as ModelCameraConfigAdjustment
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary as ModelCameraConfigSummary
-import com.healthcvapp.acquisition.ppg.model.CameraExposureConfig as ModelCameraExposureConfig
-import com.healthcvapp.acquisition.ppg.model.CameraExposureMode as ModelCameraExposureMode
-import com.healthcvapp.acquisition.ppg.model.CameraFocusConfig as ModelCameraFocusConfig
-import com.healthcvapp.acquisition.ppg.model.CameraFocusMode as ModelCameraFocusMode
-import com.healthcvapp.acquisition.ppg.model.CameraFrameCrop as ModelCameraFrameCrop
-import com.healthcvapp.acquisition.ppg.model.CameraFrameGeometry as ModelCameraFrameGeometry
-import com.healthcvapp.acquisition.ppg.model.CameraLockPhase as ModelCameraLockPhase
-import com.healthcvapp.acquisition.ppg.model.CameraLockStatus as ModelCameraLockStatus
-import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceConfig as ModelCameraWhiteBalanceConfig
-import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceMode as ModelCameraWhiteBalanceMode
+import com.healthcvapp.acquisition.ppg.model.PPGConfig as ModelPPGConfig
+import com.healthcvapp.acquisition.ppg.model.PPGConfigSummary as ModelPPGConfigSummary
 import com.margelo.nitro.core.NullType
 
-/** 将 JS 配置复制为原生不可变值，并验证桥接分块数组形状。 */
-internal fun CameraConfig.toModel(): ModelCameraConfig = ModelCameraConfig(
-  cameraId = cameraId,
-  targetResolution = com.healthcvapp.acquisition.ppg.model.CameraResolution(
-    targetResolution.width,
-    targetResolution.height,
+/** 将 JS 配置拆分为共用设备配置和原始 PPG 网格。 */
+internal fun CameraConfig.toModel(): ModelPPGConfig = ModelPPGConfig(
+  cameraConfig = ModelCameraConfig(
+    cameraId = cameraId,
+    targetResolution = ModelCameraResolution(targetResolution.width, targetResolution.height),
+    targetFps = targetFps,
+    torchEnabled = torchEnabled,
+    exposure = ModelCameraExposureConfig(
+      mode = exposure.mode.toModel(),
+      compensationIndex = exposure.compensationIndex?.asSecondOrNull(),
+      timeNanos = exposure.timeNanos?.asSecondOrNull(),
+      iso = exposure.iso?.asSecondOrNull(),
+      locked = exposure.locked,
+    ),
+    whiteBalance = ModelCameraWhiteBalanceConfig(
+      mode = whiteBalance.mode.toModel(),
+      locked = whiteBalance.locked,
+    ),
+    focus = ModelCameraFocusConfig(
+      mode = focus.mode.toModel(),
+      distanceDiopters = focus.distanceDiopters?.asSecondOrNull(),
+    ),
   ),
-  targetFps = targetFps,
-  torchEnabled = torchEnabled,
-  exposure = ModelCameraExposureConfig(
-    mode = exposure.mode.toModel(),
-    compensationIndex = exposure.compensationIndex?.asSecondOrNull(),
-    timeNanos = exposure.timeNanos?.asSecondOrNull(),
-    iso = exposure.iso?.asSecondOrNull(),
-    locked = exposure.locked,
-  ),
-  whiteBalance = ModelCameraWhiteBalanceConfig(
-    mode = whiteBalance.mode.toModel(),
-    locked = whiteBalance.locked,
-  ),
-  focus = ModelCameraFocusConfig(
-    mode = focus.mode.toModel(),
-    distanceDiopters = focus.distanceDiopters?.asSecondOrNull(),
-  ),
-  processing = ModelCameraBlockLayout.fromBlocks(processing.blocks),
+  blockLayout = ModelCameraBlockLayout.fromBlocks(processing.blocks),
 )
 
-/** 将完整配置和分块布局转换为 Nitro 结构。 */
-internal fun ModelCameraConfig.toNitro(): CameraConfig = CameraConfig(
-  cameraId = cameraId,
-  targetResolution = CameraResolution(targetResolution.width, targetResolution.height),
-  targetFps = targetFps,
-  torchEnabled = torchEnabled,
+/** 将 PPG 与通用相机配置组合回原有 Nitro 请求结构。 */
+internal fun ModelPPGConfig.toNitro(): CameraConfig = CameraConfig(
+  cameraId = cameraConfig.cameraId,
+  targetResolution = CameraResolution(cameraConfig.targetResolution.width, cameraConfig.targetResolution.height),
+  targetFps = cameraConfig.targetFps,
+  torchEnabled = cameraConfig.torchEnabled,
   exposure = CameraExposureConfig(
-    mode = exposure.mode.toNitro(),
-    compensationIndex = exposure.compensationIndex.toNitroNullable(),
-    timeNanos = exposure.timeNanos.toNitroNullable(),
-    iso = exposure.iso.toNitroNullable(),
-    locked = exposure.locked,
+    mode = cameraConfig.exposure.mode.toNitro(),
+    compensationIndex = cameraConfig.exposure.compensationIndex.toNitroNullable(),
+    timeNanos = cameraConfig.exposure.timeNanos.toNitroNullable(),
+    iso = cameraConfig.exposure.iso.toNitroNullable(),
+    locked = cameraConfig.exposure.locked,
   ),
   whiteBalance = CameraWhiteBalanceConfig(
-    mode = whiteBalance.mode.toNitro(),
-    locked = whiteBalance.locked,
+    mode = cameraConfig.whiteBalance.mode.toNitro(),
+    locked = cameraConfig.whiteBalance.locked,
   ),
   focus = CameraFocusConfig(
-    mode = focus.mode.toNitro(),
-    distanceDiopters = focus.distanceDiopters.toNitroNullable(),
+    mode = cameraConfig.focus.mode.toNitro(),
+    distanceDiopters = cameraConfig.focus.distanceDiopters.toNitroNullable(),
   ),
   processing = CameraProcessingConfig(
-    blocks = doubleArrayOf(processing.rows.toDouble(), processing.columns.toDouble()),
+    blocks = doubleArrayOf(blockLayout.rows.toDouble(), blockLayout.columns.toDouble()),
   ),
 )
 
-/** 将原生配置周期摘要序列化为低频 Nitro 状态。 */
-internal fun ModelCameraConfigSummary.toNitro(): CameraConfigSummary = CameraConfigSummary(
-  cameraId = cameraId,
-  requestedConfig = requestedConfig.toNitro(),
-  submittedConfig = submittedConfig.toNitro(),
-  adjustments = adjustments.map(ModelCameraConfigAdjustment::toNitro).toTypedArray(),
-  actualFrame = actualFrame?.let { Variant_NullType_CameraFrameGeometry.create(it.toNitro()) }
-    ?: Variant_NullType_CameraFrameGeometry.create(NullType.NULL),
-  observedFps = observedFps.toNitroNullable(),
+/** 将 PPG 网格与通用相机协商结果序列化为低频 Nitro 状态。 */
+internal fun ModelPPGConfigSummary.toNitro(): CameraConfigSummary = CameraConfigSummary(
+  cameraId = cameraSummary.cameraId,
+  requestedConfig = ModelPPGConfig(cameraSummary.requestedConfig, blockLayout).toNitro(),
+  submittedConfig = ModelPPGConfig(cameraSummary.submittedConfig, blockLayout).toNitro(),
+  adjustments = cameraSummary.adjustments.map(ModelCameraConfigAdjustment::toNitro).toTypedArray(),
+  actualFrame = cameraSummary.actualFrame?.let {
+    Variant_NullType_CameraFrameGeometry.create(it.toNitro())
+  } ?: Variant_NullType_CameraFrameGeometry.create(NullType.NULL),
+  observedFps = cameraSummary.observedFps.toNitroNullable(),
   blockLayout = CameraBlockLayout(blockLayout.rows.toDouble(), blockLayout.columns.toDouble()),
 )
 

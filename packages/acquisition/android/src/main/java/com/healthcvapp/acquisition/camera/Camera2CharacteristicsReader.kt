@@ -1,12 +1,12 @@
 /** 无绑定地读取相机静态特征，并保留逐项读取状态。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 import android.hardware.camera2.CameraCharacteristics
 import android.util.Rational
 import android.util.Range
 import androidx.camera.camera2.interop.Camera2CameraInfo
-import com.healthcvapp.acquisition.ppg.model.CameraRational
+import com.healthcvapp.acquisition.camera.model.CameraRational
 
 /** 将 Camera2CameraInfo 的静态元数据转换为纯值快照。 */
 internal object Camera2CharacteristicsReader {

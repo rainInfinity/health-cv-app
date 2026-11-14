@@ -1,14 +1,14 @@
-/** 定义主动相机请求、应用摘要、分块布局与算法锁状态。 */
+/** 定义可由不同采集路径共享的相机配置、帧几何与锁状态。 */
 
-package com.healthcvapp.acquisition.ppg.model
+package com.healthcvapp.acquisition.camera.model
 
-/** 主动采集的自动或手动曝光模式。 */
+/** 相机支持的自动或手动曝光模式。 */
 enum class CameraExposureMode(val wireValue: String) {
   AUTO("auto"),
   MANUAL("manual"),
 }
 
-/** 主动采集可表达的白平衡语义模式。 */
+/** 相机支持表达的白平衡语义模式。 */
 enum class CameraWhiteBalanceMode(val wireValue: String) {
   AUTO("auto"),
   OFF("off"),
@@ -21,64 +21,29 @@ enum class CameraWhiteBalanceMode(val wireValue: String) {
   SHADE("shade"),
 }
 
-/** 主动采集可表达的对焦语义模式。 */
+/** 相机支持表达的对焦语义。 */
 enum class CameraFocusMode(val wireValue: String) {
   AUTO("auto"),
   OFF("off"),
   MANUAL("manual"),
 }
 
-/** 表示应用主动相机配置时的可判别失败。 */
+/** 表示相机配置或能力校验时的可判别失败。 */
 class CameraConfigFailure(
   /** 调用方可判别的稳定错误码。 */
   val code: String,
   message: String,
 ) : IllegalArgumentException(message)
 
-
-/** 表示一个非空、行优先的二维网格。 */
-data class CameraBlockLayout(
-  /** 网格行数，必须为正整数。 */
-  val rows: Int,
-  /** 网格列数，必须为正整数。 */
-  val columns: Int,
-) {
-  /** 该布局包含的块数，以 Long 计算以避免乘积溢出。 */
-  val blockCount: Long = rows.toLong() * columns.toLong()
-
-  init {
-    if (rows <= 0 || columns <= 0) {
-      throw CameraConfigFailure("INVALID_CAMERA_CONFIG", "分块行数和列数必须为正整数。")
-    }
-  }
-
-  companion object {
-    /** 单帧允许处理的最大图像块数。 */
-    const val MAX_BLOCK_COUNT = 64
-    /** 校验桥接数组并只保留两个整数维度，不保留调用方可变数组。 */
-    fun fromBlocks(blocks: DoubleArray): CameraBlockLayout {
-      if (blocks.size != 2 || blocks.any {
-          !it.isFinite() || it % 1.0 != 0.0 || it <= 0.0 || it > Int.MAX_VALUE.toDouble()
-        }) {
-        throw CameraConfigFailure(
-          "INVALID_CAMERA_CONFIG",
-          "分块配置必须恰有两个可表示的正整数行列值。",
-        )
-      }
-      return CameraBlockLayout(rows = blocks[0].toInt(), columns = blocks[1].toInt())
-    }
-  }
-}
-
 /** 保存一组自动或手动曝光请求参数。 */
 data class CameraExposureConfig(
   /** 曝光控制模式。 */
   val mode: CameraExposureMode,
-  /** 自动曝光补偿索引；不适用时为空，验证前保留桥接浮点数。 */
+  /** 自动曝光补偿索引；不适用时为空。 */
   val compensationIndex: Double?,
-  /** 手动曝光时间，单位纳秒；不适用时为空，验证前保留桥接浮点数。 */
+  /** 手动曝光时间，单位纳秒；不适用时为空。 */
   val timeNanos: Double?,
-  /** 手动感光度 ISO；不适用时为空，验证前保留桥接浮点数。 */
+  /** 手动感光度 ISO；不适用时为空。 */
   val iso: Double?,
   /** 是否请求在正式采集前锁定自动曝光。 */
   val locked: Boolean,
@@ -86,7 +51,7 @@ data class CameraExposureConfig(
 
 /** 保存白平衡模式及自动算法锁定请求。 */
 data class CameraWhiteBalanceConfig(
-  /** 白平衡控制模式。 */
+  /** 白平衡模式。 */
   val mode: CameraWhiteBalanceMode,
   /** 是否请求在正式采集前锁定自动白平衡。 */
   val locked: Boolean,
@@ -94,13 +59,13 @@ data class CameraWhiteBalanceConfig(
 
 /** 保存对焦模式及可选手动距离。 */
 data class CameraFocusConfig(
-  /** 对焦控制模式。 */
+  /** 对焦模式。 */
   val mode: CameraFocusMode,
   /** 手动对焦距离，单位屈光度；不适用时为空。 */
   val distanceDiopters: Double?,
 )
 
-/** 保存单个相机打开周期内冻结的完整请求配置。 */
+/** 保存单个相机周期内冻结的设备配置，不包含处理器专属参数。 */
 data class CameraConfig(
   /** 当前设备枚举得到的逻辑相机标识。 */
   val cameraId: String,
@@ -116,11 +81,9 @@ data class CameraConfig(
   val whiteBalance: CameraWhiteBalanceConfig,
   /** 对焦模式配置。 */
   val focus: CameraFocusConfig,
-  /** 分块处理布局。 */
-  val processing: CameraBlockLayout,
 )
 
-/** 描述配置协商时某字段的请求值与实际提交值差异。 */
+/** 描述设备协商时配置请求值与实际提交值的差异。 */
 data class CameraConfigAdjustment(
   /** 被调整字段的配置路径。 */
   val field: String,
@@ -162,9 +125,9 @@ data class CameraFrameGeometry(
 data class CameraConfigSummary(
   /** 本周期绑定的相机标识。 */
   val cameraId: String,
-  /** 调用方提交的原始配置。 */
+  /** 调用方提交的原始设备配置。 */
   val requestedConfig: CameraConfig,
-  /** 原生提交给相机用例的配置。 */
+  /** 原生提交给相机用例的设备配置。 */
   val submittedConfig: CameraConfig,
   /** 尺寸或帧率协商的明确原因。 */
   val adjustments: List<CameraConfigAdjustment>,
@@ -172,8 +135,6 @@ data class CameraConfigSummary(
   val actualFrame: CameraFrameGeometry?,
   /** 观测到的帧率；尚无测量窗口时为空。 */
   val observedFps: Double?,
-  /** 当前周期实际用于写出的分块布局。 */
-  val blockLayout: CameraBlockLayout,
 )
 
 /** 自动算法锁定的低频状态阶段。 */

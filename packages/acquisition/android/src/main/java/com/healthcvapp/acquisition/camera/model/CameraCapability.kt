@@ -1,6 +1,12 @@
-/** 定义主动相机枚举、参数能力及组合选项值模型。 */
+/** 定义相机枚举、设备能力及预览分析组合模型。 */
 
-package com.healthcvapp.acquisition.ppg.model
+package com.healthcvapp.acquisition.camera.model
+
+/** 表示单条图像处理路径如何处理分析帧背压。 */
+enum class CameraFrameBackpressure {
+  BLOCK_PRODUCER,
+  KEEP_ONLY_LATEST,
+}
 
 /** 表示设备能力查询的可判别结果。 */
 enum class CameraCapabilityStatus(val wireValue: String) {
@@ -94,7 +100,7 @@ data class CameraFpsRange(
   val maximum: Double,
 )
 
-/** 表示 Preview 与 YUV 分析组合的单个候选项。 */
+/** 表示 Preview 与分析用例组合的单个候选项。 */
 data class CameraCaptureOption(
   /** 候选分析尺寸。 */
   val resolution: CameraResolution,
@@ -106,35 +112,23 @@ data class CameraCaptureOption(
   val reason: String?,
 )
 
-/** 表示处理器可承受的有限分块约束。 */
-data class CameraProcessingLimits(
-  /** 单帧最大块数。 */
-  val maxBlockCount: Int,
-  /** 目标尺寸允许的最大列数。 */
-  val maxColumns: Int,
-  /** 目标尺寸允许的最大行数。 */
-  val maxRows: Int,
-)
-
-/** 返回指定相机的组合候选项与本地分块约束。 */
-data class CameraCaptureOptions(
-  /** 候选项所属的相机标识。 */
-  val cameraId: String,
-  /** Preview 与 YUV 分析组合的候选配置。 */
-  val options: List<CameraCaptureOption>,
-  /** 本地处理器约束，不代表相机硬件能力。 */
-  val processing: CameraProcessingLimits,
-)
-
 /** 表示组合能力查询使用的尺寸与帧率偏好。 */
 data class CameraCaptureOptionsRequest(
-  /** 待查询的目标尺寸；为空时使用主动采集默认候选值。 */
+  /** 待查询的目标尺寸；为空时使用相机层默认候选值。 */
   val targetResolution: CameraResolution?,
-  /** 待查询的目标帧率偏好；为空时返回组合支持的全部范围。 */
+  /** 待查询的目标帧率偏好；为空时不筛选帧率范围。 */
   val targetFps: Double?,
 )
 
-/** 汇总指定相机可查询的主动采集参数。 */
+/** 返回指定相机可查询的 Preview 与分析组合选项。 */
+data class CameraCaptureOptions(
+  /** 候选项所属的相机标识。 */
+  val cameraId: String,
+  /** Preview 与分析组合的候选配置。 */
+  val options: List<CameraCaptureOption>,
+)
+
+/** 汇总指定相机可查询的设备参数能力。 */
 data class CameraCapabilities(
   /** 能力所属的相机标识。 */
   val cameraId: String,

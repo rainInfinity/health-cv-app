@@ -1,11 +1,11 @@
 /** 将单个 CameraX Preview + YUV SessionConfig 查询结果映射为组合选项。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOption
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus
-import com.healthcvapp.acquisition.ppg.model.CameraFpsRange
-import com.healthcvapp.acquisition.ppg.model.CameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOption
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraFpsRange
+import com.healthcvapp.acquisition.camera.model.CameraResolution
 
 /** 按精确 SessionConfig 结果区分支持、不支持与无法确认。 */
 internal object CameraCaptureOptionMapper {

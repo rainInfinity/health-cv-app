@@ -2,20 +2,21 @@
 
 package com.healthcvapp.acquisition.ppg.session
 
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.model.CameraConfig
-import com.healthcvapp.acquisition.ppg.model.CameraConfigAdjustment
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
-import com.healthcvapp.acquisition.ppg.model.CameraExposureConfig
-import com.healthcvapp.acquisition.ppg.model.CameraExposureMode
-import com.healthcvapp.acquisition.ppg.model.CameraFocusConfig
-import com.healthcvapp.acquisition.ppg.model.CameraFocusMode
-import com.healthcvapp.acquisition.ppg.model.CameraFrameCrop
-import com.healthcvapp.acquisition.ppg.model.CameraFrameGeometry
-import com.healthcvapp.acquisition.ppg.model.CameraResolution
-import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceConfig
-import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceMode
+import com.healthcvapp.acquisition.camera.model.CameraConfig
+import com.healthcvapp.acquisition.camera.model.CameraConfigAdjustment
+import com.healthcvapp.acquisition.camera.model.CameraConfigSummary
+import com.healthcvapp.acquisition.camera.model.CameraExposureConfig
+import com.healthcvapp.acquisition.camera.model.CameraExposureMode
+import com.healthcvapp.acquisition.camera.model.CameraFocusConfig
+import com.healthcvapp.acquisition.camera.model.CameraFocusMode
+import com.healthcvapp.acquisition.camera.model.CameraFrameCrop
+import com.healthcvapp.acquisition.camera.model.CameraFrameGeometry
+import com.healthcvapp.acquisition.camera.model.CameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceConfig
+import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceMode
+import com.healthcvapp.acquisition.ppg.model.PPGConfigSummary
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
 import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
@@ -139,30 +140,31 @@ class PPGCaptureSessionTest {
       ),
       whiteBalance = CameraWhiteBalanceConfig(mode = CameraWhiteBalanceMode.AUTO, locked = true),
       focus = CameraFocusConfig(mode = CameraFocusMode.AUTO, distanceDiopters = null),
-      processing = layout,
     )
-    val summary = CameraConfigSummary(
-      cameraId = "1",
-      requestedConfig = config,
-      submittedConfig = config.copy(
-        targetResolution = CameraResolution(width = 1024.0, height = 768.0),
-      ),
-      adjustments = listOf(
-        CameraConfigAdjustment(
-          field = "targetResolution",
-          requestedValue = "720x720",
-          submittedValue = "1024x768",
-          reason = "该相机的预览与分析组合选择了可用候选尺寸。",
+    val summary = PPGConfigSummary(
+      cameraSummary = CameraConfigSummary(
+        cameraId = "1",
+        requestedConfig = config,
+        submittedConfig = config.copy(
+          targetResolution = CameraResolution(width = 1024.0, height = 768.0),
         ),
+        adjustments = listOf(
+          CameraConfigAdjustment(
+            field = "targetResolution",
+            requestedValue = "720x720",
+            submittedValue = "1024x768",
+            reason = "该相机的预览与分析组合选择了可用候选尺寸。",
+          ),
+        ),
+        actualFrame = CameraFrameGeometry(
+          width = 1024,
+          height = 768,
+          crop = CameraFrameCrop(left = 0, top = 0, width = 1024, height = 768),
+          sensorOrientationDegrees = 270,
+          mirrored = false,
+        ),
+        observedFps = 24.0,
       ),
-      actualFrame = CameraFrameGeometry(
-        width = 1024,
-        height = 768,
-        crop = CameraFrameCrop(left = 0, top = 0, width = 1024, height = 768),
-        sensorOrientationDegrees = 270,
-        mirrored = false,
-      ),
-      observedFps = 24.0,
       blockLayout = layout,
     )
     val session = session(directory, "summary", dispatcher, blockLayout = layout)

@@ -13,7 +13,7 @@ import com.healthcvapp.acquisition.storage.csv.BatchWriterFactory
 import com.healthcvapp.acquisition.storage.csv.CsvBatchWriterFactory
 import java.io.File
 import java.io.IOException
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
+import com.healthcvapp.acquisition.ppg.model.PPGConfigSummary
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -96,7 +96,7 @@ internal class PPGSessionOutput(
   fun publish(
     startedAtMillis: Long,
     finishedAtMillis: Long,
-    cameraConfigSummary: CameraConfigSummary? = null,
+    cameraConfigSummary: PPGConfigSummary? = null,
   ): PPGArtifact {
     check(ppgWriterClosed.get()) { "PPG session output must be closed before publication" }
     check(!publicationStarted) { "PPG session output can only be published once" }

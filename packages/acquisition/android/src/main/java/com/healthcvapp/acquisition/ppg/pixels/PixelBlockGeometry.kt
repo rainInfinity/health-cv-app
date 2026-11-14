@@ -2,8 +2,9 @@
 
 package com.healthcvapp.acquisition.ppg.pixels
 
+import com.healthcvapp.acquisition.camera.model.CameraConfigFailure
+import com.healthcvapp.acquisition.pixels.PixelCropRect
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.model.CameraConfigFailure
 
 /** 为实际有效裁剪区域预计算每个像素所属的网格行列。 */
 internal class PixelBlockGeometry private constructor(

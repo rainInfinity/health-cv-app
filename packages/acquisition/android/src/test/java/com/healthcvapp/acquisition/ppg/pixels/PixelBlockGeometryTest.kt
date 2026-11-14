@@ -2,8 +2,11 @@
 
 package com.healthcvapp.acquisition.ppg.pixels
 
+import com.healthcvapp.acquisition.camera.model.CameraConfigFailure
+import com.healthcvapp.acquisition.pixels.PixelCropRect
+import com.healthcvapp.acquisition.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelPlane
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.model.CameraConfigFailure
 import java.nio.ByteBuffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals

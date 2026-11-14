@@ -2,7 +2,7 @@
 
 package com.healthcvapp.acquisition.ppg.processing
 
-import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelFrameView
 
 /** 表示尚未评估或两个独立经验提示的最新状态。 */
 data class CoverageHint(

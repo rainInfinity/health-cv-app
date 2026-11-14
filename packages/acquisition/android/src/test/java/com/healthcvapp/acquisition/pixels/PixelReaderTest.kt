@@ -1,6 +1,6 @@
 /** 验证像素读取遵循各平面的实际 stride、偏移与裁剪区域。 */
 
-package com.healthcvapp.acquisition.ppg.pixels
+package com.healthcvapp.acquisition.pixels
 
 import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals

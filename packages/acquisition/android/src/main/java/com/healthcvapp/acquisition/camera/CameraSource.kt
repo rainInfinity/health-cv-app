@@ -1,6 +1,6 @@
-/** 负责主动 CameraX 相机查询、精确配置绑定与串行 YUV 帧交付。 */
+/** 负责共享 CameraX 查询、设备配置绑定与串行 YUV 帧交付。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 import android.Manifest
 import android.content.Context
@@ -24,6 +24,7 @@ import androidx.camera.core.CameraState
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.core.SessionConfig
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -32,26 +33,25 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilities
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptions
-import com.healthcvapp.acquisition.ppg.model.CameraCaptureOptionsRequest
-import com.healthcvapp.acquisition.ppg.model.CameraDescriptor
-import com.healthcvapp.acquisition.ppg.model.CameraFacing
-import com.healthcvapp.acquisition.ppg.model.CameraFpsRange
-import com.healthcvapp.acquisition.ppg.model.CameraProcessingLimits
-import com.healthcvapp.acquisition.ppg.model.CameraResolution
-import com.healthcvapp.acquisition.ppg.model.CameraConfig
-import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.model.CameraConfigAdjustment
-import com.healthcvapp.acquisition.ppg.model.CameraConfigFailure
-import com.healthcvapp.acquisition.ppg.model.CameraConfigSummary
-import com.healthcvapp.acquisition.ppg.model.CameraConfigValidator
-import com.healthcvapp.acquisition.ppg.model.CameraExposureMode
-import com.healthcvapp.acquisition.ppg.model.CameraFocusMode
-import com.healthcvapp.acquisition.ppg.model.CameraFrameCrop
-import com.healthcvapp.acquisition.ppg.model.CameraFrameGeometry
-import com.healthcvapp.acquisition.ppg.model.CameraWhiteBalanceMode
-import com.healthcvapp.acquisition.ppg.model.CameraCapabilityStatus
+import com.healthcvapp.acquisition.camera.model.CameraCapabilities
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOptions
+import com.healthcvapp.acquisition.camera.model.CameraCaptureOptionsRequest
+import com.healthcvapp.acquisition.camera.model.CameraFrameBackpressure
+import com.healthcvapp.acquisition.camera.model.CameraDescriptor
+import com.healthcvapp.acquisition.camera.model.CameraFacing
+import com.healthcvapp.acquisition.camera.model.CameraFpsRange
+import com.healthcvapp.acquisition.camera.model.CameraResolution
+import com.healthcvapp.acquisition.camera.model.CameraConfig
+import com.healthcvapp.acquisition.camera.model.CameraConfigAdjustment
+import com.healthcvapp.acquisition.camera.model.CameraConfigFailure
+import com.healthcvapp.acquisition.camera.model.CameraConfigSummary
+import com.healthcvapp.acquisition.camera.model.CameraConfigValidator
+import com.healthcvapp.acquisition.camera.model.CameraExposureMode
+import com.healthcvapp.acquisition.camera.model.CameraFocusMode
+import com.healthcvapp.acquisition.camera.model.CameraFrameCrop
+import com.healthcvapp.acquisition.camera.model.CameraFrameGeometry
+import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceMode
+import com.healthcvapp.acquisition.camera.model.CameraCapabilityStatus
 import androidx.camera.core.CameraInfo
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -76,10 +76,17 @@ class CameraSourceException(
 data class CameraSourceCapabilities(
   /** 当前所选相机是否具备 torch 硬件。 */
   val torchAvailable: Boolean,
-  /** CameraX 为当前 Preview + YUV 用例协商出的帧率范围。 */
+  /** CameraX 为当前预览及／或 YUV 用例协商出的帧率范围。 */
   val selectedFrameRateRange: Range<Int>,
   /** 本次请求、实际提交配置和后续帧测量的低频摘要。 */
   val configSummary: CameraConfigSummary,
+)
+/** 保存通用设备校验结果与相机能力层返回的组合选项。 */
+data class CameraSourceValidation(
+  /** 相机设备层的配置协商摘要。 */
+  val configSummary: CameraConfigSummary,
+  /** 相机预览与分析用例的真实组合查询结果。 */
+  val captureOptions: CameraCaptureOptions,
 )
 
 /** 保存未绑定的精确相机用例计划；创建它不会占用设备。 */
@@ -92,12 +99,14 @@ private data class PreparedCameraConfiguration(
   val sessionConfig: SessionConfig,
   /** 组合查询得到且在打开时再次验证的帧率范围。 */
   val selectedFrameRateRange: Range<Int>,
-  /** 本次预览用例。 */
-  val preview: Preview,
+  /** 本次可选的预览用例；分析专用会话不会构造隐藏预览。 */
+  val preview: Preview?,
   /** 本次 YUV 分析用例。 */
   val analysis: ImageAnalysis,
-  /** 请求值、提交值及分块布局摘要。 */
+  /** 通用设备请求、提交与协商摘要。 */
   val configSummary: CameraConfigSummary,
+  /** 供上层特定配置校验使用的共用相机组合查询结果。 */
+  val captureOptions: CameraCaptureOptions,
   /** Camera2 静态传感器方向。 */
   val sensorOrientationDegrees: Int?,
 )
@@ -186,10 +195,12 @@ class CameraSource(context: Context) {
     }
   }
 
-  /** 查询单个尺寸偏好对应的 Preview + YUV 组合，不绑定或占用相机。 */
+  /** 按指定背压策略查询单个尺寸偏好的相机用例组合，不绑定或占用相机。 */
   suspend fun getSupportedCaptureOptions(
     cameraId: String,
     request: CameraCaptureOptionsRequest,
+    backpressureStrategy: CameraFrameBackpressure = CameraFrameBackpressure.BLOCK_PRODUCER,
+    includePreview: Boolean = true,
   ): CameraCaptureOptions {
     val cameraProvider = try {
       ProcessCameraProvider.getInstance(applicationContext).await()
@@ -213,17 +224,26 @@ class CameraSource(context: Context) {
 
       val candidateResolution = CameraResolution(width.toDouble(), height.toDouble())
       val size = Size(width, height)
-      val preview = Preview.Builder()
-        .setTargetResolution(size)
-        .setTargetRotation(Surface.ROTATION_0)
-        .build()
+      val preview = if (includePreview) {
+        Preview.Builder()
+          .setTargetResolution(size)
+          .setTargetRotation(Surface.ROTATION_0)
+          .build()
+      } else {
+        null
+      }
       val analysis = ImageAnalysis.Builder()
         .setTargetResolution(size)
         .setTargetRotation(Surface.ROTATION_0)
         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-        .setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
+        .setBackpressureStrategy(backpressureStrategy.toCameraXStrategy())
         .build()
-      val sessionConfig = SessionConfig.Builder(listOf(preview, analysis)).build()
+      val useCases: List<UseCase> = if (preview == null) {
+        listOf(analysis)
+      } else {
+        listOf(preview, analysis)
+      }
+      val sessionConfig = SessionConfig.Builder(useCases).build()
       val supported = runCatching { cameraInfo.isSessionConfigSupported(sessionConfig) }.getOrNull()
       val fpsRanges = if (supported == true) {
         runCatching { cameraInfo.getSupportedFrameRateRanges(sessionConfig) }
@@ -245,37 +265,50 @@ class CameraSource(context: Context) {
       CameraCaptureOptions(
         cameraId = cameraId,
         options = listOf(candidate),
-        processing = CameraProcessingLimits(
-          maxBlockCount = CameraBlockLayout.MAX_BLOCK_COUNT,
-          maxColumns = minOf(width, CameraBlockLayout.MAX_BLOCK_COUNT),
-          maxRows = minOf(height, CameraBlockLayout.MAX_BLOCK_COUNT),
-        ),
       )
     }
   }
 
-  /** 在不绑定设备的情况下重新验证完整配置，供控制层在申请租约前调用。 */
-  suspend fun validateConfiguration(config: CameraConfig): CameraConfigSummary {
+  /** 在不绑定设备的情况下重新验证配置并返回共享层查询结果。 */
+  suspend fun validateConfiguration(
+    config: CameraConfig,
+    backpressureStrategy: CameraFrameBackpressure = CameraFrameBackpressure.BLOCK_PRODUCER,
+  ): CameraSourceValidation {
     requireCameraPermission()
-    return prepareConfiguration(config, Surface.ROTATION_0, null).configSummary
+    val prepared = prepareConfiguration(
+      config = config,
+      targetRotation = Surface.ROTATION_0,
+      listener = null,
+      backpressureStrategy = backpressureStrategy,
+      includePreview = true,
+    )
+    return CameraSourceValidation(prepared.configSummary, prepared.captureOptions)
   }
 
-  /** 按精确 cameraId 绑定配置用例，且只应用调用方明确提交的参数。 */
+  /** 按精确 cameraId 绑定配置；仅分析路径不会创建或绑定 Preview 用例。 */
   suspend fun open(
     config: CameraConfig,
-    previewView: PreviewView,
+    previewView: PreviewView?,
     owner: LifecycleOwner,
     listener: CameraSourceListener,
+    backpressureStrategy: CameraFrameBackpressure = CameraFrameBackpressure.BLOCK_PRODUCER,
+    onHostStopped: (() -> Unit)? = null,
   ): CameraSourceCapabilities {
     requireCameraPermission()
     if (owner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
-      throw CameraSourceException("ACTIVITY_UNAVAILABLE", "当前界面已退出，无法打开相机。")
+      throw CameraSourceException("ACTIVITY_UNAVAILABLE", "当前 Android 生命周期已退出，无法打开相机。")
     }
 
     val rotation = withContext(Dispatchers.Main.immediate) {
-      previewView.display?.rotation ?: Surface.ROTATION_0
+      previewView?.display?.rotation ?: Surface.ROTATION_0
     }
-    val prepared = prepareConfiguration(config, rotation, listener)
+    val prepared = prepareConfiguration(
+      config = config,
+      targetRotation = rotation,
+      listener = listener,
+      backpressureStrategy = backpressureStrategy,
+      includePreview = previewView != null,
+    )
     if (owner.lifecycle.currentState == Lifecycle.State.DESTROYED) {
       throw CameraSourceException("ACTIVITY_UNAVAILABLE", "当前界面已退出，无法打开相机。")
     }
@@ -294,7 +327,10 @@ class CameraSource(context: Context) {
       this@CameraSource.listener = listener
       lifecycleOwner = owner
 
-      prepared.preview.setSurfaceProvider(previewView.surfaceProvider)
+      prepared.preview?.setSurfaceProvider(
+        previewView?.surfaceProvider
+          ?: throw CameraSourceException("PREVIEW_UNAVAILABLE", "请求预览用例时没有可绑定的 PreviewView。"),
+      )
       prepared.analysis.setAnalyzer(analyzerExecutor) { image ->
         val activeListener = this@CameraSource.listener
         if (closing || activeListener == null || activeListener !== listener) {
@@ -345,13 +381,47 @@ class CameraSource(context: Context) {
       if (closing || this@CameraSource.listener !== listener || this@CameraSource.camera !== activeCamera) {
         throw CameraSourceException("CAMERA_INTERRUPTED", "应用相机参数时相机周期已结束。")
       }
-      observeLifecycle(owner, activeCamera)
+      observeLifecycle(owner, activeCamera, onHostStopped)
       CameraSourceCapabilities(
         torchAvailable = torchAvailable,
         selectedFrameRateRange = prepared.selectedFrameRateRange,
         configSummary = prepared.configSummary,
       )
     }
+  }
+  /** 只绑定 YUV 分析用例；后台被动采集没有 PreviewView 或隐藏 Surface。 */
+  suspend fun openAnalysisOnly(
+    config: CameraConfig,
+    owner: LifecycleOwner,
+    listener: CameraSourceListener,
+    backpressureStrategy: CameraFrameBackpressure = CameraFrameBackpressure.KEEP_ONLY_LATEST,
+    onHostStopped: (() -> Unit)? = null,
+  ): CameraSourceCapabilities = open(
+    config = config,
+    previewView = null,
+    owner = owner,
+    listener = listener,
+    backpressureStrategy = backpressureStrategy,
+    onHostStopped = onHostStopped,
+  )
+  /** 先排空并失效旧帧，再重新绑定用例；租约仍由调用方持有。 */
+  suspend fun replaceFrameGeneration(
+    config: CameraConfig,
+    previewView: PreviewView,
+    owner: LifecycleOwner,
+    listener: CameraSourceListener,
+    backpressureStrategy: CameraFrameBackpressure,
+    onHostStopped: (() -> Unit)? = null,
+  ): CameraSourceCapabilities {
+    close()
+    return open(
+      config = config,
+      previewView = previewView,
+      owner = owner,
+      listener = listener,
+      backpressureStrategy = backpressureStrategy,
+      onHostStopped = onHostStopped,
+    )
   }
   /** 动态更新 AE／AWB 锁请求；Future 只确认请求已应用，不代表算法已锁定。 */
   suspend fun setAlgorithmLocks(aeLocked: Boolean, awbLocked: Boolean) {
@@ -378,6 +448,8 @@ class CameraSource(context: Context) {
     config: CameraConfig,
     targetRotation: Int,
     listener: CameraSourceListener?,
+    backpressureStrategy: CameraFrameBackpressure,
+    includePreview: Boolean,
   ): PreparedCameraConfiguration {
     val cameraProvider = try {
       ProcessCameraProvider.getInstance(applicationContext).await()
@@ -394,8 +466,10 @@ class CameraSource(context: Context) {
     val options = getSupportedCaptureOptions(
       config.cameraId,
       CameraCaptureOptionsRequest(config.targetResolution, config.targetFps),
+      backpressureStrategy,
+      includePreview,
     )
-    CameraConfigValidator.validate(config, capabilities, options)
+    CameraConfigValidator.validate(config, capabilities)
 
     val option = options.options.firstOrNull { candidate ->
       candidate.resolution.width == config.targetResolution.width
@@ -404,11 +478,11 @@ class CameraSource(context: Context) {
     when (option.compatibility) {
       CameraCapabilityStatus.SUPPORTED -> Unit
       CameraCapabilityStatus.UNSUPPORTED ->
-        throw CameraConfigFailure("CAMERA_CONFIGURATION_UNAVAILABLE", option.reason ?: "所选 Preview + YUV 组合不受支持。")
+        throw CameraConfigFailure("CAMERA_CONFIGURATION_UNAVAILABLE", option.reason ?: "所选相机用例组合不受支持。")
       CameraCapabilityStatus.PERMISSION_REQUIRED ->
         throw CameraConfigFailure("CAMERA_PERMISSION_DENIED", option.reason ?: "读取尺寸组合需要相机权限。")
       CameraCapabilityStatus.UNKNOWN ->
-        throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", option.reason ?: "无法确认所选尺寸组合。")
+        throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", option.reason ?: "无法确认所选相机用例组合。")
     }
     val frameRateCandidates = option.fpsRanges
       ?: throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", "所选组合的帧率范围未知。")
@@ -454,15 +528,19 @@ class CameraSource(context: Context) {
       val width = submittedConfig.targetResolution.width.toPositiveInt("宽度")
       val height = submittedConfig.targetResolution.height.toPositiveInt("高度")
       val resolution = Size(width, height)
-      val preview = Preview.Builder()
-        .setTargetResolution(resolution)
-        .setTargetRotation(targetRotation)
-        .build()
+      val preview = if (includePreview) {
+        Preview.Builder()
+          .setTargetResolution(resolution)
+          .setTargetRotation(targetRotation)
+          .build()
+      } else {
+        null
+      }
       val analysisBuilder = ImageAnalysis.Builder()
         .setTargetResolution(resolution)
         .setTargetRotation(targetRotation)
         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-        .setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
+        .setBackpressureStrategy(backpressureStrategy.toCameraXStrategy())
       val extender = Camera2Interop.Extender(analysisBuilder)
       if (listener != null) {
         extender.setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
@@ -491,15 +569,19 @@ class CameraSource(context: Context) {
         })
       }
       val analysis = analysisBuilder.build()
-      val useCases = listOf(preview, analysis)
+      val useCases: List<UseCase> = if (preview == null) {
+        listOf(analysis)
+      } else {
+        listOf(preview, analysis)
+      }
       val sessionConfig = SessionConfig.Builder(useCases)
         .setFrameRateRange(frameRateRange)
         .build()
       val supported = runCatching { cameraInfo.isSessionConfigSupported(sessionConfig) }.getOrNull()
       when (supported) {
         true -> Unit
-        false -> throw CameraConfigFailure("CAMERA_CONFIGURATION_UNAVAILABLE", "所选 Preview + YUV 尺寸／帧率组合已不再受支持。")
-        null -> throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", "无法重新确认所选尺寸／帧率组合。")
+        false -> throw CameraConfigFailure("CAMERA_CONFIGURATION_UNAVAILABLE", "所选相机用例的尺寸／帧率组合已不再受支持。")
+        null -> throw CameraConfigFailure("CAMERA_CAPABILITY_UNAVAILABLE", "无法重新确认所选相机用例的尺寸／帧率组合。")
       }
       val selector = CameraSelector.Builder()
         .addCameraFilter { infos ->
@@ -520,8 +602,8 @@ class CameraSource(context: Context) {
           adjustments = adjustments,
           actualFrame = null,
           observedFps = null,
-          blockLayout = config.processing,
         ),
+        captureOptions = options,
         sensorOrientationDegrees = runCatching {
           camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION)
         }.getOrNull(),
@@ -655,6 +737,12 @@ class CameraSource(context: Context) {
       ?: validRanges.maxWithOrNull(compareBy<CameraFpsRange> { it.maximum }.thenBy { it.minimum })
   }
 
+  /** 将共享背压语义映射到 CameraX 的用例策略。 */
+  private fun CameraFrameBackpressure.toCameraXStrategy() = when (this) {
+    CameraFrameBackpressure.BLOCK_PRODUCER -> ImageAnalysis.STRATEGY_BLOCK_PRODUCER
+    CameraFrameBackpressure.KEEP_ONLY_LATEST -> ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+  }
+
   /** 通过绑定时保留的 SessionConfig 解绑相机，并移除所有生命周期观察。 */
   suspend fun close() {
     withContext(Dispatchers.Main.immediate) {
@@ -678,10 +766,14 @@ class CameraSource(context: Context) {
     awaitAnalyzerIdle()
   }
 
-  private fun observeLifecycle(owner: LifecycleOwner, camera: Camera) {
+  private fun observeLifecycle(
+    owner: LifecycleOwner,
+    camera: Camera,
+    onHostStopped: (() -> Unit)?,
+  ) {
     val ownerObserver = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_STOP) {
-        reportInterruption("APP_BACKGROUND", "应用进入后台，相机已停止。")
+        onHostStopped?.let { callback -> reportInterruption { callback() } }
       }
     }
     val stateObserver = Observer<CameraState> { state ->
@@ -695,11 +787,16 @@ class CameraSource(context: Context) {
   }
 
   private fun reportInterruption(code: String, message: String) {
+    reportInterruption { activeListener -> activeListener.onInterrupted(code, message) }
+  }
+
+  /** 用当前订阅者处理统一去重后的设备或宿主中断。 */
+  private fun reportInterruption(onInterrupted: (CameraSourceListener) -> Unit) {
     val interruptedListener = listener ?: return
     if (closing || !interruptionReported.compareAndSet(false, true)) return
     ContextCompat.getMainExecutor(applicationContext).execute {
       if (!closing && this@CameraSource.listener === interruptedListener) {
-        interruptedListener.onInterrupted(code, message)
+        onInterrupted(interruptedListener)
       }
     }
   }

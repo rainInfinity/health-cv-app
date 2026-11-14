@@ -4,7 +4,7 @@ package com.healthcvapp.acquisition.ppg.processing
 
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord
-import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelFrameView
 
 /** 按帧创建一次 PPG 记录，不访问文件或批次队列。 */
 class PPGRecordProcessor {

@@ -2,7 +2,7 @@
 
 package com.healthcvapp.acquisition.ppg.output
 
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGFrameRecord

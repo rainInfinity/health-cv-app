@@ -3,7 +3,7 @@
 package com.healthcvapp.acquisition.ppg.processing
 
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
-import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelFrameView
 
 /** 对完整像素帧及共享全帧统计执行同步处理。 */
 fun interface PixelProcessor {

@@ -2,7 +2,7 @@
 
 package com.healthcvapp.acquisition.ppg.model
 
-import com.healthcvapp.acquisition.ppg.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.camera.CameraFrameMetadata
 
 /** 持有可写入双 CSV 的两侧数值，不保留原生帧或 Camera2 对象。 */
 data class PPGCaptureRecord(

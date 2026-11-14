@@ -4,9 +4,9 @@ package com.healthcvapp.acquisition.ppg.processing
 
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.pixels.PixelBlockGeometry
-import com.healthcvapp.acquisition.ppg.pixels.PixelCropRect
-import com.healthcvapp.acquisition.ppg.pixels.PixelFrameView
-import com.healthcvapp.acquisition.ppg.pixels.PixelReader
+import com.healthcvapp.acquisition.pixels.PixelCropRect
+import com.healthcvapp.acquisition.pixels.PixelFrameView
+import com.healthcvapp.acquisition.pixels.PixelReader
 
 /** 保存有效像素区域的全帧 Y/U/V 均值与真实样本数。 */
 data class PixelStatistics(

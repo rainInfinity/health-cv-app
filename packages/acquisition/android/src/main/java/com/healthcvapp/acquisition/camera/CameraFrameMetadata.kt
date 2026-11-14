@@ -1,6 +1,6 @@
 /** 保存主动 PPG 配对与旧版 frame.csv 所需的 Camera2 数值。 */
 
-package com.healthcvapp.acquisition.ppg.camera
+package com.healthcvapp.acquisition.camera
 
 /** 仅保留逐帧关联和 CSV 协议需要的相机完成结果。 */
 data class CameraFrameMetadata(
