@@ -1,4 +1,7 @@
 /** 保存已确认的页面结构；数据与交互由 app.js 统一接管。 */
+import { measurementPages } from './measurement-pages.js';
+import { faceMeasurementPage } from './face-measurement.js';
+import { fingertipMeasurementPage } from './fingertip-measurement.js';
 
 /** 登录和注册共享品牌组合，避免标志、名称或 Slogan 出现差异。 */
 const authBrand = `
@@ -11,6 +14,9 @@ const authBrand = `
 `;
 
 export const pages = {
+  ...measurementPages,
+  'face-measurement': faceMeasurementPage,
+  'fingertip-measurement': fingertipMeasurementPage,
   desktop: `
 <div class="phone brand-desktop">
 <div class="status"><span>9:41</span><span class="system" aria-hidden="true">▮▮▮ ▰</span></div>
@@ -203,7 +209,7 @@ export const pages = {
 </main>
 <nav aria-label="主导航">
 <div class="navitem selected">
-<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<svg class="icon " viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z">
 </path>
 </svg>
@@ -224,16 +230,16 @@ export const pages = {
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2">
-</path>
+<path d="M12 3a9 9 0 1 1-9 9H1V5l2.9 2.9A9 9 0 0 1 12 3Z"/>
+<path d="M12 7v5l3 2"/>
 </svg>
 <span>历史</span>
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<circle cx="12" cy="8" r="4">
+<circle cx="12" cy="7" r="4">
 </circle>
-<path d="M4 21v-2a8 8 0 0 1 16 0v2">
+<path d="M4 21v-2a8 6 0 0 1 16 0v2Z">
 </path>
 </svg>
 <span>我的</span>
@@ -259,9 +265,23 @@ export const pages = {
 <main class="content">
 <header class="header">
 <h2 class="title">健康功能</h2>
-<p class="header-disclaimer">测量结果仅供参考，非医学诊断依据</p>
+<p class="header-disclaimer">检测结果仅供参考，非医学诊断依据</p>
 </header>
-<section class="function-grid" aria-label="健康功能">
+<div class="function-tabs" role="tablist" aria-label="功能分类">
+<button type="button" id="function-tab-method" role="tab" aria-selected="true" aria-controls="function-panel-method" data-action="function-view" data-view="method">按检测部位</button>
+<button type="button" id="function-tab-metric" role="tab" aria-selected="false" aria-controls="function-panel-metric" tabindex="-1" data-action="function-view" data-view="metric">按指标</button>
+</div>
+<section id="function-panel-method" class="capture-grid" role="tabpanel" aria-labelledby="function-tab-method">
+${[
+  ['face', '面部检测', '面部心率', '面向前置摄像头', 'op3.png'],
+  ['fingertip', '指尖检测', '心率、呼吸率、血氧饱和度、糖尿病风险', '指腹轻覆后置镜头', 'op1.png'],
+  ['chest', '指尖＋胸口检测', '血压估计', '覆盖后摄，手机轻贴胸口', 'op2.png'],
+].map(([kind, title, metrics, instruction, image]) => `<button type="button" class="capture-card" data-action="capture-entry" data-measurement="${kind}">
+<span class="capture-copy"><span class="capture-title">${title}</span><span class="capture-metrics">${metrics}</span><span class="capture-instruction">${instruction}</span></span>
+<img src="/brand-assets/${image}" width="176" height="176" alt="">
+</button>`).join('')}
+</section>
+<section id="function-panel-metric" class="function-grid" role="tabpanel" aria-labelledby="function-tab-metric" hidden>
 <button type="button" class="function-card" data-measurement="fingertip" aria-label="指尖心率与呼吸率功能说明">
 <svg class="function-illustration" data-illustration="fingertip" viewBox="0 0 100 84" fill="none" aria-hidden="true">
 <defs>
@@ -297,7 +317,7 @@ export const pages = {
 </g>
 </g>
 </svg>
-<span class="function-copy"><span class="function-title">心率与呼吸率</span><span class="function-description">指尖采集，一次了解两项指标。</span><span class="function-recency"></span></span>
+<span class="function-copy"><span class="function-title">心率与呼吸率</span><span class="function-description">指尖检测，一次了解两项指标。</span><span class="function-recency"></span></span>
 <span class="function-chevron" aria-hidden="true">›</span>
 </button>
 <button type="button" class="function-card" data-measurement="face" aria-label="面部心率功能说明">
@@ -324,7 +344,7 @@ export const pages = {
 <span class="function-copy"><span class="function-title">面部心率</span><span class="function-description">面向前摄，非接触估计心率。</span><span class="function-recency"></span></span>
 <span class="function-chevron" aria-hidden="true">›</span>
 </button>
-<button type="button" class="function-card" data-metric="0" aria-label="血压测量功能说明">
+<button type="button" class="function-card" data-metric="0" aria-label="血压检测功能说明">
 <svg class="function-illustration" data-illustration="bp" viewBox="0 0 100 84" fill="none" aria-hidden="true">
 <defs>
 <linearGradient id="pressure-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
@@ -343,7 +363,7 @@ export const pages = {
 <circle cx="73" cy="58" r="2.5" fill="var(--primary)"/>
 </g>
 </svg>
-<span class="function-copy"><span class="function-title">血压测量</span><span class="function-description">指尖采集，获取血压估计值。</span><span class="function-recency"></span></span>
+<span class="function-copy"><span class="function-title">血压检测</span><span class="function-description">指尖检测，获取血压估计值。</span><span class="function-recency"></span></span>
 <span class="function-chevron" aria-hidden="true">›</span>
 </button>
 <button type="button" class="function-card" data-metric="3" aria-label="血氧饱和度功能说明">
@@ -363,7 +383,7 @@ export const pages = {
 <path d="M48 64h7l4-6 5 12 5-9 4 3h7" stroke="var(--primary)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 </svg>
-<span class="function-copy"><span class="function-title">血氧饱和度</span><span class="function-description">指尖采集，了解血氧估计值。</span><span class="function-recency"></span></span>
+<span class="function-copy"><span class="function-title">血氧饱和度</span><span class="function-description">指尖检测，了解血氧估计值。</span><span class="function-recency"></span></span>
 <span class="function-chevron" aria-hidden="true">›</span>
 </button>
 <button type="button" class="function-card" data-metric="4" aria-label="糖尿病风险功能说明">
@@ -402,7 +422,7 @@ export const pages = {
 <span>健康</span>
 </div>
 <div class="navitem selected">
-<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<svg class="icon " viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 <rect x="3" y="3" width="7" height="7" rx="2"/>
 <rect x="14" y="3" width="7" height="7" rx="2"/>
 <rect x="3" y="14" width="7" height="7" rx="2"/>
@@ -412,14 +432,15 @@ export const pages = {
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2"/>
+<path d="M12 3a9 9 0 1 1-9 9H1V5l2.9 2.9A9 9 0 0 1 12 3Z"/>
+<path d="M12 7v5l3 2"/>
 </svg>
 <span>历史</span>
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<circle cx="12" cy="8" r="4"/>
-<path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+<circle cx="12" cy="7" r="4"/>
+<path d="M4 21v-2a8 6 0 0 1 16 0v2Z"/>
 </svg>
 <span>我的</span>
 </div>
@@ -445,34 +466,37 @@ export const pages = {
 <header class="header">
 <div>
 <h2 class="title">健康历史</h2>
-<div class="hello" style="margin-top:4px">回看记录，了解变化</div>
 </div>
 <span class="chip" style="margin-left:0">仅供健康管理参考，<br>非医学诊断依据。</span>
 </header>
-<section class="datecard">
-<div class="datehead">
-<b>
-<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<rect x="3" y="5" width="18" height="16" rx="3"/>
-<path d="M16 3v4M8 3v4M3 11h18"/>
-</svg>日期范围</b>
-<button>最近 7 天</button>
+<div class="hist-metric-picker" aria-label="历史指标">
+<button type="button" data-action="history-metric-step" data-offset="-1" aria-label="上一个指标"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+<div class="hist-metric-select">
+<select id="history-metric" aria-label="选择健康指标">
+<option value="0">血压</option>
+<option value="1">心率</option>
+<option value="2">呼吸率</option>
+<option value="3">血氧饱和度</option>
+<option value="4">糖尿病风险</option>
+</select>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
 </div>
-<div class="date-inputs">
-<input type="date" aria-label="开始日期" id="from-date" value="2026-10-25">
-<span>至</span>
-<input type="date" aria-label="结束日期" id="to-date" value="2026-10-31">
+<button type="button" data-action="history-metric-step" data-offset="1" aria-label="下一个指标"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
 </div>
-<div id="date-error" class="error-date" hidden>开始日期不能晚于结束日期</div>
+<section class="history-period" aria-label="时间区间">
+<div class="function-tabs hist-period-options" role="group" aria-label="区间类型">
+<button type="button" data-action="history-period" data-period="day" aria-pressed="false">日</button>
+<button type="button" data-action="history-period" data-period="week" aria-pressed="true">周</button>
+<button type="button" data-action="history-period" data-period="month" aria-pressed="false">月</button>
+<button type="button" data-action="history-period" data-period="custom" aria-pressed="false">自定义</button>
+</div>
+<div class="hist-period-navigation">
+<button type="button" data-action="history-shift" data-offset="-1" aria-label="上一个周期"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+<button type="button" class="hist-period-label" data-action="history-dates" aria-label="选择日期区间"><span id="history-range-label"></span><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></button>
+<button type="button" data-action="history-shift" data-offset="1" aria-label="下一个周期"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+</div>
 </section>
-<div class="hist-tabs" role="tablist" aria-label="历史指标">
-<button role="tab" id="hist-tab-0" aria-selected="true" aria-controls="history-panel">血压</button>
-<button role="tab" id="hist-tab-1" aria-selected="false" aria-controls="history-panel">心率</button>
-<button role="tab" id="hist-tab-2" aria-selected="false" aria-controls="history-panel">呼吸</button>
-<button role="tab" id="hist-tab-3" aria-selected="false" aria-controls="history-panel">血氧</button>
-<button role="tab" id="hist-tab-4" aria-selected="false" aria-controls="history-panel">风险</button>
-</div>
-<div id="history-panel" role="tabpanel" aria-labelledby="hist-tab-0">
+<div id="history-panel" role="region" aria-label="当前指标趋势与记录">
 </div>
 </main>
 <nav aria-label="主导航">
@@ -492,15 +516,21 @@ export const pages = {
 <span>功能</span>
 </div>
 <div class="navitem selected">
-<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2"/>
+<svg class="icon " viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<defs>
+<mask id="nav-history-hands" x="0" y="0" width="24" height="24" maskUnits="userSpaceOnUse">
+<rect width="24" height="24" fill="white" stroke="none"/>
+<path d="M12 7v5l3 2" fill="none" stroke="black"/>
+</mask>
+</defs>
+<path d="M12 3a9 9 0 1 1-9 9H1V5l2.9 2.9A9 9 0 0 1 12 3Z" mask="url(#nav-history-hands)"/>
 </svg>
 <span>历史</span>
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<circle cx="12" cy="8" r="4"/>
-<path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+<circle cx="12" cy="7" r="4"/>
+<path d="M4 21v-2a8 6 0 0 1 16 0v2Z"/>
 </svg>
 <span>我的</span>
 </div>
@@ -628,14 +658,15 @@ export const pages = {
 </div>
 <div class="navitem ">
 <svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<path d="M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2"/>
+<path d="M12 3a9 9 0 1 1-9 9H1V5l2.9 2.9A9 9 0 0 1 12 3Z"/>
+<path d="M12 7v5l3 2"/>
 </svg>
 <span>历史</span>
 </div>
 <div class="navitem selected">
-<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<circle cx="12" cy="8" r="4"/>
-<path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+<svg class="icon " viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<circle cx="12" cy="7" r="4"/>
+<path d="M4 21v-2a8 6 0 0 1 16 0v2Z"/>
 </svg>
 <span>我的</span>
 </div>

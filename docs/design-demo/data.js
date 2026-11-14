@@ -11,11 +11,14 @@ export const tokens = {
 export const routes = {
   home: '健康', functions: '功能', history: '历史', account: '我的',
   login: '登录', register: '注册', desktop: '桌面', welcome: '开屏', onboarding: '功能引导', privacy: '授权引导',
+  'measure-face': '面部特征检测', 'measure-fingertip': '指尖脉搏检测', 'measure-chest': '血压检测',
+  'face-measurement': '面部心率检测',
+  'fingertip-measurement': '指尖检测',
 };
 
 /** 固定时间序列，以实际日期过滤；空数组表示暂无样例。 */
 export const records = [
-  { key: 'bp', name: '血压', title: '血压测量', unit: 'mmHg', labels: ['收缩压', '舒张压'], domain: [60, 90, 120, 150], values: [[124,120,126,122,119,121,118],[81,78,82,79,76,79,76]], description: '相机采集方式的血压估计结果。仅供健康管理参考，非医学诊断依据。' },
+  { key: 'bp', name: '血压', title: '血压测量', unit: 'mmHg', labels: ['收缩压', '舒张压'], domain: [60, 90, 120, 150], values: [[124,120,126,122,119,121,118],[81,78,82,79,76,79,76]], description: '相机检测方式的血压估计结果。仅供健康管理参考，非医学诊断依据。' },
   { key: 'heart', name: '心率', title: '心率', unit: '次/分', labels: ['心率'], domain: [50, 70, 90, 110], values: [[78,74,80,76,70,75,72]], description: '每分钟心跳次数。样例最近一条来源为主动式；实际来源应随记录展示。' },
   { key: 'breath', name: '呼吸', title: '呼吸率', unit: '次/分', labels: ['呼吸率'], domain: [8, 12, 16, 20], values: [[17,16,18,15,16,17,16]], description: '每分钟呼吸次数。演示图形不是实时呼吸信号。' },
   { key: 'oxygen', name: '血氧', title: '血氧饱和度', unit: '%', labels: ['血氧'], domain: [85, 90, 95, 100], values: [[97,98,97,99,98,97,98]], description: '血氧百分比。仪表量程 85–100%，共15格，红、黄、绿显示区间仅用于本轮视觉演示。' },

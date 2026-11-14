@@ -1,9 +1,11 @@
 /** 驱动离线交互演示；不请求后端，不调用设备权限，不保存密码。 */
 import { pages } from './pages.js';
 import { dates, lastMeasurements, records, routes } from './data.js';
-import { allRecords, historyPanel, reading } from './history.js';
+import { allRecords, mountHistoryPanel, reading, initialHistory, periodRange, rangeLabel } from './history.js';
 import { escapeHtml, icon, measurementRecency } from './ui.js';
 import { initialProfile, profileFields, createProfilePatch, applyProfilePatch } from './profile.js';
+import { mountFaceMeasurement } from './face-measurement.js';
+import { mountFingertipMeasurement } from './fingertip-measurement.js';
 
 const app = document.querySelector('#app');
 const sheet = document.querySelector('#sheet');
@@ -17,6 +19,13 @@ let sheetAnimation;
 let sheetClosing = false;
 let registeredNames = new Set();
 let pendingAuthAction;
+let measurementReturnRoute = 'functions';
+/** 当前说明页的测量目标；直接预览说明页时为空。 */
+let measurementTarget = null;
+/** 测量页切换时释放绘图和本地事件。 */
+let disposeMeasurement;
+/** 历史页持有独立图表实例，筛选复用、离页释放。 */
+let historyPanel;
 
 /** 标签页内的演示状态，刷新即清除；没有真实认证含义。 */
 const state = {
@@ -26,7 +35,12 @@ const state = {
   notifications: false,
   passivePreference: false,
   feedback: '',
-  history: { metricIndex: 0, from: dates[0], to: dates.at(-1) },
+  /** 按测量方式记录说明页跳过偏好；仅当前标签页有效。 */
+  skippedMeasurementGuides: new Set(),
+  /** 功能分类在返回页面时保留，刷新恢复按检测部位。 */
+  functionView: 'method',
+  /** 历史指标、周期与日期边界；切页保留，刷新清除。 */
+  history: initialHistory(),
 };
 
 /** 状态预览链接直接切换本地演示身份，两个业务页面仍共用同一登录状态。 */
@@ -161,12 +175,20 @@ function navigate(route) {
 
 /** 基础页面与每页导航均由同一路由源生成。 */
 function render() {
+  disposeMeasurement?.();
+  disposeMeasurement = null;
+  historyPanel?.dispose();
+  historyPanel = null;
   cancelAuthAction();
   closeSheet();
   const requested = location.hash.slice(1);
   const preview = Object.hasOwn(stateViews, requested) ? stateViews[requested] : null;
   if (preview) state.user = preview.loggedIn ? state.user || state.profile.name || '小安' : '';
+  if ((requested.startsWith('measure-') || requested.endsWith('-measurement')) && activeRoute && !activeRoute.startsWith('measure-') && !activeRoute.endsWith('-measurement')) {
+    measurementReturnRoute = activeRoute;
+  }
   activeRoute = preview?.route || (Object.hasOwn(pages, requested) ? requested : 'home');
+  if (!activeRoute.startsWith('measure-')) measurementTarget = null;
   if (!preview && requested !== activeRoute) history.replaceState(null, '', `#${activeRoute}`);
   const hasStateView = activeRoute === 'home' || activeRoute === 'account';
   const viewRoute = hasStateView ? `${activeRoute}-${state.user ? 'logged-in' : 'guest'}` : activeRoute;
@@ -191,6 +213,16 @@ function render() {
   if (activeRoute === 'account') bindAccount();
   if (activeRoute === 'login' || activeRoute === 'register') bindAuth();
   if (activeRoute === 'onboarding') bindOnboarding();
+  if (activeRoute === 'face-measurement') disposeMeasurement = mountFaceMeasurement(app);
+  if (activeRoute === 'fingertip-measurement') disposeMeasurement = mountFingertipMeasurement(app);
+  if (activeRoute.startsWith('measure-')) {
+    if (measurementTarget?.route === activeRoute) {
+      app.querySelector('.guide-topbar > span').textContent = measurementTarget.label;
+    }
+    const checkbox = app.querySelector('[data-skip-guide]');
+    checkbox.checked = state.skippedMeasurementGuides.has(checkbox.dataset.skipGuide);
+    app.querySelector('h1').focus({ preventScroll: true });
+  }
 }
 
 /** 主页按共享登录状态展示读数或空态；未登录入口统一指向登录页。 */
@@ -224,12 +256,25 @@ function bindHome() {
   });
 }
 
-/** 功能页的每个入口均可打开对应说明。 */
+/** 切换分类只更新面板，不重建原指标卡片。 */
+function updateFunctionView() {
+  app.querySelectorAll('[data-action="function-view"]').forEach((tab) => {
+    const selected = tab.dataset.view === state.functionView;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
+  });
+}
+
+/** 功能页沿用原指标卡片，并将两种分类接到同一套检测说明。 */
 function bindFunctions() {
+  updateFunctionView();
   const now = Date.now();
   app.querySelectorAll('.function-card').forEach((card) => {
-    asButton(card, card.dataset.measurement ? 'camera-measurement' : 'measurement');
-    const key = card.dataset.measurement || records[Number(card.dataset.metric)].key;
+    asButton(card, 'camera-measurement');
+    card.dataset.target = card.querySelector('.function-title').textContent;
+    if (!card.dataset.measurement) card.dataset.measurement = Number(card.dataset.metric) === 0 ? 'chest' : 'fingertip';
+    const key = card.dataset.metric === undefined ? card.dataset.measurement : records[Number(card.dataset.metric)].key;
     const recency = key === 'risk' && !lastMeasurements[key]
       ? '尚未评估'
       : measurementRecency(lastMeasurements[key], now);
@@ -238,29 +283,32 @@ function bindFunctions() {
   });
 }
 
-/** 历史筛选只更新结果区，不重置日期输入焦点。 */
+/** 更新同源统计和记录，保留指标及周期控件的焦点。 */
 function updateHistory() {
-  const { invalid, html } = historyPanel(state.history);
-  const panel = app.querySelector('#history-panel');
-  panel.innerHTML = html;
-  panel.setAttribute('aria-labelledby', `hist-tab-${state.history.metricIndex}`);
-  app.querySelector('#date-error').hidden = !invalid;
-  app.querySelector('#date-error').textContent = '请选择有效日期，开始日期不能晚于结束日期';
-  app.querySelectorAll('[role=tab]').forEach((tab, index) => {
-    tab.setAttribute('aria-selected', String(index === state.history.metricIndex));
-    tab.tabIndex = index === state.history.metricIndex ? 0 : -1;
+  historyPanel.update(state.history);
+  app.querySelector('#history-metric').value = String(state.history.metricIndex);
+  app.querySelectorAll('[data-action="history-metric-step"]').forEach((button) => {
+    button.disabled = Number(button.dataset.offset) < 0 ? state.history.metricIndex === 0 : state.history.metricIndex === records.length - 1;
   });
+  app.querySelector('#history-range-label').textContent = rangeLabel(state.history.from, state.history.to);
+  app.querySelectorAll('[data-action="history-period"]').forEach((button, index) => {
+    const selected = button.dataset.period === state.history.period;
+    button.setAttribute('aria-pressed', String(selected));
+    if (selected) app.querySelector('.hist-period-options').style.setProperty('--tab-index', index);
+  });
+  app.querySelectorAll('[data-action="history-shift"]').forEach((button) => {
+    button.disabled = state.history.period === 'custom';
+  });
+}
+
+/** 自定义区间使用独立草稿，仅在有效提交后更新趋势与记录。 */
+function historyDateForm() {
+  openSheet('选择日期区间', `<form data-form="history-dates"><label class="sheet-field">开始日期<input type="date" name="from" value="${state.history.from}" required></label><label class="sheet-field">结束日期<input type="date" name="to" value="${state.history.to}" required></label><p class="error-date" id="history-date-error" role="alert" hidden>开始日期不能晚于结束日期</p><button type="submit" class="cta">查看此区间</button></form>`);
 }
 
 /** 重新进入历史页时保留当前标签页中的日期和指标选择。 */
 function bindHistory() {
-  app.querySelector('#from-date').value = state.history.from;
-  app.querySelector('#to-date').value = state.history.to;
-  asButton(app.querySelector('.datehead button'), 'recent-week');
-  app.querySelectorAll('[role=tab]').forEach((tab, index) => {
-    tab.dataset.action = 'history-tab';
-    tab.dataset.metric = String(index);
-  });
+  historyPanel = mountHistoryPanel(app.querySelector('#history-panel'));
   updateHistory();
 }
 
@@ -309,19 +357,35 @@ function measurement(index) {
   if (index === 1 || index === 2) return cameraMeasurement('fingertip');
   const metric = records[index];
   const instructions = index === 0
-    ? ['测量前保持安静，按照正式功能的采集指引准备。', '正式功能需要相机等权限；这个网站不会请求权限。', '完成采集和处理后才会产生结果，Demo 不模拟医学推理。']
+    ? ['测量前保持安静，按照正式功能的检测指引准备。', '正式功能需要相机等权限；这个网站不会请求权限。', '完成检测和处理后才会产生结果，Demo 不模拟医学推理。']
     : ['本页展示对应功能的入口与说明。', '网站不连接传感器、相机或风险评估服务。', '可前往历史页体验固定样例的筛选与详情。'];
   openSheet(metric.title, `<p>${metric.description}</p><ol>${instructions.map((text) => `<li>${text}</li>`).join('')}</ol><p class="scope-note">演示模式，不会执行真实测量或上传。</p><button type="button" class="cta" data-action="history-route" data-metric="${index}">查看示例记录 ${icon('arrow')}</button><button type="button" class="sheet-secondary" data-action="close-sheet">返回</button>`);
 }
 
-/** 区分联合指尖采集和面部采集，不将历史样例冒充对应方式的结果。 */
-function cameraMeasurement(kind) {
-  const isFace = kind === 'face';
-  const title = isFace ? '面部心率' : '指尖心率与呼吸率';
-  const instructions = isFace
-    ? ['使用前置摄像头，让面部处于画面内，保持光线均匀、姿态稳定。', '通过面部视频信号估计心率，不需要用手指覆盖摄像头。']
-    : ['用手指覆盖后置摄像头，按正式功能指引放置并保持稳定。', '同一次指尖采集用于估计心率与呼吸率，无需分别开始两次测量。'];
-  openSheet(title, `<ol>${instructions.map((text) => `<li>${text}</li>`).join('')}</ol><p class="scope-note">此处仅演示测量方式说明，不请求相机权限，不采集或上传视频，也不产生测量结果。估计值仅供健康管理参考，非医学诊断依据。</p><button type="button" class="sheet-secondary" data-action="close-sheet">返回</button>`);
+/** 三种方式共用独立说明页；首页原有调用不附加指标目标。 */
+function cameraMeasurement(kind, target = '') {
+  if (state.skippedMeasurementGuides.has(kind)) return promptMeasurement(kind);
+  const route = `measure-${kind}`;
+  const method = kind === 'face' ? '面部检测' : kind === 'chest' ? '联合检测' : '指尖检测';
+  measurementTarget = target ? { route, label: `${method} · ${target}` } : null;
+  navigate(route);
+}
+
+/** 检测部位入口直接进入对应准备页，指尖不预先指定指标。 */
+function captureEntry(kind) {
+  const target = kind === 'face' ? '面部心率' : kind === 'chest' ? '血压估计' : '';
+  return cameraMeasurement(kind, target);
+}
+
+/** 开始前提醒开启声音；跳过说明页也需确认，不读取或调整系统音量。 */
+function promptMeasurement(kind) {
+  openSheet('提示', `<p>为便于听取检测过程中的操作引导，请打开手机声音，并将媒体音量调至清晰可闻。</p><button type="button" class="cta" data-action="measurement-confirm" data-measurement="${kind}">立即检测</button><button type="button" class="sheet-secondary" data-action="close-sheet">返回准备</button>`);
+}
+
+/** 说明页和跳过说明的入口共用演示反馈，绝不启动真实测量。 */
+function previewMeasurement() {
+  closeSheet();
+  toast('仅为设计演示，不启动相机，不记录或上传数据。');
 }
 
 /** 用户可修改的资料只保留在当前标签页，不冒充服务端更新。 */
@@ -353,6 +417,18 @@ function onClick(event) {
   const action = control.dataset.action;
   const metric = Number(control.dataset.metric || 0);
   if (action === 'navigate') return navigate(control.dataset.route);
+  if (action === 'function-view') {
+    state.functionView = control.dataset.view;
+    updateFunctionView();
+    return;
+  }
+  if (action === 'capture-entry') return captureEntry(control.dataset.measurement);
+  if (action === 'measurement-back') return navigate(measurementReturnRoute);
+  if (action === 'measurement-preview') return promptMeasurement(app.querySelector('[data-guide]').dataset.guide);
+  if (action === 'measurement-confirm') {
+    const kind = control.dataset.measurement;
+    return kind === 'face' || kind === 'fingertip' ? navigate(`${kind}-measurement`) : previewMeasurement();
+  }
   if (action === 'close-sheet') return closeSheet();
   if (action === 'preview-sheet') return openSheet('弹窗预览', '<p>这是手机区域内的示例弹窗，仅用于预览样式，不会修改演示数据。</p><p>可点击关闭按钮、遮罩或按 Esc 关闭。</p><button type="button" class="cta" data-action="close-sheet">知道了</button>');
   if (action === 'preview-toast-state') {
@@ -363,12 +439,21 @@ function onClick(event) {
   if (action === 'close-toast') return closeToast();
   if (action === 'metric-detail') return metricDetail(metric);
   if (action === 'measurement') return measurement(metric);
-  if (action === 'camera-measurement') return cameraMeasurement(control.dataset.measurement);
-  if (action === 'history-tab') { state.history.metricIndex = metric; updateHistory(); return; }
-  if (action === 'recent-week') {
-    state.history.from = dates[0]; state.history.to = dates.at(-1);
-    app.querySelector('#from-date').value = state.history.from;
-    app.querySelector('#to-date').value = state.history.to;
+  if (action === 'camera-measurement') return cameraMeasurement(control.dataset.measurement, control.dataset.target);
+  if (action === 'history-metric-step') {
+    state.history.metricIndex += Number(control.dataset.offset);
+    updateHistory(); return;
+  }
+  if (action === 'history-dates') return historyDateForm();
+  if (action === 'history-period') {
+    const period = control.dataset.period;
+    if (period === 'custom') return historyDateForm();
+    Object.assign(state.history, { period }, periodRange(period, state.history.anchor));
+    updateHistory(); return;
+  }
+  if (action === 'history-shift') {
+    const range = periodRange(state.history.period, state.history.from, Number(control.dataset.offset));
+    Object.assign(state.history, range, { anchor: range.from });
     updateHistory(); return;
   }
   if (action === 'history-route') {
@@ -379,7 +464,7 @@ function onClick(event) {
     const index = Number(control.dataset.index);
     const record = records[state.history.metricIndex];
     if (!Number.isInteger(index) || index < 0 || index >= dates.length || !record.values.length) return;
-    return openSheet('记录详情', `<p class="scope-note">固定样例，非真实测量</p><p>${record.title} · ${dates[index]} 08:30</p><div class="metric-value">${reading(state.history.metricIndex, index)} <small>${record.unit}</small></div>${state.history.metricIndex === 1 ? '<p>来源：主动式</p>' : ''}<p>${record.description}</p>`);
+    return openSheet('记录详情', `<p class="scope-note">${dates[index]}　08:30</p><h3>${record.title}</h3><div class="metric-value">${reading(state.history.metricIndex, index)} <small>${record.unit}</small></div><p>${record.labels.join(' / ')}</p>${state.history.metricIndex === 1 ? '<p>来源：主动式</p>' : ''}<p class="scope-note">仅供健康管理参考，非医学诊断依据。</p>`);
   }
   if (action === 'all-records') return openSheet(`${records[state.history.metricIndex].title}记录`, allRecords(state.history));
   if (action === 'toggle-password') {
@@ -409,7 +494,10 @@ function onClick(event) {
   if (action === 'confirm-reset') {
     state.user = ''; state.pendingUsername = ''; state.profile = initialProfile();
     state.notifications = false; state.passivePreference = false; state.feedback = '';
-    state.history = { metricIndex: 0, from: dates[0], to: dates.at(-1) };
+    state.skippedMeasurementGuides.clear();
+    state.functionView = 'method';
+    measurementTarget = null;
+    state.history = initialHistory();
     registeredNames = new Set(); navigate('home'); toast('演示状态已重置', 'success');
   }
 }
@@ -453,6 +541,19 @@ function onSubmit(event) {
   if (!form.matches('form[data-form]')) return;
   event.preventDefault();
   if (['login', 'register'].includes(form.dataset.form)) return submitAuth(form, form.dataset.form);
+  if (form.dataset.form === 'history-dates') {
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const from = String(data.get('from'));
+    const to = String(data.get('to'));
+    const invalid = from > to;
+    form.querySelector('#history-date-error').hidden = !invalid;
+    const endInput = form.querySelector('[name="to"]');
+    endInput.setAttribute('aria-invalid', String(invalid));
+    if (invalid) { endInput.focus(); return; }
+    Object.assign(state.history, { period: 'custom', anchor: to, from, to });
+    updateHistory(); closeSheet(); return;
+  }
   if (form.dataset.form === 'profile') {
     if (!form.reportValidity()) return;
     state.profile = applyProfilePatch(state.profile, createProfilePatch(new FormData(form), state.profile));
@@ -466,32 +567,47 @@ function onSubmit(event) {
   }
 }
 
-/** 桌面树形导航保留根节点、分类分支和页面叶节点，标题统一取自 routes。 */
+/** 桌面树形导航保留根节点、分类分支和页面叶节点，基础页面标题取自 routes。 */
 const navigationGroups = [
   { label: '主界面', children: ['home', 'functions', 'history', 'account'] },
   { label: '账户', children: ['login', 'register'] },
   { label: '启动展示', children: ['desktop', 'welcome'] },
   { label: '首次体验', children: ['onboarding', 'privacy'] },
 ];
+/** 功能说明与业务入口共用路由，侧栏标签独立于页面标题。 */
+const functionPreviewRoutes = [
+  { route: 'measure-face', label: '面部检测引导', measurement: 'face-measurement' },
+  { route: 'measure-fingertip', label: '指尖检测引导', measurement: 'fingertip-measurement' },
+  { route: 'measure-chest', label: '血压检测引导' },
+];
 document.querySelector('.demo-routes').innerHTML = `<div class="demo-nav-root">页面</div><div class="demo-nav-branches">${navigationGroups.map((group, index) =>
-  `<section class="demo-nav-group" aria-labelledby="demo-group-${index}"><h2 id="demo-group-${index}">${group.label}</h2><ul>${group.children.map((route) => `<li><a href="#${route}">${routes[route]}</a>${route === 'home' || route === 'account' ? `<ul class="demo-state-views"><li><a href="#${route}-guest" aria-label="${routes[route]}，未登录">未登录</a></li><li><a href="#${route}-logged-in" aria-label="${routes[route]}，已登录">已登录</a></li></ul>` : ''}</li>`).join('')}</ul></section>`,
+  `<section class="demo-nav-group" aria-labelledby="demo-group-${index}"><h2 id="demo-group-${index}">${group.label}</h2><ul>${group.children.map((route) => `<li><a href="#${route}">${routes[route]}</a>${route === 'home' || route === 'account' ? `<ul class="demo-state-views"><li><a href="#${route}-guest" aria-label="${routes[route]}，未登录">未登录</a></li><li><a href="#${route}-logged-in" aria-label="${routes[route]}，已登录">已登录</a></li></ul>` : ''}${route === 'functions' ? `<ul class="demo-function-views">${functionPreviewRoutes.map(({ route: preview, label, measurement }) => `<li><a href="#${preview}">${label}</a>${measurement ? `<ul class="demo-measure-views"><li><a href="#${measurement}">${routes[measurement]}</a></li></ul>` : ''}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul></section>`,
 ).join('')}</div>`;
 document.addEventListener('click', onClick);
 document.addEventListener('submit', onSubmit);
 document.addEventListener('change', (event) => {
   const target = event.target;
-  if (target.id === 'from-date' || target.id === 'to-date') {
-    state.history[target.id === 'from-date' ? 'from' : 'to'] = target.value;
+  if (target.id === 'history-metric') {
+    state.history.metricIndex = Number(target.value);
     updateHistory();
   }
   if (target.matches('[data-setting]')) state[target.dataset.setting] = target.checked;
+  if (target.matches('[data-skip-guide]')) {
+    const kind = target.dataset.skipGuide;
+    if (target.checked) state.skippedMeasurementGuides.add(kind);
+    else state.skippedMeasurementGuides.delete(kind);
+  }
 });
 document.addEventListener('keydown', (event) => {
   if (!event.target.matches('[role=tab]') || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
-  const count = records.length;
-  state.history.metricIndex = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : (state.history.metricIndex + (event.key === 'ArrowRight' ? 1 : -1) + count) % count;
-  updateHistory(); app.querySelector(`[role=tab][aria-selected=true]`).focus();
+  if (event.target.matches('[data-action="function-view"]')) {
+    const views = ['method', 'metric'];
+    state.functionView = event.key === 'Home' ? views[0] : event.key === 'End' ? views[1] : views[1 - views.indexOf(state.functionView)];
+    updateFunctionView();
+    app.querySelector('.function-tabs [aria-selected="true"]').focus();
+    return;
+  }
 });
 document.querySelector('.sheet-close').addEventListener('click', closeSheet);
 sheetOverlay.addEventListener('click', (event) => {

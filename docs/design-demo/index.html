@@ -39,7 +39,11 @@
         <button type="button" class="toast-close" data-action="close-toast" aria-label="关闭提示">×</button>
       </div>
     </div>
-    <button type="button" class="demo-reset" data-action="reset-demo">重置演示</button>
+    <div class="demo-controls" role="group" aria-label="演示操作">
+      <button type="button" class="demo-finger-control" data-finger-toggle hidden>模拟放置指尖</button>
+      <button type="button" class="demo-finger-control" data-finger-missing hidden>模拟未检测到手指</button>
+      <button type="button" class="demo-reset" data-action="reset-demo">重置演示</button>
+    </div>
   </div>
   <noscript>此交互演示需要启用 JavaScript。</noscript>
   <script type="module" src="./app.js"></script>

@@ -14,13 +14,13 @@ export function icon(name) {
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.chevron}</svg>`;
 }
 
-/** 按实际经过的分钟、小时或整天显示间隔；无记录或时钟早于记录时不虚构测量。 */
+/** 按实际经过的分钟、小时或整天显示间隔；无记录或时钟早于记录时不虚构检测。 */
 export function measurementRecency(measuredAt, now = Date.now()) {
-  if (!measuredAt) return '尚未测量';
+  if (!measuredAt) return '尚未检测';
   const elapsed = now - Date.parse(measuredAt);
-  if (elapsed < 0) return '测量时间待核对';
-  if (elapsed < 60_000) return '刚刚测量';
-  if (elapsed < 3_600_000) return `已 ${Math.floor(elapsed / 60_000)} 分钟未测量`;
-  if (elapsed < 86_400_000) return `已 ${Math.floor(elapsed / 3_600_000)} 小时未测量`;
-  return `已 ${Math.floor(elapsed / 86_400_000)} 天未测量`;
+  if (elapsed < 0) return '检测时间待核对';
+  if (elapsed < 60_000) return '刚刚检测';
+  if (elapsed < 3_600_000) return `已 ${Math.floor(elapsed / 60_000)} 分钟未检测`;
+  if (elapsed < 86_400_000) return `已 ${Math.floor(elapsed / 3_600_000)} 小时未检测`;
+  return `已 ${Math.floor(elapsed / 86_400_000)} 天未检测`;
 }
