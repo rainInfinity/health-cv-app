@@ -45,8 +45,8 @@ const colors = {
   },
   /** 通用操作反馈；与健康评估色相互独立。 */
   feedback: { success: '#16836B', error: '#C54868', loading: '#087D83', information: '#2E6F91' },
-  /** 页面及内容表面；card 的十六进制末两位为透明度。 */
-  surface: { canvas: '#F8F8F8', default: '#FFFFFF', subtle: '#F0F0F0', card: '#FFFFFFED' },
+  /** 页面及内容表面；card 末两位为透明度，preview 是不代表相机已启动的取景底色。 */
+  surface: { canvas: '#F8F8F8', default: '#FFFFFF', subtle: '#F0F0F0', card: '#FFFFFFED', preview: '#000000' },
   /** 中性边界，不单独表达状态。 */
   border: { default: '#E6E6E6' },
   /** 主要、次要及辅助文字。 */

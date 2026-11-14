@@ -21,6 +21,18 @@
         "implementationClassName": "HybridCameraPreview"
       }
     },
+    "RPPG": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridRPPG"
+      }
+    },
+    "RPPGPreview": {
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridRPPGPreview"
+      }
+    },
     "PassiveCapture": {
       "android": {
         "language": "kotlin",

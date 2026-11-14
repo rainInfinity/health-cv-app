@@ -5,6 +5,7 @@ import { persistentAtom } from '@nanostores/persistent'
 import { initializePersistentStorage } from '../storage/mmkv'
 import { decodeLanguagePreference } from './types'
 import type { LanguagePreference } from './types'
+import { createMeasurementGuidePreferences } from './measurementGuide'
 
 initializePersistentStorage()
 
@@ -28,5 +29,8 @@ export const onboardingCompleted = persistentAtom<boolean>(
     encode: (value: boolean) => String(value),
   },
 )
+
+/** 三种检测方式的准备跳过偏好；不随账号退出清除。 */
+export const measurementGuideSkipped = createMeasurementGuidePreferences()
 
 export type { LanguagePreference } from './types'

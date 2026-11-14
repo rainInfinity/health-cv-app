@@ -2,3 +2,6 @@
 
 export { CameraPreview } from './CameraPreview'
 export type { CameraPreviewProps } from './CameraPreview'
+
+export { RPPGPreview } from './RPPGPreview'
+export type { RPPGPreviewProps } from './RPPGPreview'

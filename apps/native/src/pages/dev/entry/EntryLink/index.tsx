@@ -6,7 +6,7 @@ import { ActionButton } from '@/shared/components/ActionButton'
 import type { DevStackParamList } from '@/app/navigation/types'
 
 /** 入口按钮能够到达的功能路由。 */
-type FeatureRouteName = 'Acquisition' | 'PassiveCapture' | 'Sensors' | 'LanguageSettings' | 'FeedbackPreview'
+type FeatureRouteName = 'Acquisition' | 'RPPG' | 'PassiveCapture' | 'Sensors' | 'LanguageSettings' | 'FeedbackPreview'
 
 /** 描述单个可访问的本地功能入口。 */
 export interface EntryLinkProps {

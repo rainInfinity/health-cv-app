@@ -56,6 +56,33 @@ class AcquisitionFileStoreTest {
   }
 
   @Test
+  fun `directory promotion moves a complete folder and preserves existing targets`() = withStore { root, store ->
+    val parent = File(root, "acquisition/rppg")
+    val partial = File(parent, ".session-a.tmp")
+    val completed = File(parent, "session-a")
+    store.ensureDirectory(partial)
+    File(partial, "session.json").writeText("complete")
+
+    assertEquals(completed.canonicalFile, store.promoteDirectory(partial, completed))
+    assertFalse(partial.exists())
+    assertEquals("complete", File(completed, "session.json").readText())
+
+    val blockedPartial = File(parent, ".session-b.tmp")
+    store.ensureDirectory(blockedPartial)
+    File(blockedPartial, "session.json").writeText("partial")
+    assertThrows(IOException::class.java) { store.promoteDirectory(blockedPartial, completed) }
+    assertTrue(blockedPartial.isDirectory)
+    assertEquals("complete", File(completed, "session.json").readText())
+
+    val crossParent = File(root, "other/session-b")
+    assertThrows(IOException::class.java) { store.promoteDirectory(blockedPartial, crossParent) }
+    assertThrows(IOException::class.java) {
+      store.promoteDirectory(File(parent, ".missing.tmp"), File(parent, "missing"))
+    }
+  }
+
+
+  @Test
   fun `path-driven session files remain isolated when created through the store`() = withStore { root, store ->
     val paths = AcquisitionPaths(root)
     val first = paths.ppgPartialFile("session-1")

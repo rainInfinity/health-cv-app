@@ -13,6 +13,9 @@ import { ProductTabs } from '@/app/navigation/ProductTabs'
 import { MetricDetailScreen } from '@/pages/home/MetricDetailScreen'
 import { OnboardingScreen } from '@/pages/home/OnboardingScreen'
 import { StartupScreen } from '@/pages/home/StartupScreen'
+import { MeasurementGuideScreen } from '@/pages/measurement/MeasurementGuide'
+import { FaceMeasurementScreen } from '@/pages/measurement/FaceMeasurement'
+import { FingertipMeasurementScreen } from '@/pages/measurement/FingertipMeasurement'
 import { AuthScreen } from '@/pages/user/AuthScreen'
 import { LanguageInfoScreen } from '@/pages/user/LanguageInfoScreen'
 import { PermissionSettingsScreen } from '@/pages/user/PermissionSettingsScreen'
@@ -55,7 +58,7 @@ export function RootNavigator() {
       }}
       onStateChange={handleNavigationStateChange}
     >
-      <Stack.Navigator initialRouteName="Startup" screenOptions={{ headerShadowVisible: false }}>
+      <Stack.Navigator initialRouteName="Startup" screenOptions={{ headerShadowVisible: false, orientation: 'portrait' }}>
         <Stack.Screen
           name="Startup"
           component={StartupScreen}
@@ -69,6 +72,21 @@ export function RootNavigator() {
         <Stack.Screen
           name="ProductTabs"
           component={ProductTabs}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="MeasurementGuide"
+          component={MeasurementGuideScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FaceMeasurement"
+          component={FaceMeasurementScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FingertipMeasurement"
+          component={FingertipMeasurementScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

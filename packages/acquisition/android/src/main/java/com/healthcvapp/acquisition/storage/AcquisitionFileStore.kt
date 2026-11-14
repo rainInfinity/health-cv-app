@@ -51,6 +51,23 @@ internal class AcquisitionFileStore {
     return completed
   }
 
+  /** 将完整临时会话目录一次提升到同父目录，目标已存在时拒绝覆盖。 */
+  fun promoteDirectory(partialDirectory: File, completedDirectory: File): File {
+    val partial = partialDirectory.canonicalFile
+    val completed = completedDirectory.canonicalFile
+    if (partial.parentFile != completed.parentFile) {
+      throw IOException("采集目录只能在同一父目录内提升。")
+    }
+    if (!partial.isDirectory) throw IOException("采集临时目录不存在：${partial.absolutePath}")
+    if (completed.exists()) throw IOException("采集完成目录已存在，拒绝覆盖：${completed.absolutePath}")
+    if (!partial.renameTo(completed)) {
+      throw IOException("无法将采集临时目录提升为完成目录：${completed.absolutePath}")
+    }
+    if (!completed.isDirectory) throw IOException("采集完成目录不存在：${completed.absolutePath}")
+    return completed
+  }
+
+
   /** 为新文件操作准备父目录。 */
   private fun ensureParentDirectory(file: File) {
     file.parentFile?.let(::ensureDirectory)

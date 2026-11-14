@@ -1,8 +1,9 @@
-/** 提供用途说明、启停配置、真实服务状态和完成视频查询界面。 */
+/** 展示被动 RPPG 服务、正式测量配置、结果三件套及历史视频。 */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useFocusEffect } from '@react-navigation/native'
 import { useStore } from '@nanostores/react'
-import type { PassiveCaptureArtifact } from '@health-cv-app/acquisition'
+import type { PassiveVideoArtifact, RPPGArtifact } from '@health-cv-app/acquisition'
 import { AppState, Linking } from 'react-native'
 import { useTheme } from 'styled-components/native'
 import {
@@ -15,6 +16,8 @@ import {
   localizePassiveCaptureError,
   localizePassiveCaptureReason,
   localizePassiveCaptureState,
+  localizeRppgSignalStatus,
+  localizeRppgTermination,
   passiveCaptureMessages,
 } from '@/pages/dev/acquisition/passiveCaptureMessages'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
@@ -29,28 +32,46 @@ import { StatusFeedback } from '@/shared/components/StatusFeedback'
 
 import { ActionGroup, ArtifactGroup } from './styles'
 
-/** 呈现独立的 Android 后台解锁机会录像控制面板。 */
+/** 呈现独立的 Android 被动 RPPG 服务、配置与本地产物。 */
 export function PassiveCaptureScreen() {
   const snapshot = useStore(passiveCaptureSnapshot)
   const messages = useStore(passiveCaptureMessages)
   const sharedMessages = useStore(feedbackMessages)
   const { showModal } = useFeedback()
   const theme = useTheme()
-  const [artifacts, setArtifacts] = useState<PassiveCaptureArtifact[]>([])
+  const [artifacts, setArtifacts] = useState<RPPGArtifact[]>([])
+  const [videoArtifacts, setVideoArtifacts] = useState<PassiveVideoArtifact[]>([])
   const visibleArtifacts = useMemo(
     () => artifacts.slice(-MAX_DISPLAYED_ARTIFACTS),
     [artifacts],
   )
+  const visibleVideoArtifacts = useMemo(
+    () => videoArtifacts.slice(-MAX_DISPLAYED_ARTIFACTS),
+    [videoArtifacts],
+  )
   const [intervalInput, setIntervalInput] = useState(String(snapshot.config.intervalSeconds))
-  const [durationInput, setDurationInput] = useState(String(snapshot.config.durationSeconds))
+  const [durationInput, setDurationInput] = useState(String(snapshot.config.measurementDurationSeconds))
   const [localError, setLocalError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const mounted = useRef(false)
+  const refreshArtifacts = useCallback(async () => {
+    try {
+      const [rppgResults, historicalVideos] = await Promise.all([
+        passiveCaptureClient.listArtifacts(),
+        passiveCaptureClient.listVideoArtifacts(),
+      ])
+      if (mounted.current) {
+        setArtifacts(rppgResults)
+        setVideoArtifacts(historicalVideos)
+      }
+    } catch (error) {
+      if (mounted.current) setLocalError(readErrorCode(error))
+    }
+  }, [])
 
   useEffect(() => {
     mounted.current = true
     const unsubscribe = connectPassiveCaptureScreen()
-    void refreshArtifacts()
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         refreshPassiveCaptureSnapshot()
@@ -62,25 +83,29 @@ export function PassiveCaptureScreen() {
       appStateSubscription.remove()
       unsubscribe()
     }
-  }, [])
+  }, [refreshArtifacts])
+  useFocusEffect(
+    useCallback(() => {
+      refreshPassiveCaptureSnapshot()
+      void refreshArtifacts()
+      return undefined
+    }, [refreshArtifacts]),
+  )
 
   useEffect(() => {
     setIntervalInput(String(snapshot.config.intervalSeconds))
-    setDurationInput(String(snapshot.config.durationSeconds))
-  }, [snapshot.config.intervalSeconds, snapshot.config.durationSeconds])
+    setDurationInput(String(snapshot.config.measurementDurationSeconds))
+  }, [snapshot.config.intervalSeconds, snapshot.config.measurementDurationSeconds])
 
   useEffect(() => {
-    if (snapshot.lastReason === 'VIDEO_COMPLETED') void refreshArtifacts()
-  }, [snapshot.lastReason])
-
-  async function refreshArtifacts(): Promise<void> {
-    try {
-      const result = await passiveCaptureClient.listArtifacts()
-      if (mounted.current) setArtifacts(result)
-    } catch (error) {
-      if (mounted.current) setLocalError(readErrorCode(error))
+    if (
+      snapshot.lastReason != null &&
+      (snapshot.state === 'waiting' || snapshot.state === 'failed' || snapshot.state === 'disabled')
+    ) {
+      void refreshArtifacts()
     }
-  }
+  }, [snapshot.lastReason, snapshot.state, refreshArtifacts])
+
 
   async function runCommand(command: () => Promise<void>): Promise<void> {
     setBusy(true)
@@ -116,11 +141,13 @@ export function PassiveCaptureScreen() {
 
   const serviceActive = snapshot.state === 'starting'
     || snapshot.state === 'waiting'
-    || snapshot.state === 'recording'
+    || snapshot.state === 'observing'
+    || snapshot.state === 'measuring'
     || snapshot.state === 'stopping'
   const errorCode = localError
     ?? snapshot.errorCode
     ?? (snapshot.errorMessage != null || snapshot.state === 'failed' ? 'UNKNOWN' : null)
+  const instantHeartRate = snapshot.state === 'measuring' ? snapshot.latestInstantHeartRate : null
   const canOpenSettings = errorCode != null && (
     errorCode.includes('PERMISSION')
     || errorCode.includes('NOTIFICATION')
@@ -135,21 +162,54 @@ export function PassiveCaptureScreen() {
       <AppCard>
         <AppText variant="section">{messages.stateTitle}</AppText>
         <StatusFeedback
-          tone={snapshot.state === 'starting' || snapshot.state === 'stopping' ? 'pending' : 'info'}
+          tone={
+            snapshot.state === 'starting' ||
+            snapshot.state === 'observing' ||
+            snapshot.state === 'measuring' ||
+            snapshot.state === 'stopping'
+              ? 'pending'
+              : 'info'
+          }
           title={localizePassiveCaptureState(snapshot.state, messages)}
         />
         <AppText tone="secondary">
           {messages.cameraLabel}{messages.labelSeparator}{
-            snapshot.state === 'recording'
-              ? messages.cameraRecording
-              : snapshot.state === 'stopping'
-                ? messages.cameraStopping
-                : messages.cameraInactive
+            snapshot.state === 'measuring'
+              ? messages.cameraMeasuring
+              : snapshot.state === 'observing'
+                ? messages.cameraObserving
+                : snapshot.state === 'stopping'
+                  ? messages.cameraStopping
+                  : messages.cameraInactive
           }
         </AppText>
+        {snapshot.state === 'measuring' && (
+          <AppText tone="secondary">
+            {messages.measurementTarget}{messages.labelSeparator}
+            {snapshot.config.measurementDurationSeconds} {messages.secondsUnit}
+          </AppText>
+        )}
         {snapshot.sessionId != null && (
           <AppText tone="secondary">{messages.session}{messages.labelSeparator}{snapshot.sessionId}</AppText>
         )}
+        <AppText variant="section">{messages.instantHeartRateTitle}</AppText>
+        {instantHeartRate != null ? (
+          <>
+            <AppText variant="display">{instantHeartRate.heartRateBpm.toFixed(1)} bpm</AppText>
+            <AppText tone="secondary">
+              {messages.instantIntervalLabel}{messages.labelSeparator}
+              {(Number(instantHeartRate.intervalNanos) / 1_000_000).toFixed(1)} ms
+            </AppText>
+          </>
+        ) : (
+          <StatusFeedback
+            tone="info"
+            title={snapshot.state === 'measuring'
+              ? messages.instantHeartRateInsufficient
+              : messages.instantHeartRateWaiting}
+          />
+        )}
+        <AppText tone="muted" variant="caption">{messages.instantHeartRateDescription}</AppText>
         {snapshot.lastReason != null && (
           <AppText tone="secondary">
             {messages.latestEvent}{messages.labelSeparator}{localizePassiveCaptureReason(snapshot.lastReason, messages)}
@@ -197,6 +257,16 @@ export function PassiveCaptureScreen() {
           onChangeText={setDurationInput}
           value={durationInput}
         />
+        {Number.isFinite(Number(durationInput)) &&
+          Number(durationInput) > 0 &&
+          Number(durationInput) < snapshot.minimumHeartRateMeasurementSeconds && (
+            <StatusFeedback
+              tone="info"
+              title={messages.durationBelowMinimum({
+                seconds: String(snapshot.minimumHeartRateMeasurementSeconds),
+              })}
+            />
+          )}
         <ActionButton
           label={messages.saveConfig}
           disabled={serviceActive || busy}
@@ -205,7 +275,7 @@ export function PassiveCaptureScreen() {
           onPress={() => void runCommand(async () => {
             const config = {
               intervalSeconds: Number(intervalInput),
-              durationSeconds: Number(durationInput),
+              measurementDurationSeconds: Number(durationInput),
             }
             await passiveCaptureClient.setConfig(config)
           })}
@@ -235,24 +305,72 @@ export function PassiveCaptureScreen() {
       </ActionGroup>
 
       <AppCard>
-        <AppText variant="section">{messages.completedVideos}</AppText>
-        <AppText tone="muted" variant="caption">{messages.artifactQueryScope}</AppText>
+        <AppText variant="section">{messages.completedResults}</AppText>
+        <AppText tone="muted" variant="caption">{messages.rppgResultScope}</AppText>
         {artifacts.length > visibleArtifacts.length && (
           <AppText tone="muted" variant="caption">{messages.artifactLimitNote}</AppText>
         )}
         {artifacts.length === 0 ? (
           <StatusFeedback
             tone="info"
-            title={messages.noCompletedVideos}
-            message={messages.cancelledVideoDescription}
+            title={messages.noCompletedResults}
+            message={messages.noResultDescription}
           />
         ) : visibleArtifacts.map((artifact) => (
+          <ArtifactGroup key={artifact.sessionId}>
+            <AppText tone="secondary">{messages.artifactSession}{messages.labelSeparator}{artifact.sessionId}</AppText>
+            <AppText tone="secondary" variant="caption">
+              {messages.resultSource}{messages.labelSeparator}{messages.sourcePassive}
+              {messages.metadataSeparator}{messages.resultTermination}{messages.labelSeparator}
+              {localizeRppgTermination(artifact.termination, messages)}
+            </AppText>
+            <AppText tone="secondary" variant="caption">
+              {messages.signalQuality}{messages.labelSeparator}{localizeRppgSignalStatus(artifact.signalStatus, messages)}
+            </AppText>
+            <AppText tone="secondary" variant="caption">
+              {messages.pulseSamples}{messages.labelSeparator}{artifact.sampleCounts.pulseSamples}
+              {messages.metadataSeparator}{messages.heartRateWindows}{messages.labelSeparator}{artifact.sampleCounts.heartRateWindows}
+              {messages.metadataSeparator}{messages.validHeartRateWindows}{messages.labelSeparator}{artifact.sampleCounts.validHeartRateWindows}
+              {messages.metadataSeparator}{messages.rejectedHeartRateWindows}{messages.labelSeparator}{artifact.sampleCounts.rejectedHeartRateWindows}
+            </AppText>
+            {artifact.files.map((file) => (
+              <ArtifactGroup key={`${artifact.sessionId}-${file.kind}`}>
+                <AppText tone="secondary" variant="caption">
+                  {file.kind === 'session'
+                    ? messages.sessionFile
+                    : file.kind === 'pulse'
+                      ? messages.pulseFile
+                      : messages.heartRateFile}
+                  {messages.labelSeparator}{file.sizeBytes} bytes
+                </AppText>
+                <AppText selectable variant="caption">{file.path}</AppText>
+              </ArtifactGroup>
+            ))}
+          </ArtifactGroup>
+        ))}
+      </AppCard>
+
+      <AppCard>
+        <AppText variant="section">{messages.historicalVideos}</AppText>
+        <AppText tone="muted" variant="caption">{messages.historicalVideoScope}</AppText>
+        {videoArtifacts.length > visibleVideoArtifacts.length && (
+          <AppText tone="muted" variant="caption">{messages.artifactLimitNote}</AppText>
+        )}
+        {videoArtifacts.length === 0 ? (
+          <StatusFeedback
+            tone="info"
+            title={messages.noHistoricalVideos}
+            message={messages.historicalVideoDescription}
+          />
+        ) : visibleVideoArtifacts.map((artifact) => (
           <ArtifactGroup key={artifact.sessionId}>
             <AppText tone="secondary">{messages.artifactSession}{messages.labelSeparator}{artifact.sessionId}</AppText>
             <AppText tone="secondary" variant="caption">{messages.artifactPath}{messages.labelSeparator}</AppText>
             <AppText selectable variant="caption">{artifact.path}</AppText>
             <AppText tone="secondary" variant="caption">
-              {messages.dimensions}{messages.labelSeparator}{artifact.width} × {artifact.height}{messages.metadataSeparator}{messages.duration}{messages.labelSeparator}{artifact.durationMillis} ms{messages.metadataSeparator}{messages.fileSize}{messages.labelSeparator}{artifact.sizeBytes} bytes
+              {messages.dimensions}{messages.labelSeparator}{artifact.width} × {artifact.height}
+              {messages.metadataSeparator}{messages.duration}{messages.labelSeparator}{artifact.durationMillis} ms
+              {messages.metadataSeparator}{messages.fileSize}{messages.labelSeparator}{artifact.sizeBytes} bytes
             </AppText>
           </ArtifactGroup>
         ))}

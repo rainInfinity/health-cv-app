@@ -5,11 +5,12 @@ import { PermissionsAndroid, Platform } from 'react-native'
 
 import type {
   PassiveCapture,
-  PassiveCaptureArtifact,
   PassiveCaptureConfig,
   PassiveCaptureNotificationSettings,
   PassiveCaptureSnapshot,
+  PassiveVideoArtifact,
 } from '../native/PassiveCapture.nitro'
+import type { RPPGArtifact } from '../native/RPPG.nitro'
 
 /** 描述被动采集命令可能返回的可判别错误。 */
 export class PassiveCaptureError extends Error {
@@ -24,7 +25,7 @@ export class PassiveCaptureError extends Error {
   }
 }
 
-/** 暴露被动服务控制、低频状态订阅和持久视频查询。 */
+/** 暴露被动服务控制、低频状态订阅和两类独立持久产物查询。 */
 export class PassiveCaptureClient {
   constructor(private readonly native: PassiveCapture) {}
 
@@ -38,7 +39,7 @@ export class PassiveCaptureClient {
     return this.native.getNotificationSettings()
   }
 
-  /** 保存未启用时生效的周期和目标时长配置。 */
+  /** 保存未启用时生效的周期和正式测量时长配置。 */
   async setConfig(config: PassiveCaptureConfig): Promise<void> {
     this.unwrap(await this.native.setConfig(config))
   }
@@ -60,10 +61,16 @@ export class PassiveCaptureClient {
     this.unwrap(await this.native.disable())
   }
 
-  /** 查询应用私有目录中已完成的视频。 */
-  listArtifacts(): Promise<PassiveCaptureArtifact[]> {
+  /** 查询应用私有目录中已发布的被动 RPPG 三件套。 */
+  listArtifacts(): Promise<RPPGArtifact[]> {
     this.ensureAndroid()
     return this.native.listArtifacts()
+  }
+
+  /** 查询升级前保留的视频及真实媒体信息。 */
+  listVideoArtifacts(): Promise<PassiveVideoArtifact[]> {
+    this.ensureAndroid()
+    return this.native.listVideoArtifacts()
   }
 
   /** 订阅原生低频状态；返回的函数只移除该页面订阅。 */

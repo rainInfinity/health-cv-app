@@ -40,7 +40,7 @@ class PassiveVideoArtifactStoreTest {
     val foreign = File.createTempFile("outside-", ".part")
     try {
       temporary.writeText("unfinished")
-      assertEquals(0, runBlocking { store.listArtifacts() }.size)
+      assertEquals(0, runBlocking { store.listVideoArtifacts() }.size)
 
       store.discardTemporaryFile(temporary)
       store.discardTemporaryFile(foreign)

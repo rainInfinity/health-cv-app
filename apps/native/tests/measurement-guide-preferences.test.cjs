@@ -1,0 +1,106 @@
+// 验证真实准备偏好在跨目标、重建 Store、退出账号及损坏存储下的行为。
+
+const assert = require('node:assert/strict');
+const { afterEach, beforeEach, test } = require('node:test');
+const { createPersistentStorageEngine } = require('../node_modules/.cache/native-test/app/storage/persistentEngine.js');
+const { createMeasurementGuidePreferences } = require('../node_modules/.cache/native-test/app/preferences/measurementGuide.js');
+const { FEATURE_ENTRIES, METHOD_ENTRIES, resolveMeasurementEntry } = require('../node_modules/.cache/native-test/app/measurement/entry.js');
+const { clearHarnessQueryClients, createHarness } = require('./helpers.cjs');
+
+let values;
+let persistentAtom;
+
+beforeEach(async () => {
+  values = new Map();
+  const persistent = await import('@nanostores/persistent');
+  persistentAtom = persistent.persistentAtom;
+  persistent.setPersistentEngine(createPersistentStorageEngine({
+    getString: (key) => values.get(key),
+    set: (key, value) => { values.set(key, value); },
+    remove: (key) => values.delete(key),
+    contains: (key) => values.has(key),
+    getAllKeys: () => [...values.keys()],
+  }), { addEventListener() {}, removeEventListener() {} });
+});
+afterEach(clearHarnessQueryClients);
+
+test('从一个指尖指标保存偏好，其他指尖指标与部位入口共用，其他方式隔离', () => {
+  const preference = createMeasurementGuidePreferences();
+  preference[FEATURE_ENTRIES.fingertip.method].set(true);
+
+  const restored = createMeasurementGuidePreferences();
+  assert.equal(restored[FEATURE_ENTRIES.oxygen.method].get(), true);
+  assert.equal(restored[FEATURE_ENTRIES.risk.method].get(), true);
+  assert.equal(restored[METHOD_ENTRIES.fingertip.method].get(), true);
+  assert.equal(restored[FEATURE_ENTRIES.face.method].get(), false);
+  assert.equal(restored[FEATURE_ENTRIES.pressure.method].get(), false);
+
+  restored.chest.set(true);
+  const next = createMeasurementGuidePreferences();
+  assert.equal(next.chest.get(), true);
+  assert.equal(next.face.get(), false);
+  assert.equal(next.fingertip.get(), true);
+  next.fingertip.set(false);
+  assert.equal(createMeasurementGuidePreferences().fingertip.get(), false);
+});
+
+test('持久跳过偏好让各入口直达检测页，不经过引导；未接入方式不伪造页面', () => {
+  const preference = createMeasurementGuidePreferences();
+  preference.face.set(true);
+  preference.fingertip.set(true);
+  preference.chest.set(true);
+  const restored = createMeasurementGuidePreferences();
+  for (const entry of [...Object.values(METHOD_ENTRIES), ...Object.values(FEATURE_ENTRIES)]) {
+    const route = resolveMeasurementEntry(entry, restored[entry.method].get());
+    if (entry.method === 'chest') {
+      assert.equal(route, null);
+    } else {
+      assert.deepEqual(route, [
+        entry.method === 'face' ? 'FaceMeasurement' : 'FingertipMeasurement',
+        { target: entry.target },
+      ]);
+    }
+  }
+  restored.fingertip.set(false);
+  assert.deepEqual(resolveMeasurementEntry(FEATURE_ENTRIES.oxygen, restored.fingertip.get()), [
+    'MeasurementGuide', FEATURE_ENTRIES.oxygen,
+  ]);
+});
+
+test('缺失或非法持久值不跳过，合法方式不受损坏邻项影响', () => {
+  assert.equal(createMeasurementGuidePreferences().face.get(), false);
+  createMeasurementGuidePreferences().face.set(true);
+  createMeasurementGuidePreferences().fingertip.set(true);
+  const fingertipKey = [...values.keys()].find((key) => key.includes('.fingertip.'));
+  for (const invalid of ['TRUE', '1', 'yes', '{}', 'null', '']) {
+    values.set(fingertipKey, invalid);
+    const restored = createMeasurementGuidePreferences();
+    assert.equal(restored.fingertip.get(), false);
+    assert.equal(restored.face.get(), true);
+    assert.equal(restored.chest.get(), false);
+  }
+});
+
+test('真实认证退出不清除设备准备偏好，也不改变语言和首次引导', async () => {
+  const language = persistentAtom('app.language-preference', 'zh-CN', { listen: false });
+  const onboarding = persistentAtom('app.onboarding-completed', 'false', { listen: false });
+  language.set('en-US');
+  onboarding.set('true');
+  const preference = createMeasurementGuidePreferences();
+  preference.face.set(true);
+  preference.fingertip.set(true);
+
+  const harness = createHarness();
+  await harness.auth.restore();
+  await harness.auth.signIn({ username: 'test-user', password: 'private-password' });
+  await harness.auth.signOut();
+
+  assert.deepEqual(harness.auth.state.get(), { status: 'anonymous' });
+  assert.equal(await harness.credentials.read(), null);
+  const restored = createMeasurementGuidePreferences();
+  assert.equal(restored.face.get(), true);
+  assert.equal(restored.fingertip.get(), true);
+  assert.equal(restored.chest.get(), false);
+  assert.equal(language.get(), 'en-US');
+  assert.equal(onboarding.get(), 'true');
+});

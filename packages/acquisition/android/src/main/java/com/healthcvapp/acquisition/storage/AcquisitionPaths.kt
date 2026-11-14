@@ -1,4 +1,4 @@
-/** 集中维护主动 PPG 与被动视频的私有会话路径。 */
+/** 集中维护主动 PPG／RPPG 与被动视频的私有会话路径。 */
 
 package com.healthcvapp.acquisition.storage
 
@@ -23,6 +23,44 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
 
   /** 返回逐帧相机元数据已完成的 CSV 路径。 */
   fun frameCompletedFile(sessionId: String): File = File(ppgSessionDirectory(sessionId), FRAME_COMPLETED_FILE)
+
+  /** 返回主动 RPPG 结果根目录。 */
+  fun rppgRootDirectory(): File = File(File(filesDirectory, ACQUISITION_DIRECTORY), RPPG_DIRECTORY)
+
+  /** 返回主动 RPPG 的最终会话目录。 */
+  fun rppgSessionDirectory(sessionId: String): File =
+    File(rppgRootDirectory(), requireRppgSessionId(sessionId))
+
+  /** 返回尚未发布的 RPPG 临时会话目录。 */
+  fun rppgPartialSessionDirectory(sessionId: String): File {
+    val safeSessionId = requireRppgSessionId(sessionId)
+    return File(rppgRootDirectory(), ".$safeSessionId.tmp")
+  }
+
+  /** 返回临时会话中的波形 CSV。 */
+  fun rppgPartialPulseFile(sessionId: String): File =
+    File(rppgPartialSessionDirectory(sessionId), RPPG_PULSE_FILE)
+
+  /** 返回临时会话中的心率 CSV。 */
+  fun rppgPartialHeartRateFile(sessionId: String): File =
+    File(rppgPartialSessionDirectory(sessionId), RPPG_HEART_RATE_FILE)
+
+  /** 返回临时会话中的元信息 JSON。 */
+  fun rppgPartialSessionJsonFile(sessionId: String): File =
+    File(rppgPartialSessionDirectory(sessionId), RPPG_SESSION_JSON_FILE)
+
+  /** 返回已发布会话中的波形 CSV。 */
+  fun rppgPulseFile(sessionId: String): File =
+    File(rppgSessionDirectory(sessionId), RPPG_PULSE_FILE)
+
+  /** 返回已发布会话中的心率 CSV。 */
+  fun rppgHeartRateFile(sessionId: String): File =
+    File(rppgSessionDirectory(sessionId), RPPG_HEART_RATE_FILE)
+
+  /** 返回已发布会话中的元信息 JSON。 */
+  fun rppgSessionJsonFile(sessionId: String): File =
+    File(rppgSessionDirectory(sessionId), RPPG_SESSION_JSON_FILE)
+
 
   /** 返回被动视频产物根目录，用于扫描已有会话。 */
   fun passiveVideoRootDirectory(): File = File(filesDirectory, PASSIVE_CAPTURE_DIRECTORY)
@@ -52,6 +90,13 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
   fun sensorCompletedFile(kind: SensorKind, sessionId: String): File =
     File(sensorSessionDirectory(kind, sessionId), "${kind.wireName}.csv")
 
+
+  /** 校验 RPPG 会话标识，避免临时或最终路径逃逸会话根目录。 */
+  private fun requireRppgSessionId(sessionId: String): String {
+    require(RPPG_SESSION_ID_PATTERN.matches(sessionId)) { "sessionId must be a safe path component" }
+    return sessionId
+  }
+
   /** 校验并返回符合历史主动采集规则的会话标识。 */
   private fun requirePpgSessionId(sessionId: String): String {
     require(PPG_SESSION_ID_PATTERN.matches(sessionId)) { "sessionId must be a safe path component" }
@@ -68,6 +113,10 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
 
   private companion object {
     const val ACQUISITION_DIRECTORY = "acquisition"
+    const val RPPG_DIRECTORY = "rppg"
+    const val RPPG_PULSE_FILE = "pulse.csv"
+    const val RPPG_HEART_RATE_FILE = "hr.csv"
+    const val RPPG_SESSION_JSON_FILE = "session.json"
     const val PASSIVE_CAPTURE_DIRECTORY = "passive-capture"
     const val PPG_PARTIAL_FILE = "ppg.csv.part"
     const val PPG_COMPLETED_FILE = "ppg.csv"
@@ -78,5 +127,6 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
     val PPG_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
     const val SENSOR_DIRECTORY = "sensors"
     val SENSOR_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
+    val RPPG_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
   }
 }

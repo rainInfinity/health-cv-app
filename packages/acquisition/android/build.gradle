@@ -41,6 +41,7 @@ android {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
     buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
+    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
     externalNativeBuild {
       cmake {
@@ -128,7 +129,12 @@ dependencies {
   implementation "androidx.camera:camera-video:1.6.2"
   implementation "androidx.lifecycle:lifecycle-service:2.9.4"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+  // 使用固定版本，避免运行时模型图随依赖解析漂移。
+  implementation "com.google.mediapipe:tasks-vision:1.2.2"
 
   testImplementation "junit:junit:4.13.2"
   testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2"
+  androidTestImplementation "junit:junit:4.13.2"
+  androidTestImplementation "androidx.test:runner:1.6.2"
+  androidTestImplementation "androidx.test:core:1.6.1"
 }

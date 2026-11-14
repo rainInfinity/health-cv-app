@@ -7,7 +7,7 @@ import com.margelo.nitro.core.Promise
 import com.healthcvapp.acquisition.passive.runtime.PassiveCaptureRuntimes
 import com.healthcvapp.acquisition.passive.service.PassiveCaptureNotifications
 
-/** 暴露被动服务控制、真实快照、低频状态与持久视频查询。 */
+/** 暴露被动服务控制、真实状态、RPPG 结果及历史视频查询。 */
 class HybridPassiveCapture : HybridPassiveCaptureSpec() {
   private val context = checkNotNull(NitroModules.applicationContext) {
     "Nitro Application Context is unavailable"
@@ -21,7 +21,7 @@ class HybridPassiveCapture : HybridPassiveCaptureSpec() {
   /** 返回原生服务快照，不根据保存的用户偏好推断运行状态。 */
   override fun getSnapshot(): PassiveCaptureSnapshot = runtime.getSnapshot()
 
-  /** 保存仅在服务关闭时修改的周期和录像时长配置。 */
+  /** 保存仅在服务关闭时修改的周期和正式测量时长。 */
   override fun setConfig(config: PassiveCaptureConfig): Promise<PassiveCaptureCommandResult> = Promise.async {
     runtime.setConfig(config)
   }
@@ -31,14 +31,19 @@ class HybridPassiveCapture : HybridPassiveCaptureSpec() {
     runtime.enable()
   }
 
-  /** 停止解锁事件并等待当前录像收尾及相机释放。 */
+  /** 停止接收解锁事件，并等待当前 RPPG 会话收尾和相机释放。 */
   override fun disable(): Promise<PassiveCaptureCommandResult> = Promise.async {
     runtime.disable()
   }
 
-  /** 从私有持久目录扫描已完成且媒体信息可读取的视频。 */
-  override fun listArtifacts(): Promise<Array<PassiveCaptureArtifact>> = Promise.async {
-    runtime.listArtifacts()
+  /** 查询共用结果存储中已发布的被动 RPPG 三件套。 */
+  override fun listArtifacts(): Promise<Array<com.margelo.nitro.acquisition.RPPGArtifact>> = Promise.async {
+    runtime.listArtifacts().map { RPPGArtifactNitroMapper.toNitro(it) }.toTypedArray()
+  }
+
+  /** 查询保留在旧目录中的已完成历史视频。 */
+  override fun listVideoArtifacts(): Promise<Array<PassiveVideoArtifact>> = Promise.async {
+    runtime.listVideoArtifacts()
   }
 
   /** 注册应用级低频状态监听并返回释放标识。 */

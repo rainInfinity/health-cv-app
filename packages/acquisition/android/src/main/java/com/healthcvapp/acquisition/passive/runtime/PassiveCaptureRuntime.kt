@@ -1,4 +1,4 @@
-/** 管理应用级被动服务、配置持久化和 JS 可观察的真实运行状态。 */
+/** 管理应用级被动服务、正式测量配置和低频真实运行状态。 */
 
 package com.healthcvapp.acquisition.passive.runtime
 
@@ -10,11 +10,16 @@ import androidx.core.content.ContextCompat
 import com.healthcvapp.acquisition.passive.output.PassiveVideoArtifactStore
 import com.healthcvapp.acquisition.passive.service.PassiveCaptureNotifications
 import com.healthcvapp.acquisition.passive.service.PassiveCaptureService
-import com.margelo.nitro.acquisition.PassiveCaptureArtifact
+import com.healthcvapp.acquisition.rppg.model.RPPGArtifact
+import com.healthcvapp.acquisition.rppg.model.RPPGConfig
+import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
+import com.healthcvapp.acquisition.rppg.model.RPPGSessionSource
+import com.healthcvapp.acquisition.rppg.output.RPPGArtifactStore
 import com.margelo.nitro.acquisition.PassiveCaptureCommandResult
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureSnapshot
 import com.margelo.nitro.acquisition.PassiveCaptureState
+import com.margelo.nitro.acquisition.RPPGInstantHeartRateNitroMapper
 import com.margelo.nitro.acquisition.Variant_NullType_String
 import com.margelo.nitro.core.NullType
 import java.util.concurrent.ConcurrentHashMap
@@ -41,8 +46,10 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   private var config = loadConfig()
   /** 当前由服务回报的真实运行阶段。 */
   private var state = PassiveCaptureState.DISABLED
-  /** 当前录像会话；等待或关闭时为空。 */
+  /** 当前被动 RPPG 会话；等待或关闭时为空。 */
   private var sessionId: String? = null
+  /** 仅属于当前测量会话的逐搏值；不持久化也不用于频谱信号结论。 */
+  private var latestInstantHeartRate: RPPGInstantHeartRate? = null
   /** 最近一次触发、跳过、完成或失败原因。 */
   private var lastReason: String? = null
   /** 最近一次命令或设备错误。 */
@@ -73,15 +80,16 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     validateConfig(value)?.let { return commandResult(it.first, it.second) }
     synchronized(lock) {
       if (service != null || state == PassiveCaptureState.STARTING || state == PassiveCaptureState.STOPPING) {
-        return commandResult("SERVICE_RUNNING", "请先关闭被动采集，再修改周期或录像时长。")
+        return commandResult("SERVICE_RUNNING", "请先关闭被动采集，再修改周期或正式测量时长。")
       }
       config = value
       preferences.edit()
         .putLong(KEY_INTERVAL_MILLIS, secondsToMillis(value.intervalSeconds))
-        .putLong(KEY_DURATION_MILLIS, secondsToMillis(value.durationSeconds))
+        .putLong(KEY_MEASUREMENT_DURATION_MILLIS, secondsToMillis(value.measurementDurationSeconds))
         .apply()
       state = PassiveCaptureState.DISABLED
       sessionId = null
+      latestInstantHeartRate = null
       lastReason = "CONFIGURATION_SAVED"
       errorCode = null
       errorMessage = null
@@ -93,7 +101,10 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   /** 用户明确启用后启动相机类型前台服务；等待完成不打开相机。 */
   suspend fun enable(): PassiveCaptureCommandResult = commandMutex.withLock {
     synchronized(lock) {
-      if (state == PassiveCaptureState.WAITING || state == PassiveCaptureState.RECORDING) {
+      if (state == PassiveCaptureState.WAITING ||
+        state == PassiveCaptureState.OBSERVING ||
+        state == PassiveCaptureState.MEASURING
+      ) {
         return@withLock commandResult()
       }
       if (service != null || state == PassiveCaptureState.STOPPING) {
@@ -143,7 +154,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
       }
   }
 
-  /** 先停止服务接收事件，再等待录像收尾和相机释放。 */
+  /** 先停止服务接收事件，再等待当前 RPPG 会话收尾并释放相机。 */
   suspend fun disable(): PassiveCaptureCommandResult = commandMutex.withLock {
     val activeService = synchronized(lock) { service }
     if (activeService == null) {
@@ -177,9 +188,13 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     }
   }
 
-  /** 从应用私有目录扫描已发布且媒体可读的视频。 */
-  suspend fun listArtifacts(): Array<PassiveCaptureArtifact> =
-    PassiveVideoArtifactStore(applicationContext).listArtifacts()
+  /** 从共用结果存储扫描已发布的被动 RPPG 三件套。 */
+  suspend fun listArtifacts(): List<RPPGArtifact> =
+    RPPGArtifactStore(applicationContext.filesDir).listArtifacts(RPPGSessionSource.PASSIVE)
+
+  /** 从旧视频目录扫描完整且媒体可读的历史录像。 */
+  suspend fun listVideoArtifacts(): Array<com.margelo.nitro.acquisition.PassiveVideoArtifact> =
+    PassiveVideoArtifactStore(applicationContext).listVideoArtifacts()
 
   /** 服务成功进入前台后建立等待状态并完成启用屏障。 */
   fun onServiceReady(startedService: PassiveCaptureService) {
@@ -187,6 +202,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
       service = startedService
       state = PassiveCaptureState.WAITING
       sessionId = null
+      latestInstantHeartRate = null
       lastReason = "WAITING_FOR_UNLOCK"
       errorCode = null
       errorMessage = null
@@ -211,6 +227,9 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   ) {
     synchronized(lock) {
       this.state = state
+      if (this.sessionId != sessionId || state != PassiveCaptureState.MEASURING) {
+        latestInstantHeartRate = null
+      }
       this.sessionId = sessionId
       if (reason != null) lastReason = reason
       if (clearError) {
@@ -221,6 +240,16 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
         errorCode = it.first
         errorMessage = it.second
       }
+      dispatch(snapshotLocked())
+    }
+  }
+
+  /** 仅接收当前测量会话的逐搏变更，拒绝停止后及旧会话的迟到值。 */
+  fun updateInstantHeartRate(sessionId: String, value: RPPGInstantHeartRate?) {
+    synchronized(lock) {
+      if (this.sessionId != sessionId || state != PassiveCaptureState.MEASURING) return
+      if (latestInstantHeartRate == value) return
+      latestInstantHeartRate = value
       dispatch(snapshotLocked())
     }
   }
@@ -239,6 +268,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
       if (service !== stoppedService) return
       service = null
       sessionId = null
+      latestInstantHeartRate = null
       if (state != PassiveCaptureState.FAILED) {
         state = PassiveCaptureState.DISABLED
         errorCode = null
@@ -253,6 +283,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
       service = null
       state = PassiveCaptureState.FAILED
       sessionId = null
+      latestInstantHeartRate = null
       lastReason = code
       errorCode = code
       errorMessage = message
@@ -266,7 +297,10 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   private fun snapshotLocked() = PassiveCaptureSnapshot(
     state = state,
     config = config,
+    minimumHeartRateMeasurementSeconds =
+      RPPGConfig.EXPERIMENTAL_V1.minimumSpectralMeasurementNanos.toDouble() / NANOS_PER_SECOND,
     sessionId = nullableString(sessionId),
+    latestInstantHeartRate = RPPGInstantHeartRateNitroMapper.toNitro(latestInstantHeartRate),
     lastReason = nullableString(lastReason),
     errorCode = nullableString(errorCode),
     errorMessage = nullableString(errorMessage),
@@ -292,28 +326,32 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
 
   private fun loadConfig(): PassiveCaptureConfig {
     val defaultIntervalMillis = secondsToMillis(DEFAULT_INTERVAL_SECONDS.toDouble())
-    val defaultDurationMillis = secondsToMillis(DEFAULT_DURATION_SECONDS.toDouble())
+    val defaultDurationMillis = secondsToMillis(DEFAULT_MEASUREMENT_DURATION_SECONDS.toDouble())
     val intervalMillis = preferences.getLong(KEY_INTERVAL_MILLIS, defaultIntervalMillis)
-    val durationMillis = preferences.getLong(KEY_DURATION_MILLIS, defaultDurationMillis)
+    // 旧 duration_millis 保存的是合法配置值，迁移时保留原数值且不恢复启用状态。
+    val measurementDurationMillis = preferences.getLong(KEY_MEASUREMENT_DURATION_MILLIS, defaultDurationMillis)
     return PassiveCaptureConfig(
       intervalSeconds = intervalMillis.toDouble() / MILLIS_PER_SECOND,
-      durationSeconds = durationMillis.toDouble() / MILLIS_PER_SECOND,
+      measurementDurationSeconds = measurementDurationMillis.toDouble() / MILLIS_PER_SECOND,
     )
   }
 
   private fun validateConfig(value: PassiveCaptureConfig): Pair<String, String>? {
-    if (!value.intervalSeconds.isFinite() || value.intervalSeconds <= 0.0 || !canConvertSeconds(value.intervalSeconds)) {
-      return "INVALID_INTERVAL" to "采集周期必须是可表示的有限正数。"
+    if (!value.intervalSeconds.isFinite() || value.intervalSeconds <= 0.0 || !canConvertSecondsToNanos(value.intervalSeconds)) {
+      return "INVALID_INTERVAL" to "采集周期必须是可换算为纳秒的有限正数。"
     }
-    if (!value.durationSeconds.isFinite() || value.durationSeconds <= 0.0 || !canConvertSeconds(value.durationSeconds)) {
-      return "INVALID_DURATION" to "单次录像时长必须是可表示的有限正数。"
+    if (
+      !value.measurementDurationSeconds.isFinite() ||
+      value.measurementDurationSeconds <= 0.0 ||
+      !canConvertSecondsToNanos(value.measurementDurationSeconds)
+    ) {
+      return "INVALID_MEASUREMENT_DURATION" to "正式测量时长必须是可表示的有限正数。"
     }
     return null
   }
 
-  private fun canConvertSeconds(seconds: Double): Boolean =
-    seconds * MILLIS_PER_SECOND <= Long.MAX_VALUE.toDouble()
-
+  private fun canConvertSecondsToNanos(seconds: Double): Boolean =
+    seconds * NANOS_PER_SECOND <= Long.MAX_VALUE.toDouble()
   private fun secondsToMillis(seconds: Double): Long =
     kotlin.math.ceil(seconds * MILLIS_PER_SECOND).toLong().coerceAtLeast(1L)
 
@@ -329,12 +367,14 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   private companion object {
     const val PREFERENCES_NAME = "passive_capture"
     const val KEY_INTERVAL_MILLIS = "interval_millis"
-    const val KEY_DURATION_MILLIS = "duration_millis"
+    const val KEY_MEASUREMENT_DURATION_MILLIS = "duration_millis"
     const val DEFAULT_INTERVAL_SECONDS = 7_200
-    const val DEFAULT_DURATION_SECONDS = 10
+    const val DEFAULT_MEASUREMENT_DURATION_SECONDS = 30
     const val MILLIS_PER_SECOND = 1_000.0
+    const val NANOS_PER_SECOND = 1_000_000_000.0
     const val SERVICE_START_TIMEOUT_MILLIS = 8_000L
   }
+
 }
 
 /** 复用应用级被动运行时实例，并且只保留 Application Context。 */

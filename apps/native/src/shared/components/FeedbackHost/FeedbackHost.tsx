@@ -1,52 +1,22 @@
 /** 提供全局单弹窗、单 Toast 队列及其可访问原生呈现。 */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Modal, Pressable, View, useWindowDimensions } from 'react-native'
+import { Modal, Pressable, View } from 'react-native'
 import { CircleAlert, CircleCheck, Info, X } from '@/shared/graphics'
 import { useStore } from '@nanostores/react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from 'styled-components/native'
 
-import { ActionButton } from '@/shared/components/ActionButton'
+import { FeedbackDialog } from '@/shared/components/FeedbackDialog'
+import type { FeedbackModalOptions } from '@/shared/components/FeedbackDialog'
 import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
 import { AppText } from '@/shared/components/AppText'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
-import {
-  DialogActions,
-  DialogMessageScroll,
-  DialogSurface,
-  Overlay,
-  ToastCopy,
-  ToastSurface,
-} from './styles'
+import { ToastCopy, ToastSurface } from './styles'
 
 import { SingleToastLifecycle } from './toastLifecycle'
 import type { FeedbackTone } from './toastLifecycle'
 export type { FeedbackTone } from './toastLifecycle'
-
-/** 描述弹窗中的有名操作及其可选副作用。 */
-export interface FeedbackAction {
-  /** 按钮可见文本。 */
-  label: string
-  /** 主操作使用品牌按钮，其他操作使用白底次级按钮。 */
-  primary?: boolean
-  /** 关闭弹窗后执行的操作。 */
-  onPress?: () => void | Promise<void>
-}
-
-/** 描述一个可替换当前弹窗的单实例对话框。 */
-export interface FeedbackModalOptions {
-  /** 弹窗标题。 */
-  title: string
-  /** 可选说明。 */
-  message?: string
-  /** 从上到下排列的显式用户操作。 */
-  actions: FeedbackAction[]
-  /** 关闭按钮的辅助技术名称和可见位置。 */
-  closeLabel: string
-  /** 点按遮罩是否关闭，默认允许。 */
-  dismissOnBackdrop?: boolean
-}
 
 /** 描述单一 Toast 状态、正文、持续时间和用户关闭能力。 */
 export interface FeedbackToastOptions {
@@ -87,7 +57,6 @@ interface ActiveToast extends FeedbackToastOptions {
 export function FeedbackHost({ children }: { children: ReactNode }) {
   const theme = useTheme()
   const insets = useSafeAreaInsets()
-  const { height } = useWindowDimensions()
   const sharedMessages = useStore(feedbackMessages)
   const toastLifecycleRef = useRef<SingleToastLifecycle | null>(null)
   if (toastLifecycleRef.current == null) toastLifecycleRef.current = new SingleToastLifecycle()
@@ -95,6 +64,7 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   const nextToastId = useRef(0)
   const activeToastId = useRef<number | null>(null)
   const [modal, setModal] = useState<FeedbackModalOptions | null>(null)
+  const activeModal = useRef<FeedbackModalOptions | null>(null)
   const [toast, setToast] = useState<ActiveToast | null>(null)
   /** 用唯一生命周期替换 Toast，自动过期回调只能关闭自己的提示。 */
   const showToast = useCallback((options: FeedbackToastOptions): number => {
@@ -126,9 +96,22 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   }, [toastLifecycle])
 
   /** 替换当前弹窗并保留调用方提供的明确操作。 */
-  const showModal = useCallback((options: FeedbackModalOptions) => setModal(options), [])
-  /** 关闭当前弹窗。 */
-  const dismissModal = useCallback(() => setModal(null), [])
+  const showModal = useCallback((options: FeedbackModalOptions) => {
+    activeModal.current = options
+    setModal(options)
+  }, [])
+  /** 程序关闭不等同于用户取消，避免导航收起弹窗时触发返回。 */
+  const dismissModal = useCallback(() => {
+    activeModal.current = null
+    setModal(null)
+  }, [])
+  /** 只取消一次当前弹窗，并在关闭后执行页面的取消语义。 */
+  const cancelModal = useCallback(() => {
+    const current = activeModal.current
+    if (current == null) return
+    dismissModal()
+    current.onCancel?.()
+  }, [dismissModal])
 
   useEffect(() => () => toastLifecycle.dispose(), [toastLifecycle])
 
@@ -156,67 +139,12 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
           transparent
           animationType="fade"
           statusBarTranslucent
-          onRequestClose={dismissModal}
+          onRequestClose={cancelModal}
         >
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={modal.dismissOnBackdrop === false ? undefined : dismissModal}
-            accessibilityRole="none"
-          >
-            <Overlay>
-              <Pressable
-                onPress={(event) => event.stopPropagation()}
-                accessibilityRole="none"
-                accessibilityViewIsModal
-              >
-                <DialogSurface
-                  style={[
-                    theme.surfaceElevation.overlay,
-                    {
-                      maxHeight: Math.max(
-                        200,
-                        height - insets.top - insets.bottom - theme.spacing.xl * 2,
-                      ),
-                    },
-                  ]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm }}>
-                    <AppText variant="section" style={{ flex: 1 }}>{modal.title}</AppText>
-                    <Pressable
-                      onPress={dismissModal}
-                      accessibilityRole="button"
-                      accessibilityLabel={modal.closeLabel}
-                      hitSlop={8}
-                      style={{ minWidth: theme.icon.touchTarget, minHeight: theme.icon.touchTarget, alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <X size={theme.icon.default} color={theme.colors.text.secondary} />
-                    </Pressable>
-                  </View>
-                  {modal.message != null && (
-                    <DialogMessageScroll
-                      style={{ maxHeight: Math.max(96, height * 0.5) }}
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      <AppText tone="secondary">{modal.message}</AppText>
-                    </DialogMessageScroll>
-                  )}
-                  <DialogActions>
-                    {modal.actions.map((action, index) => (
-                      <ActionButton
-                        key={`${index}-${action.label}`}
-                        label={action.label}
-                        secondary={!action.primary}
-                        onPress={() => {
-                          dismissModal()
-                          void action.onPress?.()
-                        }}
-                      />
-                    ))}
-                  </DialogActions>
-                </DialogSurface>
-              </Pressable>
-            </Overlay>
-          </Pressable>
+          <FeedbackDialog options={modal} onCancel={cancelModal} onAction={(action) => {
+            dismissModal()
+            void action.onPress?.()
+          }} />
         </Modal>
       )}
       {toast != null && (() => {

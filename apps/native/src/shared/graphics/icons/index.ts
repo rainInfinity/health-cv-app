@@ -1,7 +1,7 @@
 /** 导出原生导航自绘图标与实际使用的第三方图标。 */
 
-export { HistoryIcon } from './HistoryIcon'
-export type { HistoryIconProps } from './HistoryIcon'
+export { ProductTabIcon } from './ProductTabIcon'
+export type { ProductTabIconKind, ProductTabIconProps } from './ProductTabIcon'
 export {
   ArrowLeft,
   ArrowRight,
@@ -15,9 +15,7 @@ export {
   Eye,
   EyeOff,
   FileText,
-  House,
   Info,
-  LayoutGrid,
   LoaderCircle,
   ShieldCheck,
   SlidersHorizontal,

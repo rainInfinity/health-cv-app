@@ -40,6 +40,26 @@ class AcquisitionPathsTest {
   }
 
   @Test
+  fun `rppg sessions isolate temporary files from final result paths`() = withTemporaryDirectory { root ->
+    val paths = AcquisitionPaths(root)
+    val sessionId = "active-session_01"
+    val temporary = paths.rppgPartialSessionDirectory(sessionId)
+    val completed = paths.rppgSessionDirectory(sessionId)
+
+    assertEquals(File(root, "acquisition/rppg"), paths.rppgRootDirectory())
+    assertEquals(File(root, "acquisition/rppg/.${sessionId}.tmp"), temporary)
+    assertEquals(File(root, "acquisition/rppg/$sessionId"), completed)
+    assertEquals(File(temporary, "pulse.csv"), paths.rppgPartialPulseFile(sessionId))
+    assertEquals(File(temporary, "hr.csv"), paths.rppgPartialHeartRateFile(sessionId))
+    assertEquals(File(temporary, "session.json"), paths.rppgPartialSessionJsonFile(sessionId))
+    assertEquals(File(completed, "pulse.csv"), paths.rppgPulseFile(sessionId))
+    assertEquals(File(completed, "hr.csv"), paths.rppgHeartRateFile(sessionId))
+    assertEquals(File(completed, "session.json"), paths.rppgSessionJsonFile(sessionId))
+    assertNotEquals(temporary, completed)
+  }
+
+
+  @Test
   fun `sensor paths isolate types and sessions below the shared acquisition root`() = withTemporaryDirectory { root ->
     val paths = AcquisitionPaths(root)
     val accelerometer = paths.sensorSessionDirectory(SensorKind.ACCELEROMETER, "session-1")
@@ -65,6 +85,10 @@ class AcquisitionPathsTest {
     assertThrows(IllegalArgumentException::class.java) {
       paths.passiveVideoSessionDirectory("not-a-uuid")
     }
+    assertThrows(IllegalArgumentException::class.java) {
+      paths.rppgPartialSessionDirectory("../outside")
+    }
+    assertThrows(IllegalArgumentException::class.java) { paths.rppgSessionDirectory("") }
   }
 
   /** 在临时根目录中运行路径断言并清理测试数据。 */

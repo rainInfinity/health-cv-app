@@ -11,13 +11,29 @@ export type HealthMetric =
   | 'faceHeartRate'
   | 'diabetesRisk'
 
+/** 产品准备动作对应的检测部位，不表示指标已接入。 */
+export type MeasurementMethod = 'face' | 'fingertip' | 'chest'
+
+/** 引导携带的有限目标；指尖部位入口可以不指定目标。 */
+export type MeasurementTarget = HealthMetric | 'fingertipVitals'
+
+/** 准备与展示页面共享的入口上下文。 */
+export interface MeasurementRouteParams {
+  /** 准备动作对应的部位。 */
+  method: MeasurementMethod
+  /** 可选的指标说明目标，不控制真实算法。 */
+  target?: MeasurementTarget
+}
+
 /** 开发 Tab 内保留的原生验证页面栈。 */
 export type DevStackParamList = {
   /** 可离线访问全部本地验证能力的入口。 */
   Entry: undefined
   /** 主动 PPG 原生验证页。 */
   Acquisition: undefined
-  /** 被动录像原生验证页。 */
+  /** 前置相机实时 RPPG 验证页。 */
+  RPPG: undefined
+  /** 被动 RPPG 原生验证页。 */
   PassiveCapture: undefined
   /** 独立传感器验证页。 */
   Sensors: undefined
@@ -51,6 +67,12 @@ export type RootStackParamList = {
   ProductTabs: NavigatorScreenParams<ProductTabParamList> | undefined
   /** 健康指标只读详情。 */
   MetricDetail: { metric: HealthMetric }
+  /** 产品检测准备；按方式复用动作及设备级偏好。 */
+  MeasurementGuide: MeasurementRouteParams
+  /** 显式开始后才打开真实前摄的面部心率页。 */
+  FaceMeasurement: { target?: MeasurementTarget } | undefined
+  /** 无权限和采集副作用的指尖本地展示页。 */
+  FingertipMeasurement: { target?: MeasurementTarget } | undefined
   /** 真实登录表单；可仅回填用户名。 */
   Login: { username?: string } | undefined
   /** 真实注册表单；可仅回填用户名。 */

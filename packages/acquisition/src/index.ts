@@ -1,6 +1,29 @@
 /** 公开采集控制客户端及 JS 可见的低频状态与产物类型。 */
 
 export {
+  RPPGClient,
+  RPPGError,
+  createRPPGClient,
+} from './rppg/client'
+
+export type {
+  RPPGArtifact,
+  RPPGArtifactFile,
+  RPPGArtifactFileKind,
+  RPPGCommandResult,
+  RPPGFailure,
+  RPPGHeartRateWindow,
+  RPPGInstantHeartRate,
+  RPPGPhase,
+  RPPGRealtimeBatch,
+  RPPGSignalStatus,
+  RPPGSampleCounts,
+  RPPGSnapshot,
+  RPPGTerminationReason,
+  RPPGSource,
+} from './native/RPPG.nitro'
+
+export {
   AcquisitionClient,
   AcquisitionError,
   createAcquisitionClient,
@@ -60,12 +83,12 @@ export type {
 } from './native/Acquisition.nitro'
 
 export type {
-  PassiveCaptureArtifact,
   PassiveCaptureConfig,
   PassiveCaptureNotificationChannelState,
   PassiveCaptureNotificationSettings,
   PassiveCaptureSnapshot,
   PassiveCaptureState,
+  PassiveVideoArtifact,
 } from './native/PassiveCapture.nitro'
 export type {
   SensorArtifact,

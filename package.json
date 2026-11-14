@@ -1,5 +1,8 @@
 {
   "name": "health-cv-app",
   "private": true,
-  "packageManager": "pnpm@11.22.0"
+  "packageManager": "pnpm@11.22.0",
+  "devDependencies": {
+    "echarts": "6.0.0"
+  }
 }

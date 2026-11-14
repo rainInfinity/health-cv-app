@@ -5,11 +5,13 @@ import type { LinkingOptions, PathConfig, PathConfigMap } from '@react-navigatio
 
 import type { DevStackParamList, ProductTabParamList, RootStackParamList } from './types'
 import { requestAcquisitionLeave } from './acquisitionNavigationGuard'
+import { requestRPPGLeave } from './rppgNavigationGuard'
 
 const devLinkConfig = {
   initialRouteName: 'Entry',
   screens: {
     PassiveCapture: 'passive-capture',
+    RPPG: 'rppg',
   },
 } satisfies PathConfig<DevStackParamList>
 
@@ -30,8 +32,18 @@ export const appLinking: LinkingOptions<RootStackParamList> = {
   },
   subscribe(listener) {
     const subscription = Linking.addEventListener('url', ({ url }) => {
+      const isRPPGLink = /^healthcvapp:\/\/rppg(?:[/?#]|$)/i.test(url)
+      const isPassiveCaptureLink = /^healthcvapp:\/\/passive-capture(?:[/?#]|$)/i.test(url)
       if (
-        /^healthcvapp:\/\/passive-capture(?:[/?#]|$)/i.test(url)
+        isRPPGLink
+        && requestAcquisitionLeave(() => listener(url))
+      ) return
+      if (
+        (isPassiveCaptureLink || isRPPGLink)
+        && requestRPPGLeave(() => listener(url))
+      ) return
+      if (
+        isPassiveCaptureLink
         && requestAcquisitionLeave(() => listener(url))
       ) return
       listener(url)

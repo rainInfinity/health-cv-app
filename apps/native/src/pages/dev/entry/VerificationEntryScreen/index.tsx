@@ -7,7 +7,7 @@ import { EntryLink } from '@/pages/dev/entry/EntryLink'
 import { AppText } from '@/shared/components/AppText'
 import { PageContainer } from '@/shared/components/PageContainer'
 
-/** 渲染主动 PPG、被动录像、传感器、语言状态和反馈预览入口。 */
+/** 渲染主动 PPG、被动 RPPG、传感器、语言状态和反馈预览入口。 */
 export function VerificationEntryScreen() {
   const messages = useStore(navigationMessages)
   const dev = useStore(devMessages)
@@ -19,6 +19,12 @@ export function VerificationEntryScreen() {
         route="Acquisition"
         label={messages.entryActive}
         accessibilityLabel={messages.active}
+        hint={messages.openPageHint}
+      />
+      <EntryLink
+        route="RPPG"
+        label={messages.entryRppg}
+        accessibilityLabel={messages.rppg}
         hint={messages.openPageHint}
       />
       <EntryLink

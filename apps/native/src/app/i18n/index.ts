@@ -31,6 +31,9 @@ type FeatureMessageParameters = {
   }
   'pages/permissions': {
     androidApi: { value: number }
+  },
+  'acquisition/passive': {
+    durationBelowMinimum: { seconds: string }
   }
 }
 

@@ -19,14 +19,12 @@ export {
   Eye,
   EyeOff,
   FileText,
-  HistoryIcon,
-  House,
   Info,
-  LayoutGrid,
   LoaderCircle,
+  ProductTabIcon,
   ShieldCheck,
   SlidersHorizontal,
   UserRound,
   X,
 } from './icons'
-export type { HistoryIconProps } from './icons'
+export type { ProductTabIconKind, ProductTabIconProps } from './icons'

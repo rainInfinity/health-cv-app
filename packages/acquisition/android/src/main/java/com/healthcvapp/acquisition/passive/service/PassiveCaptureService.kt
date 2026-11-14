@@ -1,4 +1,4 @@
-/** 作为被动采集运行期持有前摄服务、解锁事件、录像计时与通知。 */
+/** 以 Android 前台服务拥有解锁候选、无预览 RPPG 会话及资源收尾。 */
 
 package com.healthcvapp.acquisition.passive.service
 
@@ -14,79 +14,80 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
-import com.healthcvapp.acquisition.camera.ownership.CameraUseGuard
-import com.healthcvapp.acquisition.camera.ownership.CameraUseLease
-import com.healthcvapp.acquisition.passive.capture.PassiveCaptureAttemptLifecycle
-import com.healthcvapp.acquisition.passive.capture.PassiveVideoRecordingSession
-import com.healthcvapp.acquisition.passive.output.PassiveVideoArtifactStore
 import com.healthcvapp.acquisition.passive.runtime.PassiveCaptureRuntime
 import com.healthcvapp.acquisition.passive.runtime.PassiveCaptureRuntimes
 import com.healthcvapp.acquisition.passive.trigger.PassiveCycleDecision
 import com.healthcvapp.acquisition.passive.trigger.PassiveCycleGate
+import com.healthcvapp.acquisition.rppg.model.RPPGTerminationReason
+import com.healthcvapp.acquisition.rppg.runtime.AndroidRPPGPassiveSessionFactory
+import com.healthcvapp.acquisition.rppg.session.RPPGSession
+import com.healthcvapp.acquisition.rppg.session.RPPGSessionOperationResult
+import com.healthcvapp.acquisition.rppg.session.RPPGSessionPhase
+import com.healthcvapp.acquisition.rppg.session.RPPGSessionSnapshot
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureState
-import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.ceil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
-/** 由前台服务拥有的单段录像及其取消屏障。 */
-private class ActivePassiveCapture(
-  /** 本段录像唯一会话 ID。 */
+/** 一次后台 RPPG 会话的停止请求及 terminal 状态屏障。 */
+private class ActivePassiveSession(
+  /** 本次解锁机会的代次，用于拒绝迟到的会话回调。 */
+  val generation: Long,
+  /** 与被动三件套目录一致的会话标识。 */
   val sessionId: String,
-  /** 仅在 Finalize 与媒体检查成功后才会提升的临时文件。 */
-  val temporaryFile: File,
-  /** 该录像独占的相机持有令牌。 */
-  val cameraLease: CameraUseLease,
+  /** 独占相机租约、算法、计时和完整输出的会话。 */
+  val session: RPPGSession,
+  /** 收到正式终态快照后唤醒唯一协调任务。 */
+  val terminal: CompletableDeferred<RPPGSessionSnapshot>,
 ) {
-  /** 屏幕锁定或用户关闭时唤醒录像协调任务的原因。 */
-  val stopSignal = CompletableDeferred<CaptureStop>()
-  /** 打开、计时、收尾和发布的唯一任务。 */
+  /** 屏幕锁定、用户关闭或系统条件失效的停止请求。 */
+  val stopSignal = CompletableDeferred<PassiveSessionStop>()
+  /** 打开、停止、发布及释放资源的唯一协调任务。 */
   var job: Job? = null
-  /** 用同步状态机隔离取消、收尾及文件提交的竞争。 */
-  val lifecycle = PassiveCaptureAttemptLifecycle()
 }
 
-/** 一次录像结束于目标时长或一个明确的中断原因。 */
-private data class CaptureStop(
-  /** 可写入低频状态的稳定结束原因。 */
+/** 描述当前候选会话收到的合法中断。 */
+private data class PassiveSessionStop(
+  /** 保留给低频状态展示的原因代码。 */
   val reason: String,
-  /** 是否由原生目标时长到达，而不是中途停止。 */
-  val reachedTargetDuration: Boolean,
+  /** 被动流程统一以 interrupted 写入已形成的完整会话。 */
+  val termination: RPPGTerminationReason = RPPGTerminationReason.INTERRUPTED,
 )
 
-/** Android Camera 前台服务；等待期间不绑定或占用相机。 */
+/** Android 前台服务；等待期间不绑定或占用相机。 */
 class PassiveCaptureService : LifecycleService() {
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private val eventMutex = Mutex()
   private val shutdownMutex = Mutex()
+  private val captureEventLock = Any()
   private lateinit var runtime: PassiveCaptureRuntime
-  private var acceptingEvents = false
+  @Volatile private var acceptingEvents = false
   private var receiverRegistered = false
-  private var capture: ActivePassiveCapture? = null
-  private var cycleGate: PassiveCycleGate? = null
+  @Volatile private var capture: ActivePassiveSession? = null
+  @Volatile private var cycleGate: PassiveCycleGate? = null
   private var currentConfig: PassiveCaptureConfig? = null
+  private var captureGeneration = 0L
 
   private val screenReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
       when (intent.action) {
         Intent.ACTION_USER_PRESENT -> serviceScope.launch { handleUnlockEvent() }
-        Intent.ACTION_SCREEN_OFF -> serviceScope.launch { interruptCapture("SCREEN_LOCKED") }
+        Intent.ACTION_SCREEN_OFF -> serviceScope.launch { handleScreenOff() }
       }
     }
   }
@@ -118,7 +119,12 @@ class PassiveCaptureService : LifecycleService() {
     }
 
     try {
-      val notification = PassiveCaptureNotifications.build(applicationContext, PassiveCaptureState.WAITING)
+      val config = runtime.getSnapshot().config
+      val notification = PassiveCaptureNotifications.build(
+        applicationContext,
+        PassiveCaptureState.WAITING,
+        config.measurementDurationSeconds,
+      )
       val foregroundType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
       } else {
@@ -130,10 +136,9 @@ class PassiveCaptureService : LifecycleService() {
         notification,
         foregroundType,
       )
-      val config = runtime.getSnapshot().config
       currentConfig = config
-      cycleGate = PassiveCycleGate(secondsToMillis(config.intervalSeconds))
-      acceptingEvents = true
+      cycleGate = PassiveCycleGate(secondsToNanos(config.intervalSeconds))
+      synchronized(captureEventLock) { acceptingEvents = true }
       registerScreenReceiver()
       runtime.onServiceReady(this)
       updateNotification(PassiveCaptureState.WAITING)
@@ -149,12 +154,15 @@ class PassiveCaptureService : LifecycleService() {
   fun verifyConditions() {
     serviceScope.launch {
       eventMutex.withLock {
-        PassiveCaptureNotifications.availabilityFailure(applicationContext)?.let { stopForConditionFailure(it) }
+        if (!acceptingEvents) return@withLock
+        PassiveCaptureNotifications.availabilityFailure(applicationContext)?.let {
+          stopForConditionFailure(it)
+        }
       }
     }
   }
 
-  /** 用户从应用命令或通知操作关闭服务并等待相机会话结束。 */
+  /** 用户从应用命令或通知操作关闭服务并等待当前会话资源屏障。 */
   suspend fun stopForUser() = withContext(Dispatchers.Main.immediate) {
     eventMutex.withLock {
       shutdownMutex.withLock {
@@ -164,9 +172,11 @@ class PassiveCaptureService : LifecycleService() {
           stopSelf()
           return@withLock
         }
-        acceptingEvents = false
+        val activeCapture = synchronized(captureEventLock) {
+          acceptingEvents = false
+          capture
+        }
         unregisterScreenReceiver()
-        val activeCapture = capture
         runtime.update(
           state = PassiveCaptureState.STOPPING,
           sessionId = activeCapture?.sessionId,
@@ -174,8 +184,7 @@ class PassiveCaptureService : LifecycleService() {
           clearError = true,
         )
         updateNotification(PassiveCaptureState.STOPPING)
-        activeCapture?.lifecycle?.cancel()
-        activeCapture?.stopSignal?.complete(CaptureStop("USER_DISABLED", reachedTargetDuration = false))
+        activeCapture?.stopSignal?.complete(PassiveSessionStop("USER_DISABLED"))
         activeCapture?.job?.join()
         removeForegroundNotification()
         runtime.onServiceStopped(this@PassiveCaptureService)
@@ -184,34 +193,37 @@ class PassiveCaptureService : LifecycleService() {
     }
   }
 
-  /** 在下一次解锁或页面核对发现前提失效时停止接收并收尾。 */
-  private suspend fun stopForConditionFailure(failure: Pair<String, String>) = withContext(Dispatchers.Main.immediate) {
-    shutdownMutex.withLock {
-      if (!acceptingEvents) return@withLock
-      acceptingEvents = false
-      unregisterScreenReceiver()
-      val activeCapture = capture
-      runtime.update(
-        state = PassiveCaptureState.FAILED,
-        sessionId = activeCapture?.sessionId,
-        reason = failure.first,
-        error = failure,
-      )
-      updateNotification(PassiveCaptureState.FAILED)
-      activeCapture?.lifecycle?.cancel()
-      activeCapture?.stopSignal?.complete(CaptureStop(failure.first, reachedTargetDuration = false))
-      activeCapture?.job?.join()
-      runtime.update(
-        state = PassiveCaptureState.FAILED,
-        reason = failure.first,
-        error = failure,
-      )
-      removeForegroundNotification()
-      runtime.onServiceStopped(this@PassiveCaptureService)
-      stopSelf()
+  /** 条件失效时停止接收解锁事件，收尾后保留错误并要求用户重新启用。 */
+  private suspend fun stopForConditionFailure(failure: Pair<String, String>) =
+    withContext(Dispatchers.Main.immediate) {
+      shutdownMutex.withLock {
+        if (!acceptingEvents) return@withLock
+        val activeCapture = synchronized(captureEventLock) {
+          acceptingEvents = false
+          capture
+        }
+        unregisterScreenReceiver()
+        runtime.update(
+          state = PassiveCaptureState.FAILED,
+          sessionId = activeCapture?.sessionId,
+          reason = failure.first,
+          error = failure,
+        )
+        updateNotification(PassiveCaptureState.FAILED)
+        activeCapture?.stopSignal?.complete(PassiveSessionStop(failure.first))
+        activeCapture?.job?.join()
+        runtime.update(
+          state = PassiveCaptureState.FAILED,
+          reason = failure.first,
+          error = failure,
+        )
+        removeForegroundNotification()
+        runtime.onServiceStopped(this@PassiveCaptureService)
+        stopSelf()
+      }
     }
-  }
 
+  /** 解锁只产生一次候选机会；不在锁屏、忙或周期未到时排队重试。 */
   private suspend fun handleUnlockEvent() = eventMutex.withLock {
     if (!acceptingEvents) return@withLock
     PassiveCaptureNotifications.availabilityFailure(applicationContext)?.let {
@@ -225,7 +237,7 @@ class PassiveCaptureService : LifecycleService() {
     }
 
     val decision = cycleGate?.decide(
-      nowElapsedMillis = SystemClock.elapsedRealtime(),
+      nowElapsedNanos = SystemClock.elapsedRealtimeNanos(),
       busy = capture != null,
     ) ?: PassiveCycleDecision.BUSY
     when (decision) {
@@ -238,31 +250,86 @@ class PassiveCaptureService : LifecycleService() {
     }
   }
 
-  /** 仅对当前有效解锁机会尝试一次打开，不积压或自动重试。 */
-  private fun beginCapture() {
-    val sessionId = UUID.randomUUID().toString()
-    val cameraLease = CameraUseGuard.tryAcquire(sessionId)
-    if (cameraLease == null) {
-      updateRuntime(PassiveCaptureState.WAITING, reason = "CAMERA_BUSY")
-      return
+  /** 屏幕锁定只中断当前会话；已启用服务继续等待真实解锁候选。 */
+  private suspend fun handleScreenOff() = eventMutex.withLock {
+    val activeCapture = synchronized(captureEventLock) {
+      if (acceptingEvents) capture else null
     }
-
-    val store = PassiveVideoArtifactStore(applicationContext)
-    val temporaryFile = try {
-      store.createTemporaryFile(sessionId)
-    } catch (error: Throwable) {
-      cameraLease.close()
-      val message = error.message ?: "无法创建被动视频会话文件。"
-      updateRuntime(
-        PassiveCaptureState.WAITING,
-        reason = "VIDEO_STORAGE_FAILED",
-        error = "VIDEO_STORAGE_FAILED" to message,
+    if (activeCapture != null) {
+      runtime.update(
+        state = PassiveCaptureState.STOPPING,
+        sessionId = activeCapture.sessionId,
+        reason = "SCREEN_LOCKED",
       )
+      updateNotification(PassiveCaptureState.STOPPING)
+      activeCapture.stopSignal.complete(PassiveSessionStop("SCREEN_LOCKED"))
+    }
+  }
+
+  /** 对当前解锁机会启动一次无预览 RPPG 会话。 */
+  private fun beginCapture() {
+    val config = currentConfig ?: return
+    val generation = ++captureGeneration
+    val sessionId = UUID.randomUUID().toString()
+    val terminal = CompletableDeferred<RPPGSessionSnapshot>()
+    val lastPhase = AtomicReference<RPPGSessionPhase?>(null)
+    val lastInstantHeartRate =
+      AtomicReference<com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate?>(null)
+    val session = try {
+      AndroidRPPGPassiveSessionFactory(
+        context = applicationContext,
+        lifecycleOwner = this,
+        filesDirectory = applicationContext.filesDir,
+        measurementDurationNanos = secondsToNanos(config.measurementDurationSeconds),
+        scope = serviceScope,
+      ).create(
+        onFirstFrame = { deliveredSessionId, elapsedRealtimeNanos ->
+          synchronized(captureEventLock) {
+            val activeCapture = capture
+            val phase = activeCapture?.session?.snapshot?.phase
+            if (
+              acceptingEvents &&
+              activeCapture != null &&
+              !activeCapture.stopSignal.isCompleted &&
+              deliveredSessionId == sessionId &&
+              activeCapture.generation == generation &&
+              activeCapture.sessionId == deliveredSessionId &&
+              (phase == RPPGSessionPhase.OPENING ||
+                phase == RPPGSessionPhase.OBSERVING ||
+                phase == RPPGSessionPhase.MEASURING)
+            ) {
+              cycleGate?.recordFirstFrameAt(elapsedRealtimeNanos)
+            }
+          }
+        },
+        onSnapshot = { snapshot ->
+          if (snapshot.phase == RPPGSessionPhase.COMPLETED ||
+            snapshot.phase == RPPGSessionPhase.FAILED ||
+            snapshot.phase == RPPGSessionPhase.CLOSED
+          ) {
+            terminal.complete(snapshot)
+          }
+          val phaseChanged = lastPhase.getAndSet(snapshot.phase) != snapshot.phase
+          val instantChanged = lastInstantHeartRate.getAndSet(snapshot.latestInstantHeartRate) !=
+            snapshot.latestInstantHeartRate
+          if (phaseChanged || instantChanged) {
+            publishSessionSnapshot(generation, snapshot, phaseChanged)
+          }
+        },
+      )
+    } catch (error: Throwable) {
+      val message = error.message ?: "无法准备被动 RPPG 会话。"
+      runtime.update(
+        state = PassiveCaptureState.WAITING,
+        reason = "SESSION_CREATE_FAILED",
+        error = "SESSION_CREATE_FAILED" to message,
+      )
+      updateNotification(PassiveCaptureState.WAITING)
       return
     }
 
-    val attempt = ActivePassiveCapture(sessionId, temporaryFile, cameraLease)
-    capture = attempt
+    val activeCapture = ActivePassiveSession(generation, sessionId, session, terminal)
+    synchronized(captureEventLock) { capture = activeCapture }
     runtime.update(
       state = PassiveCaptureState.STARTING,
       sessionId = sessionId,
@@ -270,123 +337,152 @@ class PassiveCaptureService : LifecycleService() {
       clearError = true,
     )
     updateNotification(PassiveCaptureState.STARTING)
-    attempt.job = serviceScope.launch(start = CoroutineStart.LAZY) { runCapture(attempt) }
-    attempt.job?.start()
+    activeCapture.job = serviceScope.launch { runCapture(activeCapture) }
   }
 
-  /** 按 Start 实际时间计时，只有目标完成并通过 Finalize 才发布产物。 */
-  private suspend fun runCapture(attempt: ActivePassiveCapture) {
-    val store = PassiveVideoArtifactStore(applicationContext)
-    val recordingSession = PassiveVideoRecordingSession(applicationContext, this, attempt.temporaryFile)
-    var published = false
-    var cameraClosed = false
-    var recordingStarted = false
-    var resultReason = "CAPTURE_INTERRUPTED"
-    var resultError: Pair<String, String>? = null
-    var openingJob: Deferred<Long>? = null
+  /** 只在阶段变化时更新通知；逐搏变更独立交给当前会话的低频快照。 */
+  private fun publishSessionSnapshot(
+    generation: Long,
+    snapshot: RPPGSessionSnapshot,
+    phaseChanged: Boolean,
+  ) {
+    val state = when (snapshot.phase) {
+      RPPGSessionPhase.OPENING -> PassiveCaptureState.STARTING
+      RPPGSessionPhase.OBSERVING -> PassiveCaptureState.OBSERVING
+      RPPGSessionPhase.MEASURING -> PassiveCaptureState.MEASURING
+      RPPGSessionPhase.STOPPING -> PassiveCaptureState.STOPPING
+      else -> return
+    }
+    serviceScope.launch {
+      val activeCapture = capture ?: return@launch
+      if (!acceptingEvents || activeCapture.stopSignal.isCompleted || activeCapture.generation != generation) return@launch
+      val reason = when (snapshot.phase) {
+        RPPGSessionPhase.OPENING -> "SESSION_OPENING"
+        RPPGSessionPhase.OBSERVING -> "FACE_OBSERVATION"
+        RPPGSessionPhase.MEASURING -> "MEASUREMENT_STARTED"
+        RPPGSessionPhase.STOPPING -> "MEASUREMENT_STOPPING"
+        else -> return@launch
+      }
+      if (phaseChanged) {
+        runtime.update(
+          state = state,
+          sessionId = snapshot.sessionId ?: activeCapture.sessionId,
+          reason = reason,
+          clearError = state == PassiveCaptureState.STARTING,
+        )
+        updateNotification(state)
+      }
+      runtime.updateInstantHeartRate(
+        sessionId = activeCapture.sessionId,
+        value = snapshot.latestInstantHeartRate,
+      )
+    }
+  }
 
+  /** 串行等待相机启动、首个人脸就绪或合法停止，并执行一次完整收尾。 */
+  private suspend fun runCapture(attempt: ActivePassiveSession) {
+    var finalReason = "SESSION_START_FAILED"
+    var finalError: Pair<String, String>? = null
     try {
-      val activeOpeningJob = serviceScope.async { recordingSession.start() }
-      openingJob = activeOpeningJob
-      val startedAt = select<Long?> {
-        activeOpeningJob.onAwait { it }
+      val openingJob = serviceScope.async {
+        attempt.session.startAnalysisOnly(attempt.sessionId)
+      }
+      val opened = select<RPPGSessionOperationResult?> {
+        openingJob.onAwait { it }
         attempt.stopSignal.onAwait { null }
       }
-      if (startedAt == null) {
-        activeOpeningJob.cancel()
-        activeOpeningJob.join()
-        resultReason = attempt.stopSignal.await().reason
-        return
-      }
-
-      recordingStarted = true
-      cycleGate?.recordStarted(startedAt)
-      attempt.lifecycle.markRecordingStarted()
-      runtime.update(
-        state = PassiveCaptureState.RECORDING,
-        sessionId = attempt.sessionId,
-        reason = "VIDEO_STARTED",
-        clearError = true,
-      )
-      updateNotification(PassiveCaptureState.RECORDING)
-
-      val durationMillis = secondsToMillis(checkNotNull(currentConfig).durationSeconds)
-      val elapsedSinceStart = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
-      val remainingMillis = (durationMillis - elapsedSinceStart).coerceAtLeast(0L)
-      val requestedStop = withTimeoutOrNull(remainingMillis) { attempt.stopSignal.await() }
-      val end = requestedStop ?: CaptureStop("TARGET_DURATION", reachedTargetDuration = true)
-      resultReason = end.reason
-      attempt.lifecycle.beginFinalization(end.reachedTargetDuration)
-      runtime.update(
-        state = PassiveCaptureState.STOPPING,
-        sessionId = attempt.sessionId,
-        reason = end.reason,
-      )
-      updateNotification(PassiveCaptureState.STOPPING)
-
-      val finalizeResult = recordingSession.stopAndAwaitFinalize()
-      if (!finalizeResult.succeeded) {
-        resultReason = "VIDEO_FINALIZE_FAILED"
-        resultError = "VIDEO_FINALIZE_FAILED" to (finalizeResult.errorMessage ?: "CameraX 无法正常完成视频文件。")
-        return
-      }
-      try {
-        recordingSession.close()
-        cameraClosed = true
-      } catch (error: Throwable) {
-        resultReason = "CAMERA_CLOSE_FAILED"
-        resultError = "CAMERA_CLOSE_FAILED" to (error.message ?: "无法释放被动录像会话。")
-        return
-      }
-
-      if (end.reachedTargetDuration && acceptingEvents) {
-        try {
-          withContext(Dispatchers.IO) {
-            store.publish(attempt.sessionId, attempt.temporaryFile, attempt.lifecycle::claimPublication)
-          }
-          attempt.lifecycle.completePublication(succeeded = true)
-          published = true
-          resultReason = "VIDEO_COMPLETED"
-        } catch (error: CancellationException) {
-          throw error
-        } catch (error: Throwable) {
-          attempt.lifecycle.completePublication(succeeded = false)
-          resultReason = "VIDEO_PUBLISH_FAILED"
-          resultError = "VIDEO_PUBLISH_FAILED" to (error.message ?: "无法发布完成的视频文件。")
+      if (opened == null) {
+        val stop = attempt.stopSignal.await()
+        openingJob.cancel()
+        openingJob.join()
+        val openingResult = runCatching { openingJob.await() }.getOrNull()
+        if (openingResult?.accepted == true) {
+          val stopped = attempt.session.stop(stop.termination)
+          val failure = stopped.error ?: stopped.snapshot.error
+          finalReason = failure?.code ?: stopped.snapshot.termination?.wireValue ?: stop.reason
+          finalError = failure?.let { it.code to it.message }
+        } else {
+          val failure = openingResult?.error ?: openingResult?.snapshot?.error
+          finalReason = failure?.code ?: stop.reason
+          finalError = failure?.let { it.code to it.message }
         }
-      } else {
-        resultReason = if (end.reachedTargetDuration) "CAPTURE_CANCELLED" else end.reason
+        return
+      }
+      if (!opened.accepted) {
+        val failure = opened.error ?: opened.snapshot.error
+        finalReason = failure?.code ?: "SESSION_START_FAILED"
+        finalError = failure?.let { it.code to it.message }
+        return
+      }
+
+      when (val end = select<PassiveSessionEnd> {
+        attempt.terminal.onAwait { PassiveSessionEnd.Terminal(it) }
+        attempt.stopSignal.onAwait { PassiveSessionEnd.Stop(it) }
+      }) {
+        is PassiveSessionEnd.Terminal -> {
+          val failure = end.snapshot.error
+          finalReason = failure?.code ?: end.snapshot.termination?.wireValue ?: "SESSION_FINISHED"
+          finalError = failure?.let { it.code to it.message }
+        }
+        is PassiveSessionEnd.Stop -> {
+          val stopped = attempt.session.stop(end.stop.termination)
+          val failure = stopped.error ?: stopped.snapshot.error
+          finalReason = failure?.code ?: stopped.snapshot.termination?.wireValue ?: end.stop.reason
+          finalError = failure?.let { it.code to it.message }
+        }
       }
     } catch (error: CancellationException) {
-      attempt.lifecycle.cancel()
-      resultReason = "CAPTURE_CANCELLED"
+      finalReason = if (attempt.stopSignal.isCompleted) {
+        attempt.stopSignal.await().reason
+      } else {
+        "SERVICE_DESTROYED"
+      }
       throw error
     } catch (error: Throwable) {
-      attempt.lifecycle.cancel()
-      resultReason = if (recordingStarted) "CAPTURE_FAILED" else "VIDEO_START_FAILED"
-      resultError = resultReason to (error.message ?: "被动录像失败。")
+      finalReason = "SESSION_FAILED"
+      finalError = "SESSION_FAILED" to (error.message ?: "被动 RPPG 会话失败。")
     } finally {
       withContext(NonCancellable) {
-        if (!published) attempt.lifecycle.cancel()
-        openingJob?.cancel()
-        openingJob?.join()
-        if (!cameraClosed) {
-          runCatching { recordingSession.close() }.onFailure { closeError ->
-            if (resultError == null) {
-              resultReason = "CAMERA_CLOSE_FAILED"
-              resultError = "CAMERA_CLOSE_FAILED" to (closeError.message ?: "无法释放被动录像会话。")
+        if (!attempt.session.resourcesReleased) {
+          val stopReason = if (attempt.stopSignal.isCompleted) {
+            attempt.stopSignal.await().termination
+          } else {
+            RPPGTerminationReason.INTERRUPTED
+          }
+          try {
+            val stopped = attempt.session.stop(stopReason)
+            val failure = stopped.error ?: stopped.snapshot.error
+            if (failure != null && finalError == null) {
+              finalReason = failure.code
+              finalError = failure.code to failure.message
+            }
+          } catch (error: Throwable) {
+            if (finalError == null) {
+              finalReason = "SESSION_CLEANUP_FAILED"
+              finalError = "SESSION_CLEANUP_FAILED" to (error.message ?: "无法完成被动会话收尾。")
             }
           }
         }
-        if (!published) store.discardTemporaryFile(attempt.temporaryFile)
-        attempt.cameraLease.close()
-        if (capture === attempt) capture = null
+        if (attempt.session.resourcesReleased) {
+          try {
+            attempt.session.close()
+          } catch (error: Throwable) {
+            if (finalError == null) {
+              finalReason = "SESSION_CLOSE_FAILED"
+              finalError = "SESSION_CLOSE_FAILED" to (error.message ?: "无法关闭被动 RPPG 会话。")
+            }
+          }
+        }
+        synchronized(captureEventLock) {
+          if (capture === attempt) capture = null
+        }
         if (acceptingEvents) {
           runtime.update(
             state = PassiveCaptureState.WAITING,
-            reason = resultReason,
-            error = resultError,
-            clearError = true,
+            sessionId = attempt.sessionId,
+            reason = finalReason,
+            error = finalError,
+            clearError = finalError == null,
           )
           updateNotification(PassiveCaptureState.WAITING)
         }
@@ -394,20 +490,6 @@ class PassiveCaptureService : LifecycleService() {
     }
   }
 
-  /** 锁屏中止当前片段，但保留已启用服务等待下一次解锁。 */
-  private suspend fun interruptCapture(reason: String) {
-    val activeCapture = capture ?: return
-    if (activeCapture.stopSignal.isCompleted) return
-    activeCapture.lifecycle.cancel()
-    if (activeCapture.stopSignal.complete(CaptureStop(reason, reachedTargetDuration = false))) {
-      runtime.update(
-        state = PassiveCaptureState.STOPPING,
-        sessionId = activeCapture.sessionId,
-        reason = reason,
-      )
-      updateNotification(PassiveCaptureState.STOPPING)
-    }
-  }
 
   /** 更新低频原生状态并复用当前服务通知 ID。 */
   private fun updateRuntime(
@@ -419,12 +501,14 @@ class PassiveCaptureService : LifecycleService() {
     updateNotification(state)
   }
 
-  /** 更新持续通知正文，不发声、不振动或创建新提醒。 */
+  /** 更新低频原生状态并复用当前服务通知 ID。 */
   private fun updateNotification(state: PassiveCaptureState) {
     runCatching {
+      val measurementDurationSeconds =
+        currentConfig?.measurementDurationSeconds ?: runtime.getSnapshot().config.measurementDurationSeconds
       NotificationManagerCompat.from(applicationContext).notify(
         PassiveCaptureNotifications.NOTIFICATION_ID,
-        PassiveCaptureNotifications.build(applicationContext, state),
+        PassiveCaptureNotifications.build(applicationContext, state, measurementDurationSeconds),
       )
     }
   }
@@ -447,29 +531,45 @@ class PassiveCaptureService : LifecycleService() {
     receiverRegistered = false
   }
 
+  /** 移除唯一持续通知，不留下会误导用户的采集状态。 */
   private fun removeForegroundNotification() {
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     NotificationManagerCompat.from(applicationContext).cancel(PassiveCaptureNotifications.NOTIFICATION_ID)
   }
 
-  /** 把有限秒数按毫秒向上取整，保证正数时长至少有一个原生时钟刻度。 */
-  private fun secondsToMillis(seconds: Double): Long =
-    kotlin.math.ceil(seconds * MILLIS_PER_SECOND).toLong().coerceAtLeast(1L)
+  /** 将已验证的有限秒数向上换算为正纳秒周期。 */
+  private fun secondsToNanos(seconds: Double): Long =
+    ceil(seconds * NANOS_PER_SECOND).toLong().coerceAtLeast(1L)
 
   override fun onDestroy() {
-    acceptingEvents = false
-    unregisterScreenReceiver()
-    capture?.let { activeCapture ->
-      activeCapture.lifecycle.cancel()
-      activeCapture.stopSignal.complete(CaptureStop("SERVICE_DESTROYED", reachedTargetDuration = false))
+    val activeCapture = synchronized(captureEventLock) {
+      acceptingEvents = false
+      capture
     }
-    serviceScope.cancel()
-    if (::runtime.isInitialized) runtime.onServiceStopped(this)
+    unregisterScreenReceiver()
+    activeCapture?.stopSignal?.complete(PassiveSessionStop("SERVICE_DESTROYED"))
+    if (activeCapture == null) {
+      removeForegroundNotification()
+      if (::runtime.isInitialized) runtime.onServiceStopped(this)
+      serviceScope.cancel()
+    } else {
+      serviceScope.launch {
+        activeCapture.job?.join()
+        removeForegroundNotification()
+        if (::runtime.isInitialized) runtime.onServiceStopped(this@PassiveCaptureService)
+        serviceScope.cancel()
+      }
+    }
     super.onDestroy()
+  }
+
+  private sealed interface PassiveSessionEnd {
+    data class Terminal(val snapshot: RPPGSessionSnapshot) : PassiveSessionEnd
+    data class Stop(val stop: PassiveSessionStop) : PassiveSessionEnd
   }
 
   companion object {
     internal const val ACTION_DISABLE = "com.healthcvapp.acquisition.passive.DISABLE"
-    private const val MILLIS_PER_SECOND = 1_000.0
+    private const val NANOS_PER_SECOND = 1_000_000_000.0
   }
 }

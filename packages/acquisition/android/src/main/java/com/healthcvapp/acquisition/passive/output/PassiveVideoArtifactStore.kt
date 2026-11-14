@@ -7,7 +7,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import com.healthcvapp.acquisition.storage.AcquisitionFileStore
 import com.healthcvapp.acquisition.storage.AcquisitionPaths
-import com.margelo.nitro.acquisition.PassiveCaptureArtifact
+import com.margelo.nitro.acquisition.PassiveVideoArtifact
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -39,7 +39,7 @@ internal class PassiveVideoArtifactStore internal constructor(
     sessionId: String,
     temporaryFile: File,
     claimPublication: () -> Boolean,
-  ): PassiveCaptureArtifact {
+  ): PassiveVideoArtifact {
     val expectedTemporaryFile = paths.passiveVideoPartialFile(sessionId).canonicalFile
     val finalFile = paths.passiveVideoCompletedFile(sessionId)
     if (temporaryFile.canonicalFile != expectedTemporaryFile || !temporaryFile.isFile || temporaryFile.length() <= 0L) {
@@ -75,7 +75,7 @@ internal class PassiveVideoArtifactStore internal constructor(
   }
 
   /** 扫描完成目录并读取真实媒体信息，不依赖进程内存列表。 */
-  suspend fun listArtifacts(): Array<PassiveCaptureArtifact> = withContext(Dispatchers.IO) {
+  suspend fun listVideoArtifacts(): Array<PassiveVideoArtifact> = withContext(Dispatchers.IO) {
     val directories = paths.passiveVideoRootDirectory().listFiles()?.filter(File::isDirectory).orEmpty()
     directories.mapNotNull { directory ->
       val sessionId = directory.name
@@ -115,7 +115,7 @@ internal class PassiveVideoArtifactStore internal constructor(
   }
 
 
-  private fun VideoMetadata.toArtifact(sessionId: String, file: File) = PassiveCaptureArtifact(
+  private fun VideoMetadata.toArtifact(sessionId: String, file: File) = PassiveVideoArtifact(
     sessionId = sessionId,
     path = file.absolutePath,
     sizeBytes = file.length().toDouble(),

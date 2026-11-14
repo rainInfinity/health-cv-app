@@ -17,5 +17,8 @@ class NitroAcquisitionPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> = emptyList()
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
-    listOf(com.margelo.nitro.acquisition.views.HybridCameraPreviewManager())
+    listOf(
+      com.margelo.nitro.acquisition.views.HybridCameraPreviewManager(),
+      com.margelo.nitro.acquisition.views.HybridRPPGPreviewManager(),
+    )
 }

@@ -8,3 +8,6 @@ patchedDependencies:
   expo-dev-launcher@57.0.20: patches/expo-dev-launcher@57.0.20.patch
   expo-modules-autolinking@57.0.14: patches/expo-modules-autolinking@57.0.14.patch
   expo-modules-core@57.0.21: patches/expo-modules-core@57.0.21.patch
+overrides:
+  'echarts@6.0.0>tslib': 2.8.1
+  'zrender@6.0.0>tslib': 2.8.1

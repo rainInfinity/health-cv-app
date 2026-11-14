@@ -14,15 +14,16 @@ const snapshotAtom = atom<PassiveCaptureSnapshot>(passiveCaptureClient.getSnapsh
 /** 页面只读订阅的原生被动服务真实状态。 */
 export const passiveCaptureSnapshot: ReadableAtom<PassiveCaptureSnapshot> = snapshotAtom
 
-/** 用原生服务快照刷新页面状态，并触发必要的服务条件核对。 */
+/** 读取原生服务快照并核对运行条件，不会启用或恢复服务。 */
 export function refreshPassiveCaptureSnapshot(): PassiveCaptureSnapshot {
   const snapshot = passiveCaptureClient.getSnapshot()
   snapshotAtom.set(snapshot)
   return snapshot
 }
 
-/** 连接页面低频状态通知；清理只解除订阅，不停止后台服务。 */
+/** 页面连接低频状态通知；清理只解除订阅，不停止后台服务。 */
 export function connectPassiveCaptureScreen(): () => void {
   refreshPassiveCaptureSnapshot()
   return passiveCaptureClient.subscribe((snapshot) => snapshotAtom.set(snapshot))
 }
+
