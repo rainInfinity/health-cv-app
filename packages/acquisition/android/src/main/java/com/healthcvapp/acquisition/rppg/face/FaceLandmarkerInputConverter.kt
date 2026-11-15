@@ -8,7 +8,7 @@ import com.healthcvapp.acquisition.rppg.roi.RppgRoiSampler
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** 只将最长边超限的模型输入缩小；ROI 在同帧原始 YUV 上按需取色。 */
+/** 只缩小模型输入；同帧 ROI 仍从共享的原分辨率 YUV 副本逐像素取色。 */
 internal class FaceLandmarkerInputConverter(
   private val maximumModelInputDimensionPx: Int = DEFAULT_MODEL_INPUT_DIMENSION_PX,
 ) : AutoCloseable {
@@ -20,6 +20,7 @@ internal class FaceLandmarkerInputConverter(
   private var modelHeight = 0
   private var active = false
   private val roiSampler = RppgRoiSampler()
+  private val yuvBuffer = RppgYuvFrameBuffer()
 
   init {
     require(maximumModelInputDimensionPx > 0) { "model input dimension must be positive" }
@@ -36,32 +37,36 @@ internal class FaceLandmarkerInputConverter(
       frame.checkActive()
       val geometry = FaceLandmarkerInputGeometry.from(frame)
       ensureBuffers(geometry.inputWidth, geometry.inputHeight)
+      yuvBuffer.copyFrom(frame)
       FaceLandmarkerFramePixelConverter.fillArgb(
         frame,
         geometry,
         modelWidth,
         modelHeight,
         argbPixels,
+        yuvBuffer,
       )
       val currentBitmap = checkNotNull(bitmap)
       currentBitmap.setPixels(argbPixels, 0, modelWidth, 0, 0, modelWidth, modelHeight)
-      val rgbFrame = RppgFramePixels(frame, geometry, roiSampler)
+      val rgbFrame = RppgFramePixels(frame, geometry, roiSampler, yuvBuffer)
       return try {
         consume(currentBitmap, rgbFrame)
       } finally {
         rgbFrame.expire()
       }
     } finally {
+      yuvBuffer.releaseFrame()
       active = false
     }
   }
 
-  /** 释放模型输入图及 ARGB 缓冲。 */
+  /** 释放模型输入图、ARGB 缓冲和共享的三平面容量。 */
   override fun close() {
     check(!active) { "cannot close face input conversion while processing a frame" }
     bitmap?.let { if (!it.isRecycled) it.recycle() }
     bitmap = null
     argbPixels = IntArray(0)
+    yuvBuffer.close()
     sourceWidth = 0
     sourceHeight = 0
     modelWidth = 0

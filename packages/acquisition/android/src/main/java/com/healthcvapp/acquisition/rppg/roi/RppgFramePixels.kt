@@ -6,6 +6,7 @@ import com.healthcvapp.acquisition.pixels.PixelReader
 import com.healthcvapp.acquisition.rppg.face.FaceLandmarkerInputGeometry
 import com.healthcvapp.acquisition.rppg.face.FaceLandmarkerPoint
 import com.healthcvapp.acquisition.rppg.face.RppgYuvColorConverter
+import com.healthcvapp.acquisition.rppg.face.RppgYuvFrameBuffer
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -30,8 +31,9 @@ internal class RppgFramePixels internal constructor(
   private val argbPixels: IntArray?,
   val geometry: FaceLandmarkerInputGeometry,
   private val sampler: RppgRoiSampler,
+  private val yuvBuffer: RppgYuvFrameBuffer? = null,
 ) : RppgArgbPixelSource {
-  private val pixelReader = if (argbPixels == null) PixelReader(sourceFrame) else null
+  private val pixelReader = if (argbPixels == null && yuvBuffer == null) PixelReader(sourceFrame) else null
   private var active = true
 
   init {
@@ -45,7 +47,8 @@ internal class RppgFramePixels internal constructor(
     sourceFrame: PixelFrameView,
     geometry: FaceLandmarkerInputGeometry,
     sampler: RppgRoiSampler,
-  ) : this(sourceFrame, null, geometry, sampler)
+    yuvBuffer: RppgYuvFrameBuffer? = null,
+  ) : this(sourceFrame, null, geometry, sampler, yuvBuffer)
 
   /** 在模型输入图像的归一化坐标系内提取多边形区域的 RGB 均值。 */
   fun samplePolygon(
@@ -63,13 +66,19 @@ internal class RppgFramePixels internal constructor(
     )
   }
 
-  /** 从既有 ARGB 缓冲或原始 YUV 平面读取同一几何位置的颜色。 */
+  /** 从既有 ARGB 缓冲或同帧原分辨率 YUV 读取同一几何位置的颜色。 */
   override fun argbAt(inputX: Int, inputY: Int): Int {
+    check(active) { "converted frame is no longer valid" }
     val pixels = argbPixels
-    if (pixels != null) return pixels[inputY * geometry.inputWidth + inputX]
-    val reader = checkNotNull(pixelReader)
+    if (pixels != null) {
+      sourceFrame.checkActive()
+      return pixels[inputY * geometry.inputWidth + inputX]
+    }
     val sourceX = geometry.sourcePixelX(inputX, inputY)
     val sourceY = geometry.sourcePixelY(inputX, inputY)
+    val copiedYuv = yuvBuffer
+    if (copiedYuv != null) return copiedYuv.argbAt(sourceFrame, sourceX, sourceY)
+    val reader = checkNotNull(pixelReader)
     return RppgYuvColorConverter.toArgb(
       reader.readY(sourceX, sourceY),
       reader.readU(sourceX, sourceY),
@@ -89,6 +98,7 @@ internal class RppgRoiSampler {
   private var polygonY = DoubleArray(0)
   private var clippedX = DoubleArray(0)
   private var clippedY = DoubleArray(0)
+  private var scanlineCrossings = DoubleArray(0)
 
   /** 按归一化输入坐标采样；覆盖率不足、无效或无像素的多边形返回 null。 */
   fun sample(
@@ -163,13 +173,20 @@ internal class RppgRoiSampler {
     var sampledPixels = 0
     for (y in firstY until endY) {
       val centerY = y + 0.5
-      for (x in firstX until endX) {
-        if (!containsPixelCenter(x + 0.5, centerY, inputX, inputY, clippedCount)) continue
-        val argb = pixelSource.argbAt(x, y)
-        redSum += (argb ushr 16) and 0xFF
-        greenSum += (argb ushr 8) and 0xFF
-        blueSum += argb and 0xFF
-        sampledPixels++
+      val crossingCount = collectScanlineCrossings(centerY, inputX, inputY, clippedCount)
+      sortScanlineCrossings(crossingCount)
+      var crossingIndex = 0
+      while (crossingIndex + 1 < crossingCount) {
+        val spanStart = firstPixelAtOrAfter(scanlineCrossings[crossingIndex], firstX, endX)
+        val spanEnd = firstPixelAtOrAfter(scanlineCrossings[crossingIndex + 1], firstX, endX)
+        for (x in spanStart until spanEnd) {
+          val argb = pixelSource.argbAt(x, y)
+          redSum += (argb ushr 16) and 0xFF
+          greenSum += (argb ushr 8) and 0xFF
+          blueSum += argb and 0xFF
+          sampledPixels++
+        }
+        crossingIndex += 2
       }
     }
     if (sampledPixels == 0) return null
@@ -182,14 +199,14 @@ internal class RppgRoiSampler {
     )
   }
 
-  private fun containsPixelCenter(
-    x: Double,
+  /** 每行只求一次交点，沿用逐像素参考算法对顶点与水平边的半开判定。 */
+  private fun collectScanlineCrossings(
     y: Double,
     polygonX: DoubleArray,
     polygonY: DoubleArray,
     pointCount: Int,
-  ): Boolean {
-    var contains = false
+  ): Int {
+    var crossingCount = 0
     var previous = pointCount - 1
     for (index in 0 until pointCount) {
       val currentX = polygonX[index]
@@ -197,12 +214,31 @@ internal class RppgRoiSampler {
       val previousX = polygonX[previous]
       val previousY = polygonY[previous]
       if ((currentY > y) != (previousY > y)) {
-        val crossingX = (previousX - currentX) * (y - currentY) / (previousY - currentY) + currentX
-        if (x < crossingX) contains = !contains
+        scanlineCrossings[crossingCount++] =
+          (previousX - currentX) * (y - currentY) / (previousY - currentY) + currentX
       }
       previous = index
     }
-    return contains
+    return crossingCount
+  }
+
+  /** ROI 交点数量有限，原地插入排序避免每行创建排序工作区。 */
+  private fun sortScanlineCrossings(count: Int) {
+    for (index in 1 until count) {
+      val crossing = scanlineCrossings[index]
+      var insertion = index
+      while (insertion > 0 && scanlineCrossings[insertion - 1] > crossing) {
+        scanlineCrossings[insertion] = scanlineCrossings[insertion - 1]
+        insertion--
+      }
+      scanlineCrossings[insertion] = crossing
+    }
+  }
+
+  /** 返回中心不小于交点的首个像素，避免减去半像素引入边界舍入差异。 */
+  private fun firstPixelAtOrAfter(crossingX: Double, firstX: Int, endX: Int): Int {
+    val pixel = floor(crossingX).toInt().coerceIn(firstX, endX)
+    return if (pixel < endX && pixel + 0.5 < crossingX) pixel + 1 else pixel
   }
 
   private fun clipToBoundary(
@@ -318,6 +354,7 @@ internal class RppgRoiSampler {
       polygonY = DoubleArray(capacity)
       clippedX = DoubleArray(capacity)
       clippedY = DoubleArray(capacity)
+      scanlineCrossings = DoubleArray(capacity)
     }
   }
 
