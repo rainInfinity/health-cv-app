@@ -11,6 +11,7 @@
 | 目录、模块职责和依赖方向 | [代码组织](architecture/code-organization.md) |
 | Android 环境、构建、Metro、采集操作与文件核查 | [Android 开发](development/android-development.md) |
 | UI、主题、组件、状态、查询缓存与语言 | [前端开发约定](development/frontend-development.md) |
+| 测量业务流程、提示文案、结果规则与业务包目标 | [测量业务](development/measurement.md) |
 | 凭据、恢复、刷新、退出与认证隔离 | [认证会话](development/native-auth-session.md) |
 | 图标生成、SVG 与原生图形维护 | [原生图形](development/native-graphics.md) |
 | SDK 方法、HTTP、文件传输与数据语义 | [云端请求接口](development/cloud-client-api.md) |
