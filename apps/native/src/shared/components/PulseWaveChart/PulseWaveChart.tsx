@@ -4,7 +4,7 @@ import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AccessibilityInfo, AppState } from 'react-native'
 import type { LayoutChangeEvent } from 'react-native'
 import { SVGRenderer } from '@wuba/react-native-echarts/svgChart'
-import Svg, { Defs, Line, LinearGradient, Rect, Stop } from 'react-native-svg'
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { init, use } from 'echarts/core'
 import type { ComposeOption, EChartsType } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
@@ -13,10 +13,11 @@ import { GridComponent } from 'echarts/components'
 import type { GridComponentOption } from 'echarts/components'
 import { useTheme } from 'styled-components/native'
 import { AppText } from '@/shared/components/AppText'
-import { ChartFrame, ChartPlaceholder } from './styles'
+import { ChartFrame, ChartPlaceholder, PlotEdge } from './styles'
 import { ScrollingSvgChart } from './ScrollingSvgChart'
 import type { ScrollingSvgHandle } from './ScrollingSvgChart'
 import { createPulseCanvas } from './pulseScroll'
+import { buildPulseDisplayPoints } from './pulseWaveDisplay'
 
 use([LineChart, GridComponent, SVGRenderer])
 
@@ -24,19 +25,19 @@ type PulseChartOption = ComposeOption<LineSeriesOption | GridComponentOption>
 
 /** 有界坐标数据及绘图区约束；时间统一使用毫秒。 */
 export interface PulseWaveChartProps {
-  /** 时间与原始幅值；null 表示必须断开的缺口，不补零。 */
+  /** 时间与原始幅值；绘图层统一取负，调用方不得预先翻转；null 保留缺口。 */
   points: [number, number | null][]
   /** 可见窗口左端，单位毫秒。 */
   startTimeMs: number
   /** 可见窗口右端，单位毫秒，必须大于左端。 */
   endTimeMs: number
-  /** 显示纵轴下界，不回写原始样本。 */
+  /** 按取负后的展示幅值计算的纵轴下界，不回写原始样本。 */
   minimum: number
-  /** 显示纵轴上界，必须大于下界。 */
+  /** 按取负后的展示幅值计算的纵轴上界，必须大于下界。 */
   maximum: number
   /** 容器实际高度，单位 dp。 */
   height: number
-  /** 产品单基线／渐隐，或开发页诊断网格。 */
+  /** 产品柔化边缘／渐隐，或开发页诊断网格。 */
   appearance: 'diagnostic' | 'product'
   /** 没有可绘制数据时的提示；空字符串表示只保留绘图区。 */
   emptyMessage: string
@@ -62,6 +63,7 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
   const pixelsPerMs = canvas.pixelsPerMs
   const canvasWidth = product ? canvas.width : width
   const canScroll = product && scrolling && active && !reducedMotion
+  const displayPoints = useMemo(() => buildPulseDisplayPoints(points), [points])
 
   useEffect(() => {
     let mounted = true
@@ -81,7 +83,6 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
     }
   }, [])
   const option = useMemo<PulseChartOption>(() => {
-    const tone = theme.colors.brand.action
     return {
       animation: false,
       grid: { left: product ? 4 : 12, right: 12, top: product ? 8 : 16, bottom: product ? 8 : 16 },
@@ -96,16 +97,16 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
         splitLine: { show: !product, lineStyle: { color: theme.roles.divider } },
       },
       series: [{
-        id: 'pulse', type: 'line', data: points, showSymbol: false, silent: true,
+        id: 'pulse', type: 'line', data: displayPoints, showSymbol: false, silent: true,
         connectNulls: false, smooth: false, clip: true,
         lineStyle: {
-          width: product ? 2.5 : 2, cap: 'round', join: 'round',
-          color: product ? tone : theme.colors.brand.primary,
+          width: product ? 1.5 : 2, cap: 'round', join: 'round',
+          color: theme.colors.brand.primary,
         },
         emphasis: { disabled: true },
       }],
     }
-  }, [points, startTimeMs, endTimeMs, minimum, maximum, product, theme, canvas])
+  }, [displayPoints, startTimeMs, endTimeMs, minimum, maximum, product, theme, canvas])
 
   useEffect(() => {
     if (!host.current || width <= 0 || height <= 0) return
@@ -142,9 +143,9 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
             </LinearGradient>
           </Defs>
           <Rect x={4} y={8} width={(width - 16) * 0.14} height={Math.max(0, height - 16)} fill={`url(#${fadeId})`} />
-          <Line x1={4} x2={width - 12} y1={height - 8} y2={height - 8} stroke={theme.colors.border.default} strokeOpacity={0.7} />
         </Svg>
       )}
+      {product && <PlotEdge pointerEvents="none" accessible={false} style={{ boxShadow: `inset 0 0 18px 3px ${theme.colors.brand.gradient.end}24` }} />}
       {points.length < 2 && emptyMessage !== '' && (
         <ChartPlaceholder pointerEvents="none"><AppText tone="secondary" variant="caption">{emptyMessage}</AppText></ChartPlaceholder>
       )}

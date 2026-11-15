@@ -7,9 +7,13 @@ import android.graphics.Rect
 import androidx.camera.core.ImageInfo
 import androidx.camera.core.ImageProxy
 import com.healthcvapp.acquisition.camera.CameraFrameMetadata
+import com.healthcvapp.acquisition.ppg.fingertip.FingertipCoverage
+import com.healthcvapp.acquisition.ppg.fingertip.FingertipCoverageEstimator
+import com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord
 import com.healthcvapp.acquisition.ppg.model.CameraBlockLayout
 import com.healthcvapp.acquisition.ppg.model.PPGArtifactFileKind
 import com.healthcvapp.acquisition.pixels.PixelReader
+import com.healthcvapp.acquisition.pixels.PixelFrameView
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureSession
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
@@ -85,6 +89,46 @@ class PPGFrameHandlerTest {
       assertEquals(setOf("1234.567"), ppgRows.map { it[1] }.toSet())
       assertEquals(2, frameRows.size)
       assertEquals("1234.567", frameRows[1].split(',')[1])
+    }
+  }
+
+  @Test
+  fun sameFrameNearlyFullAndUnknownCoverageReachPairedConsumerWithoutPromotingPercent() = runTest {
+    withRoot { root ->
+      val estimator = FingertipCoverageEstimator()
+      val observed = mutableListOf<FingertipCoverage>()
+      val paired = mutableListOf<PPGCaptureRecord>()
+      val handler = frameHandler(onFrameEvaluated = { frame ->
+        estimator.estimate(frame).also(observed::add).usable
+      })
+      val session = session(root, "coverage-pair", onAcceptedRecord = paired::add)
+      session.start(startedAtElapsedNanos = 0, startedAtMillis = 10)
+      val nearlyFull = TestImageProxy(
+        timestampNanos = 100L, width = 128, height = 128,
+        yBytes = ByteArray(128 * 128) { index ->
+          if (index % 128 in 62..65 && index / 128 in 62..65) 100.toByte() else 90.toByte()
+        },
+        uBytes = ByteArray(64 * 64) { index ->
+          if (index % 64 in 31..32 && index / 64 in 31..32) 128.toByte() else 90.toByte()
+        },
+        vBytes = ByteArray(64 * 64) { index ->
+          if (index % 64 in 31..32 && index / 64 in 31..32) 128.toByte() else 210.toByte()
+        },
+      )
+      handler.handle(nearlyFull.proxy, "camera-one", session)
+      session.offerCaptureMetadata(metadata(100L))
+      val unknown = TestImageProxy(timestampNanos = 200L, yBytes = ByteArray(4))
+      handler.handle(unknown.proxy, "camera-one", session)
+      session.offerCaptureMetadata(metadata(200L))
+      val artifact = session.stop(finishedAtMillis = 20)
+      assertEquals(FingertipCoverage.State.PARTIAL, observed.first().state)
+      assertTrue(observed.first().percent!! >= 95.0)
+      assertTrue(observed.first().percent!! < 100.0)
+      assertEquals(FingertipCoverage.UNKNOWN, observed.last())
+      assertEquals(listOf(true, false), paired.map { it.ppg.coverageUsable })
+      assertEquals(3, java.io.File(artifact.files.single { it.kind == PPGArtifactFileKind.PPG }.path).readLines().size)
+      assertEquals(1, nearlyFull.closeCount)
+      assertEquals(1, unknown.closeCount)
     }
   }
 
@@ -177,23 +221,29 @@ class PPGFrameHandlerTest {
     }
   }
 
-  private fun frameHandler(processors: List<PixelProcessor> = emptyList()) = PPGFrameHandler(
+  private fun frameHandler(
+    processors: List<PixelProcessor> = emptyList(),
+    onFrameEvaluated: (PixelFrameView) -> Boolean? = { null },
+  ) = PPGFrameHandler(
     framePipeline = FramePipeline(PixelStatisticsExtractor(), processors),
     ppgRecordProcessor = PPGRecordProcessor(),
     onPreviewFrameFailure = { _, _, _ -> error("valid preview frame failed") },
     elapsedRealtimeNanos = { 1_000L },
+    onFrameEvaluated = onFrameEvaluated,
   )
 
   private fun session(
     root: java.io.File,
     id: String,
     blockLayout: CameraBlockLayout = CameraBlockLayout(rows = 1, columns = 1),
+    onAcceptedRecord: (PPGCaptureRecord) -> Unit = {},
   ) = PPGCaptureSession(
     filesDirectory = root,
     sessionId = id,
     blockLayout = blockLayout,
     ioDispatcher = Dispatchers.Unconfined,
     consumerDispatcher = Dispatchers.Unconfined,
+    onAcceptedRecord = onAcceptedRecord,
   )
 
   private fun metadata(timestampNanos: Long) = CameraFrameMetadata(

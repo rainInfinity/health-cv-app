@@ -1,4 +1,4 @@
-/** 注册指尖本地展示所用的统一离线文案。 */
+/** 注册指尖真实本地检测所用的统一离线文案。 */
 
 import { defineFeatureMessages } from '@/app/i18n'
 

@@ -30,6 +30,24 @@ export function selectPulseWindow(points: readonly PulsePoint[], startTimeMs: nu
   return points.slice(first, end)
 }
 
+/** 纵轴按六秒窗口内取负后的展示值计算；不改写真实样点，预绘和外部邻点不参与。 */
+export function getPulseWindowRange(points: readonly PulsePoint[], startTimeMs: number): { minimum: number; maximum: number } {
+  let minimum = Infinity
+  let maximum = -Infinity
+  const endTimeMs = startTimeMs + PULSE_WINDOW_MS
+  for (const [time, value] of points) {
+    if (time < startTimeMs || time > endTimeMs || value == null || !Number.isFinite(value)) continue
+    const displayValue = -value
+    minimum = Math.min(minimum, displayValue)
+    maximum = Math.max(maximum, displayValue)
+  }
+  if (minimum === Infinity) return { minimum: -0.5, maximum: 0.5 }
+  if (maximum === minimum) return { minimum: minimum - 0.5, maximum: maximum + 0.5 }
+  // 展示极值分别位于从底边起 10% 和 85%，不修改原始样本或绘图区高度。
+  const span = (maximum - minimum) / 0.75
+  return { minimum: minimum - span * 0.1, maximum: maximum + span * 0.15 }
+}
+
 /** 标题不暴露起始空白区的负时间，保留十分之一秒。 */
 export function formatPulseWindow(startTimeMs: number): string {
   return `${(Math.max(0, startTimeMs) / 1_000).toFixed(1)}–${((startTimeMs + PULSE_WINDOW_MS) / 1_000).toFixed(1)} 秒`

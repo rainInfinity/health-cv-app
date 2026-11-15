@@ -12,6 +12,7 @@ internal class PPGFrameHandler(
   private val ppgRecordProcessor: PPGRecordProcessor,
   private val onPreviewFrameFailure: (String, String, String) -> Unit,
   private val elapsedRealtimeNanos: () -> Long = { SystemClock.elapsedRealtimeNanos() },
+  private val onFrameEvaluated: (com.healthcvapp.acquisition.pixels.PixelFrameView) -> Boolean? = { null },
 ) {
   /** 处理单个 ImageProxy；无论适配或处理结果如何都只释放一次。 */
   fun handle(image: ImageProxy, cameraSessionId: String, captureSession: PPGCaptureSession?) {
@@ -38,6 +39,7 @@ internal class PPGFrameHandler(
         },
         blockLayout = captureSession?.blockLayout,
       ) { processedFrame, frameStatistics ->
+        val coverageUsable = onFrameEvaluated(processedFrame)
         if (frameIndex >= 0L) {
           val activeCaptureSession = checkNotNull(captureSession)
           val blockStatistics = checkNotNull(frameStatistics.blocks) {
@@ -47,6 +49,7 @@ internal class PPGFrameHandler(
             processedFrame,
             blockStatistics,
             activeCaptureSession.blockLayout,
+            coverageUsable,
           )
           activeCaptureSession.offerPpgFrame(record, processedFrame.timestampFrameNanos)
           frameFinished = true

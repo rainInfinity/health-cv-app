@@ -86,13 +86,13 @@ export interface RPPGWaveformPlot {
   startTimeMs: number
   /** 可见窗口右端，单位毫秒。 */
   endTimeMs: number
-  /** 显示纵轴下界。 */
+  /** 按取负后的展示幅值计算的纵轴下界。 */
   minimum: number
-  /** 显示纵轴上界；恒定信号使用对称范围，显示在中央。 */
+  /** 按取负后的展示幅值计算的上界；恒定信号使用居中的对称范围。 */
   maximum: number
 }
 
-/** 将连续性约束转换为空值断点，坐标缩放交给图表而不改写数据。 */
+/** 保留原始坐标与缺口，纵轴按取负后的展示值计算；幅值翻转只在统一绘图层执行。 */
 export function buildRPPGWaveformPlot(samples: readonly RPPGWaveformSample[], durationMillis?: number): RPPGWaveformPlot {
   const first = samples[0]
   const last = samples[samples.length - 1]
@@ -108,8 +108,9 @@ export function buildRPPGWaveformPlot(samples: readonly RPPGWaveformSample[], du
       points.push([(previous.timeMs + sample.timeMs) / 2, null])
     }
     points.push([sample.timeMs, sample.value])
-    minimum = Math.min(minimum, sample.value)
-    maximum = Math.max(maximum, sample.value)
+    const displayValue = -sample.value
+    minimum = Math.min(minimum, displayValue)
+    maximum = Math.max(maximum, displayValue)
   }
   if (!first) {
     minimum = -0.5
@@ -132,14 +133,6 @@ export interface RPPGWaveformHistory {
   points: [number, number | null][]
   /** 最新真实样本相对本轮原点的时间，单位毫秒。 */
   latestTimeMs: number
-  /** 本轮累计原始最小幅值；空历史为正无穷。 */
-  rawMinimum: number
-  /** 本轮累计原始最大幅值；空历史为负无穷。 */
-  rawMaximum: number
-  /** 留白后的纵轴下界，不依赖回看窗口。 */
-  minimum: number
-  /** 留白后的纵轴上界，不依赖回看窗口。 */
-  maximum: number
 }
 
 /** 创建独立的一轮历史，不预填任何模拟样本。 */
@@ -149,10 +142,6 @@ export function createRPPGWaveformHistory(): RPPGWaveformHistory {
     lastSample: null,
     points: [],
     latestTimeMs: 0,
-    rawMinimum: Number.POSITIVE_INFINITY,
-    rawMaximum: Number.NEGATIVE_INFINITY,
-    minimum: -0.5,
-    maximum: 0.5,
   }
 }
 
@@ -181,8 +170,6 @@ export function appendRPPGWaveformHistory(history: RPPGWaveformHistory, batch: R
   for (let valueIndex = 0; valueIndex < batch.values.length; valueIndex += 1) {
     const value = batch.values[valueIndex]
     history.points.push([batch.startTimeMs + valueIndex * batch.sampleIntervalMs - originTimeMs, value])
-    history.rawMinimum = Math.min(history.rawMinimum, value)
-    history.rawMaximum = Math.max(history.rawMaximum, value)
   }
   const lastIndex = batch.values.length - 1
   history.lastSample = lastIndex === 0 ? firstSample : {
@@ -192,15 +179,5 @@ export function appendRPPGWaveformHistory(history: RPPGWaveformHistory, batch: R
     value: batch.values[lastIndex],
   }
   history.latestTimeMs = history.lastSample.timeMs - originTimeMs
-  const rawSpan = history.rawMaximum - history.rawMinimum
-  if (rawSpan === 0) {
-    history.minimum = history.rawMinimum - 0.5
-    history.maximum = history.rawMaximum + 0.5
-  } else {
-    // 底边为 0%，原始极值落在高度 10%—85%；新极值才改变本轮显示包络。
-    const axisSpan = rawSpan / 0.75
-    history.minimum = history.rawMinimum - axisSpan * 0.1
-    history.maximum = history.rawMaximum + axisSpan * 0.15
-  }
   return true
 }

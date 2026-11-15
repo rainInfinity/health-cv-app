@@ -8,7 +8,7 @@ import { AppText } from '@/shared/components/AppText'
 import { PulseWaveChart } from '@/shared/components/PulseWaveChart'
 import { MAX_PULSE_SCROLL_MS } from '@/shared/components/PulseWaveChart/pulseScroll'
 import { ArrowRight } from '@/shared/graphics'
-import { clampPulseWindowStart, formatPulseWindow, PULSE_WINDOW_MS, selectPulseWindow } from './pulseWaveWindow'
+import { clampPulseWindowStart, formatPulseWindow, getPulseWindowRange, PULSE_WINDOW_MS, selectPulseWindow } from './pulseWaveWindow'
 import type { PulsePoint } from './pulseWaveWindow'
 import { HistoryFrame, HistoryHeading, HistoryPlot, LatestButton } from './styles'
 
@@ -18,10 +18,6 @@ export interface PulseWaveHistoryProps {
   points: readonly PulsePoint[]
   /** 最新采样／展示位置，单位毫秒，与 points 使用同一原点。 */
   latestTimeMs: number
-  /** 本轮纵轴下界，不随回看窗口缩放。 */
-  minimum: number
-  /** 本轮纵轴上界，不改变原样本。 */
-  maximum: number
   /** 标题使用现有页面文案。 */
   title: string
   /** 绘图区辅助技术说明。 */
@@ -39,7 +35,7 @@ export interface PulseWaveHistoryProps {
 }
 
 /** 只平移时间坐标；采样继续追加时回看绝对时间段保持不动。 */
-export const PulseWaveHistory = memo(function PulseWaveHistory({ points, latestTimeMs, minimum, maximum, title, accessibilityLabel, height, minimumHeight = 64, headingGap = 8, onInteractionChange, scrolling = false }: PulseWaveHistoryProps) {
+export const PulseWaveHistory = memo(function PulseWaveHistory({ points, latestTimeMs, title, accessibilityLabel, height, minimumHeight = 64, headingGap = 8, onInteractionChange, scrolling = false }: PulseWaveHistoryProps) {
   const theme = useTheme()
   const [requestedStart, setRequestedStart] = useState<number | null>(null)
   const [plotSize, setPlotSize] = useState({ width: 0, height: height ?? minimumHeight })
@@ -52,6 +48,7 @@ export const PulseWaveHistory = memo(function PulseWaveHistory({ points, latestT
   const visibleDataTime = Math.min(latestTimeMs, effectiveStart + PULSE_WINDOW_MS + MAX_PULSE_SCROLL_MS)
   const empty = points.length === 0
   const visible = useMemo(() => selectPulseWindow(points, effectiveStart, MAX_PULSE_SCROLL_MS), [points, empty, visibleDataTime, effectiveStart])
+  const { minimum, maximum } = useMemo(() => getPulseWindowRange(visible, effectiveStart), [visible, effectiveStart])
   const current = useRef({ latestTimeMs, startTimeMs: effectiveStart, width: plotSize.width, onInteractionChange })
   current.current = { latestTimeMs, startTimeMs: effectiveStart, width: plotSize.width, onInteractionChange }
   const dragStart = useRef(0)

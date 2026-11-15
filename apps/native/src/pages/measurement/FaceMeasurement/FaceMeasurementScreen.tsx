@@ -19,7 +19,7 @@ import { feedbackMessages } from '@/app/i18n/feedbackMessages'
 import { PulseWaveHistory } from '@/shared/components/PulseWaveHistory'
 import { faceMeasurementMessages, localizeFaceMeasurementError } from './messages'
 import { useFaceMeasurement } from './useFaceMeasurement'
-import { CameraFrame, Divider, Footer, Header, Panel, Placeholder, PreviewLabel, Readout, Screen, Viewfinder, WavePanel } from './styles'
+import { CameraFrame, Footer, Header, Panel, Placeholder, PreviewLabel, Readout, Screen, Viewfinder, WavePanel } from './styles'
 
 /** 格式化页面单调经过时间，不承担原生截止判断。 */
 function formatElapsed(milliseconds: number): string {
@@ -164,12 +164,10 @@ export function FaceMeasurementScreen() {
                 <AppText tone="secondary" style={mutedStyle}>{messages.unit}</AppText>
               </View>
             </View>
-            {!expandedText && <Divider />}
             <View style={{ alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <AppText tone="muted" style={mutedStyle}>{messages.timer}</AppText>
               <AppText accessibilityLabel={`${messages.timer} ${formatElapsed(measurement.elapsedMillis)}`} style={{ color: running ? theme.colors.brand.action : theme.colors.text.secondary, fontSize: width < 360 ? 24 : 28, lineHeight: 36 * fontScale, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{formatElapsed(measurement.elapsedMillis)}</AppText>
             </View>
-            {!expandedText && <Divider />}
             <View style={{ width: expandedText ? undefined : width < 360 ? 78 : 92, alignItems: 'center', flexShrink: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: width < 360 ? 6 : 10, borderRadius: theme.radius.pill, backgroundColor: running ? theme.colors.brand.subtle : theme.colors.surface.subtle }}>
                 {running ? <LoadingIndicator size={14} color={statusColor} /> : <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: statusColor }} accessible={false} />}
@@ -183,8 +181,6 @@ export function FaceMeasurementScreen() {
               key={measurement.waveformKey}
               points={waveformHistory.points}
               latestTimeMs={waveformHistory.latestTimeMs}
-              minimum={waveformHistory.minimum}
-              maximum={waveformHistory.maximum}
               title={messages.waveform}
               accessibilityLabel={messages.waveformAccessibility}
               minimumHeight={minimumWaveformHeight}

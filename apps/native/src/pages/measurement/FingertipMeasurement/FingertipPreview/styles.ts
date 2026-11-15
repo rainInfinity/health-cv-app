@@ -23,7 +23,7 @@ export const Notice = styled.View`
   max-width: 80%;
   flex-shrink: 1;
   padding: 12px 16px;
-  border: 1px solid ${({ theme }) => theme.colors.border.default};
+  border: 1px solid ${({ theme }) => `${theme.colors.surface.default}8C`};
   border-radius: 14px;
-  background-color: ${({ theme }) => theme.colors.surface.default};
+  overflow: hidden;
 `

@@ -42,6 +42,7 @@ internal class PPGCaptureSession(
   private val batchSize: Int = 50,
   private val flushIntervalMillis: Long = 1_000,
   private val onFailure: (PPGCaptureFailure) -> Unit = {},
+  private val onAcceptedRecord: (PPGCaptureRecord) -> Unit = {},
 ) {
   private enum class Phase { NEW, PREPARING, CAPTURING, STOPPING, COMPLETED, FAILED }
 
@@ -55,6 +56,10 @@ internal class PPGCaptureSession(
   private var phase = Phase.NEW
   private var acceptingFrames = false
   private var startedAtElapsedNanos = 0L
+  private var endAtElapsedNanos = Long.MAX_VALUE
+  private var lastEntranceNanos = 0L
+  private var maximumFrameGapNanos = Long.MAX_VALUE
+  private var windowEstablished = false
   private var startedAtMillis = 0L
   private var nextFrameIndex = 0L
   private var inFlightFrames = 0
@@ -71,8 +76,14 @@ internal class PPGCaptureSession(
     }
   }
 
-  /** 先创建会话文件和消费者，再打开正式帧入口并建立单调采集边界。 */
-  suspend fun start(startedAtElapsedNanos: Long, startedAtMillis: Long) = commands.withLock {
+  /** 手动路径仍不设覆盖门控和截止；writer 准备完毕后才开放入口。 */
+  suspend fun start(startedAtElapsedNanos: Long, startedAtMillis: Long) {
+    prepare()
+    openWindow(startedAtElapsedNanos, Long.MAX_VALUE, startedAtMillis)
+  }
+
+  /** 准备双 writer 与消费者，期间所有图像均不能入窗。 */
+  suspend fun prepare() = commands.withLock {
     synchronized(lock) {
       check(phase == Phase.NEW) { "capture session can only start once" }
       phase = Phase.PREPARING
@@ -97,10 +108,7 @@ internal class PPGCaptureSession(
 
       synchronized(lock) {
         dataHub = hub
-        this.startedAtElapsedNanos = startedAtElapsedNanos
-        this.startedAtMillis = startedAtMillis
-        acceptingFrames = true
-        phase = Phase.CAPTURING
+        phase = Phase.PREPARING
       }
     } catch (error: Throwable) {
       val startFailure = error as? PPGCaptureFailure
@@ -111,11 +119,49 @@ internal class PPGCaptureSession(
     }
   }
 
+  /** 调用方重新确认覆盖和关闭意图后，原子建立半开正式窗口。 */
+  fun openWindow(startNanos: Long, endNanos: Long, startMillis: Long = startNanos / 1_000_000L,
+    maximumFrameGapNanos: Long = Long.MAX_VALUE) =
+    synchronized(lock) {
+      check(phase == Phase.PREPARING && dataHub != null)
+      require(endNanos > startNanos)
+      startedAtElapsedNanos = startNanos
+      endAtElapsedNanos = endNanos
+      lastEntranceNanos = startNanos
+      this.maximumFrameGapNanos = maximumFrameGapNanos
+      startedAtMillis = startMillis
+      windowEstablished = true
+      acceptingFrames = true
+      phase = Phase.CAPTURING
+    }
+
+  /** 截止和停止意图先同步封闭入口，再异步等待配对及文件屏障。 */
+  fun sealEntrance() = synchronized(lock) { acceptingFrames = false }
+
+  /** 未开窗的准备失效只关闭文件，不发布一个伪正式产物。 */
+  suspend fun discardPrepared() = commands.withLock {
+    synchronized(lock) {
+      if (phase == Phase.COMPLETED && !windowEstablished) return@withLock
+      check(phase == Phase.PREPARING)
+      acceptingFrames = false
+    }
+    dataHub?.closeAndDrain()
+    output.close()
+    synchronized(lock) { phase = Phase.COMPLETED }
+    cleanupScope.cancel()
+  }
+
   /** 在进入帧处理作用域时登记正式帧；返回负值表示该帧不属于本次采集。 */
   fun beginFrame(processingElapsedNanos: Long): Long = synchronized(lock) {
-    if (!acceptingFrames || phase != Phase.CAPTURING || processingElapsedNanos < startedAtElapsedNanos) {
+    if (!acceptingFrames || phase != Phase.CAPTURING ||
+      processingElapsedNanos < startedAtElapsedNanos || processingElapsedNanos >= endAtElapsedNanos) {
       return@synchronized NO_FRAME
     }
+    if (processingElapsedNanos - lastEntranceNanos >= maximumFrameGapNanos) {
+      acceptingFrames = false
+      return@synchronized NO_FRAME
+    }
+    lastEntranceNanos = processingElapsedNanos
     inFlightFrames += 1
     nextFrameIndex++
     nextFrameIndex - 1
@@ -170,9 +216,9 @@ internal class PPGCaptureSession(
     var newFailure: PPGCaptureFailure? = null
     var hubToFail: DataHub<PPGCaptureRecord>? = null
     var scheduleCleanup = false
+    var accepted = false
     synchronized(lock) {
       if (inFlightFrames == 0) return
-      inFlightFrames -= 1
       if (failure == null) {
         if (processingError != null) {
           newFailure = processingError as? PPGCaptureFailure
@@ -181,7 +227,7 @@ internal class PPGCaptureSession(
           newFailure = PPGCaptureFailure("PIXEL_PROCESSING_FAILED", "正式采集帧没有生成配对记录。")
         } else {
           when (dataHub?.offer(record)) {
-            DataHubOfferResult.ACCEPTED -> Unit
+            DataHubOfferResult.ACCEPTED -> accepted = true
             DataHubOfferResult.CAPACITY_EXCEEDED -> {
               newFailure = PPGCaptureFailure("DATAHUB_CAPACITY_EXCEEDED", "采集数据队列容量已满。")
             }
@@ -203,10 +249,14 @@ internal class PPGCaptureSession(
         hubToFail = dataHub
         scheduleCleanup = !stopRequested
       }
-      if (inFlightFrames == 0) {
-        frameDrain?.complete(Unit)
-      } else if (failure != null && frameDrain == null) {
-        frameDrain = CompletableDeferred()
+    }
+    try {
+      if (accepted && record != null) onAcceptedRecord(record)
+    } finally {
+      synchronized(lock) {
+        inFlightFrames -= 1
+        if (inFlightFrames == 0) frameDrain?.complete(Unit)
+        else if (failure != null && frameDrain == null) frameDrain = CompletableDeferred()
       }
     }
 
@@ -291,6 +341,10 @@ internal class PPGCaptureSession(
   /** 当前会话仍允许登记正式帧时为真。 */
   val isCapturing: Boolean
     get() = synchronized(lock) { acceptingFrames }
+
+  /** 区分已封闭的正式窗口与尚未开窗的 writer 准备。 */
+  val hasFormalWindow: Boolean
+    get() = synchronized(lock) { windowEstablished }
 
   private fun markFailed(cause: PPGCaptureFailure): Boolean {
     var firstFailure = false

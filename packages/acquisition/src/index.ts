@@ -1,4 +1,4 @@
-/** 公开采集控制客户端及 JS 可见的低频状态与产物类型。 */
+/** 公开采集控制、低频事实与独立有界展示脉搏类型，不暴露原始像素或记录。 */
 
 export {
   RPPGClient,
@@ -46,6 +46,12 @@ export type {
   AcquisitionCommandResult,
   AcquisitionSnapshot,
   AcquisitionState,
+  FingertipCaptureConfig,
+  FingertipCoverageState,
+  FingertipPhase,
+  FingertipPulseBatch,
+  FingertipSnapshot,
+  FingertipStartResult,
   StopCaptureResult,
 } from './native/Acquisition.nitro'
 

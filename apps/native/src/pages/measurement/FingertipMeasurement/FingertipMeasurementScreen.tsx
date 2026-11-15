@@ -1,10 +1,10 @@
-/** 指尖纯展示页面：独立本地计时、原生分页及模拟图形，不持有采集资源。 */
+/** 指尖真实采集页面：保留原布局与分页，本轮事实与资源归专用 Hook。 */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AccessibilityInfo, Animated, AppState, Easing, ScrollView, View, useWindowDimensions } from 'react-native'
+import { AccessibilityInfo, Animated, ScrollView, View, useWindowDimensions } from 'react-native'
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native'
 import { useStore } from '@nanostores/react'
-import { useFocusEffect, useNavigation } from '@react-navigation/native'
+import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
@@ -13,13 +13,14 @@ import { useTheme } from 'styled-components/native'
 import type { RootStackParamList } from '@/app/navigation/types'
 import { AppText } from '@/shared/components/AppText'
 import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
+import { useFeedback } from '@/shared/components/FeedbackHost'
 import { XinmuLogo } from '@/shared/graphics'
 import { FingertipInstructionArtwork } from '@/pages/measurement/FingertipMeasurement/FingertipInstructionArtwork'
 import { FingertipPreview } from '@/pages/measurement/FingertipMeasurement/FingertipPreview'
 import { FingertipPulseWave } from '@/pages/measurement/FingertipMeasurement/FingertipPulseWave'
+import { FingertipPlacementGuide } from '@/pages/measurement/FingertipMeasurement/FingertipPlacementGuide'
 
-import { createFingertipDisplay, getFingertipPresentation } from './fingertipDisplay'
-import type { FingertipDisplayController, FingertipDisplaySnapshot, FingertipPresentation } from './fingertipDisplay'
+import { useFingertipMeasurement } from './useFingertipMeasurement'
 import { fingertipMessages } from './fingertipMessages'
 import {
   BrandSlot, Carousel, Countdown, DataPanel, HeaderAction, HeaderTitle, Instructions,
@@ -27,15 +28,8 @@ import {
   Toolbar, Viewfinder, localStyles,
 } from './styles'
 
-/** 纯展示初态，没有上一轮波形、覆盖或检测时间。 */
-function emptySnapshot(): FingertipDisplaySnapshot {
-  return {
-    phase: 'ready', coverage: 0, remainingMs: 30_000, runningElapsedMs: 0,
-    wave: { points: [], revision: 0 },
-  }
-}
 
-/** 入口导航且布局完成后自动演示；返回只销毁本页的展示资源。 */
+/** 明确入口自动授权准备，正式开始与三十秒截止均消费原生事实。 */
 export function FingertipMeasurementScreen() {
   const messages = useStore(fingertipMessages)
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'FingertipMeasurement'>>()
@@ -50,9 +44,9 @@ export function FingertipMeasurementScreen() {
   const originalDiameter = Math.min(width - 80, Math.max(160, Math.min(300, availableHeight - (48 + 76 + 360))))
   const viewfinderSlotHeight = originalDiameter + (compact ? 60 : 76)
   const diameter = Math.min(332, width - 40, originalDiameter + (compact ? 32 : 36))
-  const [snapshot, setSnapshot] = useState(emptySnapshot)
-  const [coveragePresentation, setCoveragePresentation] = useState<FingertipPresentation>('ready')
-  const [waveController, setWaveController] = useState<FingertipDisplayController | null>(null)
+  const measurement = useFingertipMeasurement()
+  const { snapshot, waveform: waveController, visible } = measurement
+  const { showModal } = useFeedback()
   const [page, setPage] = useState(0)
   const [pageWidth, setPageWidth] = useState(Math.max(1, width - panelPadding * 2))
   const [viewfinderHeight, setViewfinderHeight] = useState(viewfinderSlotHeight)
@@ -60,11 +54,8 @@ export function FingertipMeasurementScreen() {
   const [captionHeights, setCaptionHeights] = useState({ back: 50 * fontScale, front: 50 * fontScale })
   const captionHeight = Math.max(captionHeights.back, captionHeights.front)
   const [reducedMotion, setReducedMotion] = useState(true)
-  const [visible, setVisible] = useState(false)
   const [waveInteracting, setWaveInteracting] = useState(false)
   const pager = useRef<ScrollView>(null)
-  const controller = useRef<FingertipDisplayController | null>(null)
-  const layoutReady = useRef(false)
   const selectedPage = useRef(0)
   const pageWidthRef = useRef(pageWidth)
   const reducedMotionRef = useRef(reducedMotion)
@@ -72,23 +63,12 @@ export function FingertipMeasurementScreen() {
   const alive = useRef(false)
   const pageProgress = useRef(new Animated.Value(0)).current
   const coverageProgress = useRef(new Animated.Value(0)).current
-  const coverageAnimation = useRef<Animated.CompositeAnimation | null>(null)
   const previousPage = useRef(0)
   const pageMarkStyles = useMemo(() => [
     { width: pageProgress.interpolate({ inputRange: [0, 1], outputRange: [24, 6], extrapolate: 'clamp' }) },
     { width: pageProgress.interpolate({ inputRange: [0, 1], outputRange: [6, 24], extrapolate: 'clamp' }) },
   ], [pageProgress])
 
-  useEffect(() => {
-    let previous: FingertipPresentation = 'ready'
-    const listener = coverageProgress.addListener(({ value }) => {
-      const next = getFingertipPresentation('covering', value)
-      if (next === previous) return
-      previous = next
-      setCoveragePresentation(next)
-    })
-    return () => coverageProgress.removeListener(listener)
-  }, [coverageProgress])
 
   useEffect(() => {
     const changed = previousPage.current !== page
@@ -110,98 +90,62 @@ export function FingertipMeasurementScreen() {
     pager.current?.scrollTo({ x: next * pageWidthRef.current, animated: !reducedMotionRef.current })
   }
 
-  useFocusEffect(useCallback(() => {
+  useEffect(() => {
     alive.current = true
     let mounted = true
-    let appVisible = AppState.currentState === 'active'
     let motionRevision = 0
-    let publishedPhase = 'ready'
-    let publishedSeconds = 30
-    let coverageTarget = 0
-    coverageAnimation.current?.stop()
-    coverageProgress.setValue(0)
-    const display = createFingertipDisplay({
-      now: () => performance.now(),
-      schedule: (callback, delay) => setTimeout(callback, delay),
-      cancel: (handle) => clearTimeout(handle as number),
-      active: appVisible,
-      reducedMotion: reducedMotionRef.current,
-      onChange: (next) => {
-        if (!mounted) return
-        // 仅局部 Animated 节点补齐快照间隔，不让覆盖计时触发整页重绘。
-        if (!appVisible || reducedMotionRef.current || next.phase !== 'covering') {
-          coverageAnimation.current?.stop()
-          coverageProgress.setValue(next.coverage)
-        } else if (coverageTarget !== next.coverage) {
-          coverageAnimation.current?.stop()
-          coverageAnimation.current = Animated.timing(coverageProgress, {
-            toValue: next.coverage,
-            duration: 50,
-            easing: Easing.linear,
-            useNativeDriver: false,
-            isInteraction: false,
-          })
-          coverageAnimation.current.start()
-        }
-        coverageTarget = next.coverage
-        const nextSeconds = Math.ceil(next.remainingMs / 1_000)
-        if (next.phase === publishedPhase && nextSeconds === publishedSeconds) return
-        publishedPhase = next.phase
-        publishedSeconds = nextSeconds
-        setSnapshot(next)
-      },
-      onRunning: () => { if (mounted) selectPage.current(1) },
-    })
-    controller.current = display
-    setWaveController(display)
-    selectedPage.current = 0
-    setPage(0)
-    setSnapshot(display.getSnapshot())
-    pager.current?.scrollTo({ x: 0, animated: false })
-    setVisible(appVisible)
-    if (layoutReady.current) display.layoutReady()
-
-    const appSubscription = AppState.addEventListener('change', (state) => {
-      if (!mounted) return
-      appVisible = state === 'active'
-      setVisible(appVisible)
-      display.setActive(appVisible)
-    })
     const applyMotion = (enabled: boolean) => {
       if (!mounted) return
       reducedMotionRef.current = enabled
       setReducedMotion(enabled)
-      display.setReducedMotion(enabled)
       if (enabled) pager.current?.scrollTo({ x: selectedPage.current * pageWidthRef.current, animated: false })
     }
-    const motionSubscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
       motionRevision += 1
       applyMotion(enabled)
     })
-    const initialMotionRevision = motionRevision
+    const initialRevision = motionRevision
     void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (mounted && initialMotionRevision === motionRevision) applyMotion(enabled)
+      if (mounted && initialRevision === motionRevision) applyMotion(enabled)
     }, () => undefined)
-
     return () => {
       mounted = false
       alive.current = false
-      coverageAnimation.current?.stop()
-      display.dispose()
-      controller.current = null
-      setWaveController(null)
-      appSubscription.remove()
-      motionSubscription.remove()
-      setVisible(false)
-      setSnapshot(emptySnapshot())
-      setWaveInteracting(false)
+      subscription.remove()
     }
-  }, [coverageProgress]))
-
-  const onLayout = useCallback(() => {
-    layoutReady.current = true
-    controller.current?.layoutReady()
   }, [])
+
+
+  useEffect(() => {
+    selectedPage.current = 0
+    setPage(0)
+    pager.current?.scrollTo({ x: 0, animated: false })
+  }, [measurement.previewKey])
+
+  useEffect(() => {
+    if (snapshot?.phase === 'capturing') selectPage.current(1)
+  }, [snapshot?.captureId, snapshot?.phase])
+
+  const error = measurement.leaving ? null : measurement.localError ?? (snapshot?.phase === 'failed' ? snapshot.errorCode ?? 'UNKNOWN'
+    : snapshot?.phase === 'interrupted' ? snapshot.endReason ?? 'INTERRUPTED' : null)
+  useEffect(() => {
+    if (error == null && !measurement.closeFailed) return
+    const code = error?.toUpperCase() ?? ''
+    const message = measurement.closeFailed ? messages.errorClose
+      : code.includes('PERMISSION') ? messages.errorPermission
+        : code.includes('TORCH') ? messages.errorTorch
+          : code.includes('BACK_CAMERA') ? messages.errorBackCamera
+            : code.includes('BUSY') ? messages.errorBusy
+              : code.includes('COVERAGE') ? messages.errorCoverage
+                : code.includes('BACKGROUND') || code.includes('FOREGROUND') ? messages.errorBackground : messages.errorGeneric
+    showModal({
+      title: messages.title, message, closeLabel: messages.dismiss,
+      actions: [
+        { label: messages.back, onPress: () => navigation.goBack() },
+        { label: measurement.closeFailed ? messages.retryClose : messages.retry, primary: true, onPress: measurement.retry },
+      ],
+    })
+  }, [error, measurement.closeFailed, measurement.retry, messages, navigation, showModal])
 
   const updatePage = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (!alive.current) return
@@ -226,27 +170,26 @@ export function FingertipMeasurementScreen() {
     pager.current?.scrollTo({ x: selectedPage.current * nextWidth, animated: false })
   }, [])
 
-  const phase = snapshot.phase
-  const running = phase === 'running'
-  const presentation = phase === 'covering' ? coveragePresentation : phase
-  const statusColor = phase === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
+  const phase = snapshot?.phase ?? 'preparing'
+  const running = phase === 'capturing'
+  const presentation = measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : snapshot?.presentation ?? 'ready'
+  const active = measurement.busy || phase === 'observing' || phase === 'starting' || running || phase === 'stopping'
+  const statusColor = presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
   const status = messages[presentation]
   const statusHint = presentation === 'ready' ? messages.statusReady
     : presentation === 'partial' ? messages.statusPartial
       : presentation === 'covered' ? messages.statusCovered
-        : running ? messages.statusRunning : messages.statusCompleted
-  const previewHint = presentation === 'ready' ? messages.hintReady
-    : presentation === 'partial' ? messages.hintPartial
-      : presentation === 'covered' ? messages.hintCovered
-        : running ? messages.hintRunning : messages.hintCompleted
-  const time = `00:${String(Math.ceil(snapshot.remainingMs / 1_000)).padStart(2, '0')}`
+        : presentation === 'running' ? messages.statusRunning
+          : presentation === 'stopping' ? messages.statusStopping
+            : presentation === 'completed' ? messages.statusCompleted : messages.statusInterrupted
+  const time = `00:${String(snapshot?.remainingSeconds ?? 30).padStart(2, '0')}`
   const minimumPageHeight = Math.max(compact ? 118 : 140, captionHeight + 72)
   const pageHeight = Math.max(minimumPageHeight, availableHeight - 48 - viewfinderHeight - panelPadding * 2 - sessionHeight - (compact ? 8 : 20) - 52)
   const artHeight = Math.max(64, Math.min(156, Math.max(96, height * 0.16), pageHeight - captionHeight - 8))
   const plotHeight = Math.max(64, pageHeight - 30 * fontScale)
 
   return (
-    <Screen style={{ paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }} onLayout={onLayout}>
+    <Screen style={{ paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
       <View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={localStyles.background}>
         <Svg width={width} height={height}>
           <Defs>
@@ -263,6 +206,8 @@ export function FingertipMeasurementScreen() {
           <HeaderAction
             accessibilityRole="button"
             accessibilityLabel={messages.back}
+            disabled={measurement.leaving}
+            accessibilityState={{ disabled: measurement.leaving }}
             onPress={() => navigation.goBack()}
             style={({ pressed }) => ({ backgroundColor: pressed ? theme.colors.brand.subtle : 'transparent' })}
           >
@@ -275,21 +220,22 @@ export function FingertipMeasurementScreen() {
         </Toolbar>
         <Viewfinder $compact={compact} style={{ height: viewfinderSlotHeight }} onLayout={(event) => setViewfinderHeight(event.nativeEvent.layout.height)}>
           <FingertipPreview
+            key={measurement.previewKey}
             diameter={diameter}
+            display={measurement.display}
+            overridePresentation={measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : null}
+            previewMounted={measurement.previewMounted}
+            onPreviewLayout={measurement.onPreviewLayout}
             coverageProgress={coverageProgress}
-            animating={visible && (phase === 'covering' || running)}
+            animating={visible && active && measurement.localError == null && !measurement.leaving}
             reducedMotion={reducedMotion}
-            waitingDescription={messages.previewWaiting}
-            coveredDescription={messages.previewCovered}
-            notice={previewHint}
-            coverageLabel={messages.coverage}
           />
         </Viewfinder>
         <DataPanel $compact={compact} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
           <Session onLayout={(event) => setSessionHeight(event.nativeEvent.layout.height)}>
             <StatusGroup>
-              <StatusBadge $started={phase !== 'ready'} accessible accessibilityRole="text" accessibilityLabel={status} accessibilityLiveRegion="polite">
-                {visible && (phase === 'covering' || running)
+              <StatusBadge $started={snapshot != null} accessible accessibilityRole="text" accessibilityLabel={status} accessibilityLiveRegion="polite">
+                {visible && active && presentation !== 'failed'
                   ? <LoadingIndicator size={14} color={statusColor} />
                   : <Svg width="14" height="14" viewBox="0 0 14 14" accessible={false}>
                       <Circle cx="7" cy="7" r="6" fill="none" stroke={statusColor} strokeWidth="2" />
@@ -340,7 +286,9 @@ export function FingertipMeasurementScreen() {
               <View style={[localStyles.wavePage, { width: pageWidth, height: pageHeight }]} accessibilityElementsHidden={page !== 1} importantForAccessibility={page !== 1 ? 'no-hide-descendants' : 'auto'}>
                 {waveController && (
                   <FingertipPulseWave
+                    key={snapshot?.captureId ?? measurement.previewKey}
                     controller={waveController}
+                    capturing={running}
                     visible={visible && page === 1}
                     reducedMotion={reducedMotion}
                     title={messages.wave}
@@ -361,6 +309,11 @@ export function FingertipMeasurementScreen() {
           </Carousel>
         </DataPanel>
       </ScrollView>
+      <FingertipPlacementGuide
+        visible={measurement.placementGuideVisible && visible && error == null && !measurement.leaving}
+        onConfirm={measurement.dismissPlacementGuide}
+        reducedMotion={reducedMotion}
+      />
     </Screen>
   )
 }

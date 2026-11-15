@@ -4,16 +4,16 @@ import { memo, useEffect, useState } from 'react'
 
 import { PulseWaveHistory } from '@/shared/components/PulseWaveHistory'
 
-import type { FingertipDisplayController } from '../fingertipDisplay'
-
-const AMPLITUDE_SPAN = 1.01 / (0.85 - 0.1)
+import type { FingertipWaveform } from '../fingertipWaveform'
 
 /** 只消费页面私有控制器与展示参数，不持有采集或导航资源。 */
 interface FingertipPulseWaveProps {
-  /** 当前页面实例的本地展示控制器。 */
-  controller: FingertipDisplayController
+  /** 页面本轮真实历史，隐藏绘图时仍继续接收。 */
+  controller: FingertipWaveform
   /** 宿主前台且当前显示波形分页时才订阅绘图更新。 */
   visible: boolean
+  /** 原生正式采集阶段，不由绘图推进。 */
+  capturing: boolean
   /** 减少动态效果时禁用原生平移，不改变历史样本。 */
   reducedMotion: boolean
   /** 沿用页面的波形标题。 */
@@ -27,22 +27,20 @@ interface FingertipPulseWaveProps {
 }
 
 /** 批次只重绘波形；恢复可见时先读取末快照，保留同一个历史回看实例。 */
-export const FingertipPulseWave = memo(function FingertipPulseWave({ controller, visible, reducedMotion, title, height, accessibilityLabel, onInteractionChange }: FingertipPulseWaveProps) {
+export const FingertipPulseWave = memo(function FingertipPulseWave({ controller, visible, capturing, reducedMotion, title, height, accessibilityLabel, onInteractionChange }: FingertipPulseWaveProps) {
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot())
 
   useEffect(() => {
     if (!visible) return
     setSnapshot(controller.getSnapshot())
-    return controller.subscribeWave(setSnapshot)
+    return controller.subscribe(setSnapshot)
   }, [controller, visible])
 
   return (
     <PulseWaveHistory
-      points={snapshot.wave.points}
-      latestTimeMs={snapshot.runningElapsedMs}
-      minimum={-0.1 * AMPLITUDE_SPAN}
-      maximum={0.9 * AMPLITUDE_SPAN}
-      scrolling={snapshot.phase === 'running' && visible && !reducedMotion}
+      points={snapshot.points}
+      latestTimeMs={snapshot.latestTimeMs}
+      scrolling={capturing && visible && !reducedMotion}
       title={title}
       height={height}
       accessibilityLabel={accessibilityLabel}

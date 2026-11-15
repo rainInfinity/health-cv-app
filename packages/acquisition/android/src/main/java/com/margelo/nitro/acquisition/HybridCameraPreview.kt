@@ -58,7 +58,8 @@ class HybridCameraPreview private constructor(context: Context, @Suppress("UNUSE
   constructor(context: Context) : this(context, Unit)
 
   private val previewView = PreviewView(context).apply {
-    implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+    // TextureView 参与原生视图合成，供指尖操作提示读取背景并实时模糊。
+    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
     scaleType = PreviewView.ScaleType.FILL_CENTER
   }
   private val previewContainer = CameraPreviewContainer(context, previewView)

@@ -125,7 +125,7 @@ export const localStyles = StyleSheet.create({
   stepHint: { marginTop: 4, textAlign: 'center' },
   countdown: { fontSize: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },
   circle: { alignItems: 'center', justifyContent: 'center' },
-  previewNoticeText: { fontSize: 14, lineHeight: 22 },
+  previewNoticeText: { fontSize: 14, lineHeight: 22, fontWeight: '600', textAlign: 'center' },
   coverage: { position: 'absolute', bottom: -10, width: 88, paddingVertical: 4, paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, alignItems: 'center' },
   coverageText: { fontSize: 20, fontWeight: '600', fontVariant: ['tabular-nums'] },
   ripple: { position: 'absolute', borderWidth: 1 },

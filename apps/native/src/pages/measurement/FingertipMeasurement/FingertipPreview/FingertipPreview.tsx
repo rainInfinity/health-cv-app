@@ -1,60 +1,57 @@
-/** 绘制纯本地圆预览、模拟覆盖环与可暂停的装饰水纹。 */
+/** 呈现真实后摄圆形预览与原生覆盖事实，装饰动效不参与采集控制。 */
 
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useSyncExternalStore } from 'react'
+import type { RefObject } from 'react'
 import { Animated, Easing, StyleSheet, View } from 'react-native'
-import Svg, { Circle, Defs, G, LinearGradient, RadialGradient, Stop } from 'react-native-svg'
+import type { LayoutChangeEvent } from 'react-native'
+import { useStore } from '@nanostores/react'
+import { BlurTargetView, BlurView } from 'expo-blur'
+import { CameraPreview } from '@health-cv-app/acquisition/react'
+import Svg, { Circle, Defs, G, LinearGradient, Stop } from 'react-native-svg'
 import { useTheme } from 'styled-components/native'
 
 import { AppText } from '@/shared/components/AppText'
 
 import { localStyles } from '@/pages/measurement/FingertipMeasurement/styles'
 import { Notice, NoticeCenter, PreviewFrame } from './styles'
+import { fingertipMessages } from '../fingertipMessages'
+import type { FingertipDisplay, FingertipDisplaySnapshot, FingertipPresentation } from '../fingertipPresentation'
 
 interface FingertipPreviewProps {
   /** 正圆画布直径，单位 dp。 */
   diameter: number
-  /** 仅驱动本页模拟覆盖的局部动画节点。 */
+  /** 仅驱动真实覆盖值的局部环形动画，不决定提示或正式开始。 */
   coverageProgress: Animated.Value
-  /** 后台、失焦、准备及完成时停止装饰。 */
+  /** 仅在前台本轮进行时显示装饰，动效不推进覆盖或阶段。 */
   animating: boolean
   /** 系统减少动态效果。 */
   reducedMotion: boolean
-  /** 未满环与满环时的模拟取景读屏描述。 */
-  waitingDescription: string
-  coveredDescription: string
-  /** 位于镜头中央的当前产品操作提示。 */
-  notice: string
-  /** 本地化的模拟覆盖语义。 */
-  coverageLabel: string
+  /** 页面私有覆盖／提示投影，不订阅采集业务或完整快照。 */
+  display: FingertipDisplay
+  /** 本地错误与取消必须立即覆盖普通操作提示。 */
+  overridePresentation: FingertipPresentation | null
+  /** 授权后挂载真实预览，不隐含打开命令。 */
+  previewMounted: boolean
+  /** 包装层确认 Nitro 引用与正布局后回传。 */
+  onPreviewLayout: (event: LayoutChangeEvent) => void
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
 const CIRCUMFERENCE = 2 * Math.PI * 143
 
-/** 只有百分比文字订阅帧值，复杂预览图形不随读数重新渲染。 */
-function CoverageReadout({ coverageProgress, coverageLabel, waitingDescription, coveredDescription }: Pick<FingertipPreviewProps, 'coverageProgress' | 'coverageLabel' | 'waitingDescription' | 'coveredDescription'>) {
+/** 文字使用最新原生事实，不读取动画的中间值。 */
+function CoverageReadout({ coveragePercent, coverageReady, coverageLabel, waitingDescription, coveredDescription }: Pick<FingertipDisplaySnapshot, 'coveragePercent' | 'coverageReady'> & { coverageLabel: string; waitingDescription: string; coveredDescription: string }) {
   const theme = useTheme()
-  const [coverage, setCoverage] = useState(0)
-  const lastCoverage = useRef(0)
-  useEffect(() => {
-    const listener = coverageProgress.addListener(({ value }) => {
-      // 以实际绘制进度取整，不能在补间结束前宣布 100%。
-      const next = Math.floor(Math.max(0, Math.min(100, value)))
-      if (next === lastCoverage.current) return
-      lastCoverage.current = next
-      setCoverage(next)
-    })
-    return () => coverageProgress.removeListener(listener)
-  }, [coverageProgress])
+  const coverage = coveragePercent == null ? null : Math.floor(Math.max(0, Math.min(100, coveragePercent)))
   return (
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={`${coverageLabel}，${coverage === 100 ? coveredDescription : waitingDescription}`}
-      accessibilityValue={{ min: 0, max: 100, now: coverage }}
+      accessibilityLabel={`${coverageLabel}，${coverageReady ? coveredDescription : waitingDescription}`}
+      accessibilityValue={coverage == null ? { text: '--' } : { min: 0, max: 100, now: coverage }}
       style={[localStyles.coverage, { backgroundColor: theme.colors.brand.subtle, borderColor: mix(theme.colors.brand.primary, theme.colors.surface.default, 0.35) }]}
     >
-      <AppText variant="label" style={[localStyles.coverageText, { color: theme.colors.brand.action }]}>{coverage}%</AppText>
+      <AppText variant="label" style={[localStyles.coverageText, { color: theme.colors.brand.action }]}>{coverage == null ? '--' : `${coverage}%`}</AppText>
     </View>
   )
 }
@@ -70,8 +67,8 @@ function mix(first: string, second: string, weight: number): string {
   return result
 }
 
-/** 取景始终是 SVG 颜色，不申请或创建真实相机。 */
-export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, animating, reducedMotion, waitingDescription, coveredDescription, notice, coverageLabel }: FingertipPreviewProps) {
+/** 相机与装饰节点只随布局、阶段动效及真实挂载变化，不接收覆盖或提示。 */
+const PreviewScene = memo(function PreviewScene({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion }: Pick<FingertipPreviewProps, 'diameter' | 'coverageProgress' | 'previewMounted' | 'onPreviewLayout' | 'animating' | 'reducedMotion'>) {
   const theme = useTheme()
   const id = `fingertip-preview-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const rippleA = useRef(new Animated.Value(0)).current
@@ -79,7 +76,6 @@ export const FingertipPreview = memo(function FingertipPreview({ diameter, cover
   const brand = theme.colors.brand
   const surface = theme.colors.surface.default
   const progress = useMemo(() => ({
-    coveredOpacity: coverageProgress.interpolate({ inputRange: [0, 100], outputRange: [0, 1], extrapolate: 'clamp' }),
     dashoffset: coverageProgress.interpolate({ inputRange: [0, 100], outputRange: [CIRCUMFERENCE, 0], extrapolate: 'clamp' }),
     ringOpacity: coverageProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
   }), [coverageProgress])
@@ -108,7 +104,7 @@ export const FingertipPreview = memo(function FingertipPreview({ diameter, cover
 
   const cameraInset = 17 * 300 / diameter
   return (
-    <PreviewFrame style={{ width: diameter, height: diameter }}>
+    <>
       {[rippleA, rippleB].map((progress, index) => (
         <Animated.View
           key={index}
@@ -135,19 +131,11 @@ export const FingertipPreview = memo(function FingertipPreview({ diameter, cover
           <Circle cx="150" cy="150" r="143" fill="none" stroke={mix(brand.primary, surface, 0.16)} strokeWidth="7" />
         </Svg>
       </View>
-      {/* 径向渐变仅栅格化一次，覆盖环更新不再连带重绘整张预览。 */}
-      <Animated.View pointerEvents="none" renderToHardwareTextureAndroid style={[StyleSheet.absoluteFill, { opacity: progress.coveredOpacity }]} accessible={false}>
-        <Svg width={diameter} height={diameter} viewBox="0 0 300 300" accessible={false}>
-          <Defs>
-            <RadialGradient id={`${id}-covered`} cx="36%" cy="32%" rx="75%" ry="75%">
-              <Stop stopColor={mix(theme.colors.illustration.roseLight, theme.colors.accent.rose, 0.68)} />
-              <Stop offset="0.55" stopColor={theme.colors.feedback.error} />
-              <Stop offset="1" stopColor={mix(theme.colors.feedback.error, theme.colors.text.primary, 0.48)} />
-            </RadialGradient>
-          </Defs>
-          <Circle cx="150" cy="150" r={150 - cameraInset} fill={`url(#${id}-covered)`} />
-        </Svg>
-      </Animated.View>
+      {previewMounted && (
+        <View style={{ position: 'absolute', top: 17, left: 17, width: diameter - 34, height: diameter - 34, borderRadius: (diameter - 34) / 2, overflow: 'hidden' }} accessible={false} importantForAccessibility="no-hide-descendants">
+          <CameraPreview style={StyleSheet.absoluteFill} onLayout={onPreviewLayout} accessible={false} importantForAccessibility="no-hide-descendants" />
+        </View>
+      )}
       <View pointerEvents="none" style={StyleSheet.absoluteFill} accessible={false}>
         <Svg width={diameter} height={diameter} viewBox="0 0 300 300" accessible={false}>
           <Defs>
@@ -161,12 +149,57 @@ export const FingertipPreview = memo(function FingertipPreview({ diameter, cover
           </G>
         </Svg>
       </View>
+    </>
+  )
+})
+
+/** 覆盖数值／文字的局部订阅边界，不让 250ms 更新重建相机或波纹。 */
+function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, overridePresentation, blurTarget }: Pick<FingertipPreviewProps, 'display' | 'coverageProgress' | 'reducedMotion' | 'animating' | 'overridePresentation'> & { /** 只取相机与装饰背景，不包含提示文字。 */ blurTarget: RefObject<View | null> }) {
+  const snapshot = useSyncExternalStore(display.subscribe, display.getSnapshot)
+  const messages = useStore(fingertipMessages)
+  const presentation = overridePresentation ?? snapshot.presentation
+  const notice = presentation === 'ready' ? messages.hintReady
+    : presentation === 'partial' ? messages.hintPartial
+      : presentation === 'covered' ? messages.hintCovered
+        : presentation === 'running' ? messages.hintRunning
+          : presentation === 'stopping' ? messages.hintStopping
+            : presentation === 'completed' ? messages.hintCompleted : messages.hintInterrupted
+
+  useEffect(() => {
+    const value = snapshot.coveragePercent ?? 0
+    if (reducedMotion || !animating || snapshot.resourcesReleased) {
+      coverageProgress.stopAnimation()
+      coverageProgress.setValue(value)
+      return
+    }
+    const animation = Animated.timing(coverageProgress, { toValue: value, duration: 100, easing: Easing.linear, useNativeDriver: false, isInteraction: false })
+    animation.start()
+    return () => animation.stop()
+  }, [coverageProgress, reducedMotion, animating, snapshot.coveragePercent, snapshot.resourcesReleased])
+
+  return (
+    <>
       <NoticeCenter pointerEvents="none">
         <Notice>
-          <AppText variant="caption" tone="secondary" numberOfLines={2} ellipsizeMode="tail" style={localStyles.previewNoticeText}>{notice}</AppText>
+          {/* Android 的模糊半径为 96 / 8 = 12，chrome 白色叠层约为 96% × 75% = 72%。 */}
+          <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={96} blurReductionFactor={8} tint="systemChromeMaterial" style={StyleSheet.absoluteFill} pointerEvents="none" accessible={false} />
+          <AppText variant="caption" numberOfLines={2} ellipsizeMode="tail" style={localStyles.previewNoticeText}>{notice}</AppText>
         </Notice>
       </NoticeCenter>
-      <CoverageReadout coverageProgress={coverageProgress} coverageLabel={coverageLabel} waitingDescription={waitingDescription} coveredDescription={coveredDescription} />
+      <CoverageReadout coveragePercent={snapshot.coveragePercent} coverageReady={snapshot.coverageReady} coverageLabel={messages.coverage} waitingDescription={messages.previewWaiting} coveredDescription={messages.previewCovered} />
+    </>
+  )
+}
+
+/** 保留圆形布局与同一个 Animated.Value；覆盖反馈和稳定预览互不重绘。 */
+export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion, display, overridePresentation }: FingertipPreviewProps) {
+  const blurTarget = useRef<View | null>(null)
+  return (
+    <PreviewFrame style={{ width: diameter, height: diameter }}>
+      <BlurTargetView ref={blurTarget} style={[StyleSheet.absoluteFill, localStyles.circle]} accessible={false} importantForAccessibility="no-hide-descendants">
+        <PreviewScene diameter={diameter} coverageProgress={coverageProgress} previewMounted={previewMounted} onPreviewLayout={onPreviewLayout} animating={animating} reducedMotion={reducedMotion} />
+      </BlurTargetView>
+      <CoverageOverlay display={display} coverageProgress={coverageProgress} animating={animating} reducedMotion={reducedMotion} overridePresentation={overridePresentation} blurTarget={blurTarget} />
     </PreviewFrame>
   )
 })

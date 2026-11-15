@@ -65,8 +65,8 @@ test('图表在每个真实缺口断线，并保留采集时间、幅值与固�
   assert.deepEqual(plot.points, [[0, -2], [50, 3], [125, null], [200, 7], [250, -1]]);
   assert.equal(plot.startTimeMs, -5_750);
   assert.equal(plot.endTimeMs, 250);
-  assert.equal(plot.minimum, -2);
-  assert.equal(plot.maximum, 7);
+  assert.equal(plot.minimum, -7);
+  assert.equal(plot.maximum, 2);
   assert.deepEqual(withGap, original);
   const cutSegment = withGap.map((sample, index) => ({ ...sample, segmentIndex: index >= 3 ? 1 : 0 }));
   assert.equal(buildRPPGWaveformPlot(cutSegment, 6_000).points.filter(([, value]) => value === null).length, 2);
@@ -80,7 +80,7 @@ test('空图和恒定信号仍有合法坐标范围，不以零值伪造曲线',
   assert.ok(empty.maximum > empty.minimum);
   const constant = appendRPPGRealtimeBatch([], batch({ values: [4, 4, 4] }), boundedLimit);
   const plot = buildRPPGWaveformPlot(constant, 6_000);
-  assert.equal((4 - plot.minimum) / (plot.maximum - plot.minimum), 0.5);
+  assert.equal((-4 - plot.minimum) / (plot.maximum - plot.minimum), 0.5);
   const one = buildRPPGWaveformPlot(constant.slice(0, 1));
   assert.equal(one.endTimeMs - one.startTimeMs, 50);
 });
@@ -108,7 +108,7 @@ test('产品保留整轮三十秒真实历史，首样本归零且追加不复�
   assert.equal(history.lastSample.timeMs, 102_950);
 });
 
-test('产品历史拒绝重复迟到批次，新会话与独立历史不携带上一轮数据或包络', async () => {
+test('产品历史拒绝重复迟到批次，新会话与独立历史不携带上一轮数据', async () => {
   const { createRPPGWaveformHistory, appendRPPGWaveformHistory } = await waveformModule;
   const history = createRPPGWaveformHistory();
   appendRPPGWaveformHistory(history, batch({ sequence: 10, values: [-100, 100] }));
@@ -122,10 +122,6 @@ test('产品历史拒绝重复迟到批次，新会话与独立历史不携带�
   assert.deepEqual(history.points, [[0, 4]]);
   assert.equal(history.originTimeMs, 650_000);
   assert.equal(history.latestTimeMs, 0);
-  assert.equal(history.rawMinimum, 4);
-  assert.equal(history.rawMaximum, 4);
-  assert.ok(history.maximum > history.minimum);
-  assert.ok(history.minimum < 4 && history.maximum > 4);
   assert.deepEqual(independent.points, []);
 });
 
@@ -142,22 +138,21 @@ test('产品历史按相对采集时间追加，漏批、切段和时间缺口�
   ]);
 });
 
-test('产品纵轴以本轮累计极值占据底边起10%至85%，新极值扩展包络而非跟随回看窗口', async () => {
+test('早期异常离开六秒窗口后恢复正常振幅，回看仍使用当时窗口的尺度', async () => {
   const { createRPPGWaveformHistory, appendRPPGWaveformHistory } = await waveformModule;
+  const { getPulseWindowRange, selectPulseWindow } = await import('../src/shared/components/PulseWaveHistory/pulseWaveWindow.ts');
   const history = createRPPGWaveformHistory();
-  appendRPPGWaveformHistory(history, batch({ values: [2, 8] }));
-  const initialMinimum = history.minimum;
-  const initialMaximum = history.maximum;
-  const heightRatio = (value) => (value - history.minimum) / (history.maximum - history.minimum);
-  assert.ok(Math.abs(heightRatio(2) - 0.1) < 1e-12);
-  assert.ok(Math.abs(heightRatio(8) - 0.85) < 1e-12);
-  appendRPPGWaveformHistory(history, batch({ sequence: 1, startTimeMs: 100, values: [3, 7] }));
-  assert.equal(history.minimum, initialMinimum);
-  assert.equal(history.maximum, initialMaximum);
-  appendRPPGWaveformHistory(history, batch({ sequence: 2, startTimeMs: 200, values: [-4, 11] }));
-  assert.ok(history.minimum < initialMinimum);
-  assert.ok(history.maximum > initialMaximum);
-  assert.ok(Math.abs(heightRatio(-4) - 0.1) < 1e-12);
-  assert.ok(Math.abs(heightRatio(11) - 0.85) < 1e-12);
-  assert.deepEqual(history.points.slice(0, 2), [[0, 2], [50, 8]]);
+  appendRPPGWaveformHistory(history, batch({ values: [-1_000, 1_000] }));
+  appendRPPGWaveformHistory(history, batch({ sequence: 1, startTimeMs: 7_000, values: [2, 8, 3, 7] }));
+  const range = (start) => getPulseWindowRange(selectPulseWindow(history.points, start, 200), start);
+  const normal = range(1_150);
+  const ratio = (value) => (value - normal.minimum) / (normal.maximum - normal.minimum);
+  assert.ok(Math.abs(ratio(-8) - 0.1) < 1e-12);
+  assert.ok(Math.abs(ratio(-2) - 0.85) < 1e-12);
+  const early = range(0);
+  assert.ok(early.maximum - early.minimum > 2_000);
+  appendRPPGWaveformHistory(history, batch({ sequence: 2, startTimeMs: 15_000, values: [-99_000, 99_000] }));
+  assert.deepEqual(range(1_150), normal);
+  assert.deepEqual(range(0), early);
+  assert.deepEqual(history.points.slice(0, 2), [[0, -1_000], [50, 1_000]]);
 });

@@ -13,6 +13,9 @@ import type {
   CameraCaptureOptionsRequest,
   CameraConfig,
   CameraDescriptor,
+  FingertipCaptureConfig,
+  FingertipPulseBatch,
+  FingertipSnapshot,
   StopCaptureResult,
 } from '../native/Acquisition.nitro'
 import { CameraConfigValidationError, validateCameraConfig } from './CameraConfigValidator'
@@ -39,7 +42,7 @@ interface CachedCaptureOptionsQuery {
   value: CameraCaptureOptions
 }
 
-/** 暴露控制命令与低频状态订阅，不传递像素或记录批次。 */
+/** 暴露控制与低频事实，并独立订阅有界展示脉搏，不传递像素或原始记录。 */
 export class AcquisitionClient {
   private cameraCapabilityQueryRevision = 0
   private captureOptionsQueryRevision = 0
@@ -65,6 +68,37 @@ export class AcquisitionClient {
   subscribe(listener: (snapshot: AcquisitionSnapshot) => void): () => void {
     const listenerId = this.native.addListener(listener)
     return () => this.native.removeListener(listenerId)
+  }
+
+  /** 读取当前指尖轮次事实，不打开相机。 */
+  getFingertipSnapshot(): FingertipSnapshot | null {
+    return this.native.getFingertipSnapshot()
+  }
+
+  /** 订阅指尖低频事实；解除订阅不停止采集。 */
+  subscribeFingertip(listener: (snapshot: FingertipSnapshot | null) => void): () => void {
+    const id = this.native.addFingertipListener(listener)
+    return () => this.native.removeFingertipListener(id)
+  }
+
+  /** 订阅有界展示脉搏；不接收原始 PPG 或像素。 */
+  subscribeFingertipPulse(listener: (batch: FingertipPulseBatch) => void): () => void {
+    const id = this.native.addFingertipPulseListener(listener)
+    return () => this.native.removeFingertipPulseListener(id)
+  }
+
+  /** 在本调用方预览上建立覆盖观测，由原生决定正式开始。 */
+  async startFingertipCapture(config: FingertipCaptureConfig): Promise<string> {
+    const result = this.unwrap(await this.native.startFingertipCapture(config))
+    if (result.captureId == null) {
+      throw new AcquisitionError('MISSING_CAPTURE_ID', '指尖观测未返回本轮标识。')
+    }
+    return result.captureId
+  }
+
+  /** 停止确切轮次，并等待数据及文件完整收尾。 */
+  async stopFingertipCapture(captureId: string): Promise<void> {
+    this.unwrap(await this.native.stopFingertipCapture(captureId))
   }
 
   /** 枚举当前 CameraX 可用于主动采集的逻辑相机，不申请权限或打开设备。 */

@@ -13,6 +13,7 @@ class PPGRecordProcessor {
     frame: PixelFrameView,
     statistics: PixelBlockStatistics,
     blockLayout: CameraBlockLayout,
+    coverageUsable: Boolean? = null,
   ): PPGFrameRecord {
     check(statistics.rows == blockLayout.rows && statistics.columns == blockLayout.columns) {
       "本帧块统计与冻结布局不一致。"
@@ -24,6 +25,7 @@ class PPGRecordProcessor {
       frameIndex = frame.frameIndex,
       blockLayout = blockLayout,
       averagesYuv = statistics.averagesYuv,
+      coverageUsable = coverageUsable,
     )
   }
 }

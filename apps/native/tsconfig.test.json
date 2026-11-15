@@ -36,7 +36,6 @@
     "src/app/preferences/types.ts",
     "src/app/preferences/measurementGuide.ts",
     "src/app/measurement/entry.ts",
-    "src/pages/measurement/FingertipMeasurement/fingertipDisplay.ts",
     "src/app/startup/startupFlow.ts",
     "src/pages/home/healthPresentation.ts",
     "src/pages/user/authFormErrors.ts",

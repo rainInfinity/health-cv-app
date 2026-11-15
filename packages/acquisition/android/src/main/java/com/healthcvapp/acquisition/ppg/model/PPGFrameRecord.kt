@@ -16,6 +16,8 @@ class PPGFrameRecord internal constructor(
   val blockLayout: CameraBlockLayout,
   /** 每块连续保存 Y、U、V 均值；数组由本帧记录独占。 */
   internal val averagesYuv: DoubleArray,
+  /** 同帧覆盖是否满足正式维持门槛，仅用于展示处理，不写入原始 CSV。 */
+  internal val coverageUsable: Boolean? = null,
 ) {
   /** 当前帧包含的行优先块数。 */
   val blockCount: Int = blockLayout.blockCount.toInt()

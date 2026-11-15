@@ -52,7 +52,7 @@ import com.healthcvapp.acquisition.ppg.processing.PPGRecordProcessor
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureFailure
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureSession
 import com.margelo.nitro.core.NullType
-import java.lang.ref.WeakReference
+import com.healthcvapp.acquisition.ppg.fingertip.*
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -79,7 +79,12 @@ internal class PPGController(context: ReactContext) {
   private val listenerIds = AtomicLong(0)
   private val listeners = ConcurrentHashMap<Double, (AcquisitionSnapshot) -> Unit>()
   private val completedArtifacts = LinkedHashMap<String, PPGArtifact>()
-  private var previewView: WeakReference<PreviewView>? = null
+  private val ownership = PPGCommandOwnership()
+  private val fingertipCoverage = FingertipCoverageEstimator()
+  val fingertip = FingertipController(
+    controllerScope, commandMutex, createFingertipHost(), SystemClock::elapsedRealtimeNanos,
+  )
+  private val previews = PPGPreviewRegistry<PreviewView>()
   private var state = AcquisitionState.CLOSED
   private var cameraSessionId: String? = null
   private var activeSession: PPGCaptureSession? = null
@@ -115,21 +120,27 @@ internal class PPGController(context: ReactContext) {
     framePipeline = FramePipeline(PixelStatisticsExtractor(), listOf(coverageProcessor)),
     ppgRecordProcessor = PPGRecordProcessor(),
     onPreviewFrameFailure = ::onCameraInterrupted,
+    onFrameEvaluated = { frame ->
+      val coverage = fingertipCoverage.estimate(frame)
+      fingertip.onCoverage(coverage, frame.processingElapsedNanos)
+      coverage.usable
+    },
   )
 
   /** 关联当前原生预览视图；挂载本身不会打开相机。 */
   fun attachPreview(view: PreviewView) {
-    synchronized(lock) { previewView = WeakReference(view) }
+    previews.attach(view)
   }
 
   /** 清理当前视图引用，避免旧 React 页面继续持有相机 Surface。 */
   fun detachPreview(view: PreviewView) {
-    val detachedWhileOpen = synchronized(lock) {
-      if (previewView?.get() !== view) return
-      previewView = null
-      state == AcquisitionState.PREVIEW || state == AcquisitionState.CAPTURING || state == AcquisitionState.STOPPING
+    val detachedWhileOpen = previews.detach(view) && synchronized(lock) {
+      state != AcquisitionState.CLOSED
     }
-    if (detachedWhileOpen) controllerScope.launch { closeCamera() }
+    if (detachedWhileOpen) ownership.current()?.let { ownerId ->
+      requestClose(ownerId, "host_destroyed")
+      controllerScope.launch { closeCamera(ownerId, "host_destroyed") }
+    }
   }
 
   /** 返回原生状态快照，不执行任何设备操作。 */
@@ -171,14 +182,19 @@ internal class PPGController(context: ReactContext) {
   }
 
   /** 按显式相机配置打开原生预览；配置校验完成后才申请互斥租约。 */
-  suspend fun openCamera(config: ModelPPGConfig): AcquisitionCommandResult = commandMutex.withLock {
+  fun beginOpen(ownerId: String): Long = ownership.beginOpen(ownerId)
+
+  suspend fun openCamera(config: ModelPPGConfig, ownerId: String, openVersion: Long): AcquisitionCommandResult {
+    return commandMutex.withLock {
     synchronized(lock) {
-      if (state != AcquisitionState.CLOSED) {
+      if (!ownership.mayOpen(ownerId, openVersion)) {
+        return@withLock commandResult("CAMERA_BUSY", "相机已被占用或本次打开已取消。")
+      }
+      if (state != AcquisitionState.CLOSED && !(state == AcquisitionState.FAILED && cameraUseLease == null && activeSession == null)) {
         return@withLock commandResult("CAMERA_STATE_INVALID", "当前相机周期未关闭，不能提交新配置。")
       }
     }
-
-    val activePreview = synchronized(lock) { previewView?.get() }
+    val activePreview = previews.candidate()
       ?: return@withLock commandResult("PREVIEW_UNAVAILABLE", "相机预览视图尚未就绪。")
     val owner = reactContext.currentActivity as? LifecycleOwner
       ?: return@withLock commandResult("ACTIVITY_UNAVAILABLE", "当前界面无法绑定 Android 相机生命周期。")
@@ -200,6 +216,15 @@ internal class PPGController(context: ReactContext) {
     val newCameraSessionId = UUID.randomUUID().toString()
     val cameraLease = CameraUseGuard.tryAcquire(newCameraSessionId)
       ?: return@withLock commandResult("CAMERA_BUSY", "相机正被另一种采集会话使用。")
+    if (!ownership.acquire(ownerId, openVersion)) {
+      cameraLease.close()
+      return@withLock commandResult("CAMERA_OPEN_CANCELLED", "相机打开请求已取消。")
+    }
+    if (!previews.bind(activePreview)) {
+      cameraLease.close()
+      ownership.release(ownerId)
+      return@withLock commandResult("PREVIEW_UNAVAILABLE", "预览宿主已卸载。")
+    }
     synchronized(lock) { cameraUseLease = cameraLease }
     updateSnapshot {
       state = AcquisitionState.OPENING
@@ -240,7 +265,7 @@ internal class PPGController(context: ReactContext) {
       )
       var openFailure: Pair<String, String>? = null
       synchronized(lock) {
-        if (state != AcquisitionState.OPENING || cameraSessionId != newCameraSessionId) {
+        if (ownership.isClosing(ownerId) || state != AcquisitionState.OPENING || cameraSessionId != newCameraSessionId) {
           openFailure = (errorCode ?: "CAMERA_INTERRUPTED") to (errorMessage ?: "相机在打开期间中断。")
         } else {
           state = AcquisitionState.PREVIEW
@@ -250,14 +275,19 @@ internal class PPGController(context: ReactContext) {
         dispatchSnapshot(snapshotLocked())
       }
       openFailure?.let { details ->
-        runCatching { cameraSource.close() }
-        releaseCameraUseLease(cameraLease)
+        val released = runCatching { cameraSource.close() }.isSuccess
+        if (released) releaseCameraUseLease(cameraLease)
+        updateSnapshot {
+          state = if (released) AcquisitionState.CLOSED else AcquisitionState.FAILED
+          if (released) cameraSessionId = null
+          errorCode = details.first
+          errorMessage = details.second
+        }
         return@withLock commandResult(details.first, details.second)
       }
       commandResult()
     } catch (error: Throwable) {
-      runCatching { cameraSource.close() }
-      releaseCameraUseLease(cameraLease)
+      if (runCatching { cameraSource.close() }.isSuccess) releaseCameraUseLease(cameraLease)
       val details = cameraError(error)
       updateSnapshot {
         state = AcquisitionState.FAILED
@@ -266,6 +296,7 @@ internal class PPGController(context: ReactContext) {
       }
       commandResult(details.first, details.second)
     }
+  }
   }
 
   /** 应用锁请求并等待同一相机周期的 CaptureResult 确认。 */
@@ -365,7 +396,7 @@ internal class PPGController(context: ReactContext) {
       }
     }
     pending?.fail(CameraSourceException("CAMERA_INTERRUPTED", "相机周期失败并已开始清理。"))
-    runCatching { cameraSource.close() }
+    try { cameraSource.close() } catch (_: Throwable) { return }
     val lease = synchronized(lock) {
       if (cameraSessionId != openedCameraSessionId) return@synchronized null
       activeSession = null
@@ -373,11 +404,17 @@ internal class PPGController(context: ReactContext) {
       previewCaptureMetadata.clear()
       cameraUseLease.also { cameraUseLease = null }
     }
+    ownership.current()?.let(ownership::release)
+    previews.releaseBound()
     lease?.close()
   }
 
   /** 只有当前周期的锁状态经真实结果确认后才创建采集文件和正式窗口。 */
-  suspend fun startCapture(): AcquisitionCommandResult = commandMutex.withLock {
+  suspend fun startCapture(ownerId: String): AcquisitionCommandResult = commandMutex.withLock {
+    if (!ownership.owns(ownerId)) return@withLock commandResult("CAMERA_NOT_OWNER", "调用方不拥有当前相机。")
+    if (ownership.isClosing(ownerId) || fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
+      return@withLock commandResult("CAPTURE_STATE_INVALID", "相机正在指尖轮次或关闭中。")
+    }
     val captureConfiguration = synchronized(lock) {
       if (state != AcquisitionState.PREVIEW) {
         return@withLock commandResult("CAMERA_NOT_READY", "相机预览尚未就绪，无法开始采集。")
@@ -482,7 +519,11 @@ internal class PPGController(context: ReactContext) {
   }
 
   /** 先完成当前文件，再解除所需锁；解锁失败保留产物并关闭相机。 */
-  suspend fun stopCapture(): StopCaptureResult = commandMutex.withLock {
+  suspend fun stopCapture(ownerId: String): StopCaptureResult = commandMutex.withLock {
+    if (!ownership.owns(ownerId)) return@withLock stopResult(error = "CAMERA_NOT_OWNER", message = "调用方不拥有当前相机。")
+    if (fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
+      return@withLock stopResult(error = "FINGERTIP_CAPTURE_ACTIVE", message = "指尖轮次必须按 captureId 停止。")
+    }
     val stopContext = synchronized(lock) {
       val session = activeSession
         ?: return@withLock stopResult(error = "NOT_CAPTURING", message = "当前没有正在采集的会话。")
@@ -568,10 +609,30 @@ internal class PPGController(context: ReactContext) {
   }
 
   /** 正常停止当前采集、解绑相机并保留所有已完成文件。 */
-  suspend fun closeCamera(): AcquisitionCommandResult = commandMutex.withLock {
+  suspend fun closeCamera(ownerId: String, reason: String = "user_stopped"): AcquisitionCommandResult {
+    requestClose(ownerId, reason)
+    val finger = fingertip.snapshot(ownerId)
+    if (finger != null && !finger.resourcesReleased) {
+      val result = fingertip.stop(ownerId, reason = reason)
+      val failure = result?.fileFailure ?: result?.resourceFailure
+      return commandResult(failure?.code, failure?.message)
+    }
+    return commandMutex.withLock {
+      if (!ownership.owns(ownerId)) return@withLock commandResult()
+      closeCameraInternal()
+    }
+  }
+
+  /** 先于命令互斥登记关闭意图，阻止尚未执行的自动开始。 */
+  fun requestClose(ownerId: String, reason: String = "user_stopped") {
+    fingertip.requestEnd(ownerId, reason = reason)
+    ownership.requestClose(ownerId)
+  }
+
+  private suspend fun closeCameraInternal(): AcquisitionCommandResult {
     val currentState = synchronized(lock) { state }
     if (currentState == AcquisitionState.CLOSED && synchronized(lock) { activeSession == null }) {
-      return@withLock commandResult()
+      return commandResult()
     }
     updateSnapshot { state = AcquisitionState.CLOSING }
 
@@ -585,17 +646,26 @@ internal class PPGController(context: ReactContext) {
         closeFailure = captureError(error)
       }
     }
+    var resourcesReleased = false
     try {
       cameraSource.close()
+      resourcesReleased = true
     } catch (error: Throwable) {
       if (closeFailure == null) closeFailure = "CAMERA_CLOSE_FAILED" to (error.message ?: "相机资源释放失败。")
     }
-    synchronized(lock) { cameraUseLease.also { cameraUseLease = null } }?.close()
+    if (resourcesReleased) {
+      val ownerId = ownership.current()
+      synchronized(lock) { cameraUseLease.also { cameraUseLease = null } }?.close()
+      ownerId?.let(ownership::release)
+      previews.releaseBound()
+    }
 
     updateSnapshot {
       activeSession = null
-      cameraSessionId = null
-      cameraConfigSummary = null
+      if (resourcesReleased) {
+        cameraSessionId = null
+        cameraConfigSummary = null
+      }
       cameraLockStatus = ModelCameraLockStatus(
         phase = ModelCameraLockPhase.NOT_REQUESTED,
         aeLocked = null,
@@ -621,7 +691,104 @@ internal class PPGController(context: ReactContext) {
         errorMessage = closeFailure!!.second
       }
     }
-    closeFailure?.let { commandResult(it.first, it.second) } ?: commandResult()
+    return closeFailure?.let { commandResult(it.first, it.second) } ?: commandResult()
+  }
+
+
+  private fun createFingertipHost() = object : FingertipHost {
+    override fun configuration(ownerId: String): ModelPPGConfigSummary? = synchronized(lock) {
+      cameraConfigSummary?.takeIf {
+        ownership.owns(ownerId) && !ownership.isClosing(ownerId) && state == AcquisitionState.PREVIEW
+      }
+    }
+
+    override suspend fun prepare(
+      onRecord: (com.healthcvapp.acquisition.ppg.model.PPGCaptureRecord) -> Unit,
+      onFailure: (PPGCaptureFailure) -> Unit,
+    ): PPGCaptureSession {
+      val (cameraId, summary) = synchronized(lock) {
+        checkNotNull(cameraSessionId) to checkNotNull(cameraConfigSummary)
+      }
+      val config = summary.cameraSummary.requestedConfig
+      if (config.exposure.locked || config.whiteBalance.locked) {
+        applyAndConfirmCameraLocks(cameraId, config.exposure.locked, config.whiteBalance.locked,
+          if (config.exposure.locked) true else null, if (config.whiteBalance.locked) true else null,
+          ModelCameraLockPhase.LOCKED)
+      }
+      return PPGCaptureSession(
+        filesDirectory = applicationContext.filesDir, blockLayout = summary.blockLayout,
+        onFailure = onFailure, onAcceptedRecord = onRecord,
+      ).also { it.prepare() }
+    }
+
+    override fun activate(session: PPGCaptureSession, start: Long, end: Long) {
+      val buffered = synchronized(lock) {
+        check(state == AcquisitionState.PREVIEW)
+        session.openWindow(start, end, maximumFrameGapNanos = FingertipSignalConfig.COVERAGE_LOSS_NANOS)
+        activeSession = session
+        state = AcquisitionState.CAPTURING
+        errorCode = null
+        errorMessage = null
+        previewCaptureMetadata.toList().also { previewCaptureMetadata.clear() }
+      }
+      controllerScope.launch(Dispatchers.Default) { buffered.forEach(session::offerCaptureMetadata) }
+      updateSnapshot {}
+    }
+
+    override suspend fun discard(session: PPGCaptureSession) {
+      session.discardPrepared()
+      val (cameraId, config) = synchronized(lock) {
+        checkNotNull(cameraSessionId) to checkNotNull(cameraConfigSummary).cameraSummary.requestedConfig
+      }
+      if (config.exposure.locked || config.whiteBalance.locked) {
+        applyAndConfirmCameraLocks(cameraId, false, false,
+          if (config.exposure.locked) false else null, if (config.whiteBalance.locked) false else null,
+          ModelCameraLockPhase.RELEASED)
+      }
+    }
+
+    override suspend fun finish(session: PPGCaptureSession?): FingertipFinishResult {
+      updateSnapshot { state = AcquisitionState.CLOSING }
+      var artifact: PPGArtifact? = null
+      var fileFailure: PPGCaptureFailure? = null
+      if (session != null) {
+        try {
+          if (session.hasFormalWindow) {
+            artifact = session.stop(SystemClock.elapsedRealtime(), synchronized(lock) { cameraConfigSummary }).also(::rememberArtifact)
+          } else session.discardPrepared()
+        } catch (error: Throwable) {
+          fileFailure = error as? PPGCaptureFailure ?: PPGCaptureFailure("FILE_FINALIZATION_FAILED", error.message ?: "文件未能定稿。", error)
+        }
+      }
+      var resourceFailure: PPGCaptureFailure? = null
+      try { cameraSource.close() } catch (error: Throwable) {
+        resourceFailure = PPGCaptureFailure("CAMERA_CLOSE_FAILED", error.message ?: "相机资源释放失败。", error)
+      }
+      synchronized(lock) {
+        activeSession = null
+        pendingLockConfirmation = null
+        captureFrameTimestampAfterLock = null
+        previewCaptureMetadata.clear()
+        if (resourceFailure == null) {
+          cameraUseLease?.close()
+          cameraUseLease = null
+          ownership.current()?.let(ownership::release)
+          previews.releaseBound()
+          cameraSessionId = null
+          cameraConfigSummary = null
+          cameraWidth = 0
+          cameraHeight = 0
+          framesPerSecond = 0.0
+          torchAvailable = false
+          cameraLockStatus = ModelCameraLockStatus(ModelCameraLockPhase.NOT_REQUESTED, null, null, null, null)
+          state = AcquisitionState.CLOSED
+        } else state = AcquisitionState.FAILED
+        errorCode = (fileFailure ?: resourceFailure)?.code
+        errorMessage = (fileFailure ?: resourceFailure)?.message
+        dispatchSnapshot(snapshotLocked())
+      }
+      return FingertipFinishResult(artifact, fileFailure, resourceFailure, resourceFailure == null)
+    }
   }
 
   /** 返回本进程中已正常关闭且仍保留在应用私有目录的文件引用。 */
@@ -631,7 +798,11 @@ internal class PPGController(context: ReactContext) {
   /** 释放失败或迟到的打开结果所持有的专属令牌。 */
   private fun releaseCameraUseLease(lease: CameraUseLease) {
     synchronized(lock) {
-      if (cameraUseLease === lease) cameraUseLease = null
+      if (cameraUseLease === lease) {
+        cameraUseLease = null
+        ownership.current()?.let(ownership::release)
+        previews.releaseBound()
+      }
     }
     lease.close()
   }
@@ -760,6 +931,19 @@ internal class PPGController(context: ReactContext) {
     }
     if (shouldIgnore) return
 
+    val ownerId = ownership.current()
+    if (ownerId != null && fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
+      val reason = when (code) {
+        "APP_BACKGROUND" -> "app_background"
+        "HOST_DESTROYED" -> "host_destroyed"
+        else -> "technical_failure"
+      }
+      if (reason == "technical_failure") fingertip.fail(code, message)
+      else fingertip.requestEnd(ownerId, reason = reason)
+      pendingBarrier?.fail(CameraSourceException(code, message))
+      controllerScope.launch { fingertip.stop(ownerId, reason = reason) }
+      return
+    }
     pendingBarrier?.fail(CameraSourceException(code, message))
     updateSnapshot {
       if (cameraSessionId == openedSessionId && state != AcquisitionState.CLOSING && state != AcquisitionState.CLOSED) {
@@ -789,30 +973,7 @@ internal class PPGController(context: ReactContext) {
             state != AcquisitionState.CLOSED
         }
         if (!shouldClose) return@withLock
-        try {
-          cameraSource.close()
-        } catch (error: Throwable) {
-          updateSnapshot {
-            if (
-              cameraSessionId == openedSessionId &&
-              state != AcquisitionState.CLOSING &&
-              state != AcquisitionState.CLOSED
-            ) {
-              state = AcquisitionState.FAILED
-              errorCode = "CAMERA_CLOSE_FAILED"
-              errorMessage = error.message ?: "相机资源释放失败。"
-            }
-          }
-        }
-        val lease = synchronized(lock) {
-          if (cameraSessionId != openedSessionId) return@synchronized null
-          activeSession = null
-          pendingLockConfirmation = null
-          captureFrameTimestampAfterLock = null
-          previewCaptureMetadata.clear()
-          cameraUseLease.also { cameraUseLease = null }
-        }
-        lease?.close()
+        closeCameraInternal()
       }
     }
   }
@@ -894,7 +1055,7 @@ internal class PPGController(context: ReactContext) {
     if (value == null) Variant_NullType_AcquisitionArtifact.create(NullType.NULL)
     else Variant_NullType_AcquisitionArtifact.create(toNitroArtifact(value))
 
-  private fun toNitroArtifact(value: PPGArtifact) = AcquisitionArtifact(
+  internal fun toNitroArtifact(value: PPGArtifact) = AcquisitionArtifact(
     sessionId = value.sessionId,
     files = value.files.map { file ->
       AcquisitionArtifactFile(

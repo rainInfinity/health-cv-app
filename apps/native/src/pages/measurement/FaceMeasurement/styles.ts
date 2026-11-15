@@ -65,13 +65,6 @@ export const Readout = styled.View`
   gap: 8px;
 `
 
-/** 细分隔线不会因状态文字长度变化移动读数。 */
-export const Divider = styled.View`
-  width: 1px;
-  height: 36px;
-  background-color: ${({ theme }) => theme.roles.divider};
-`
-
 /** 波形标题与曲线构成可延伸的下半区。 */
 export const WavePanel = styled.View`
   flex-grow: 1;

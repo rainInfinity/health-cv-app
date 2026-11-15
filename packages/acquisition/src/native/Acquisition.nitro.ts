@@ -1,4 +1,4 @@
-/** 定义仅向 JS 暴露低频采集控制与状态的 Nitro 契约。 */
+/** 定义采集控制、低频事实及指尖有界展示脉搏例外的 Nitro 契约。 */
 
 import type { HybridObject } from 'react-native-nitro-modules'
 
@@ -386,6 +386,84 @@ export interface CameraLockStatus {
   errorMessage: string | null
 }
 
+/** 指尖轮次的原生阶段；正式窗口不含观测与准备。 */
+export type FingertipPhase = 'observing' | 'starting' | 'capturing' | 'stopping' | 'completed' | 'interrupted' | 'failed'
+
+/** 指尖有效取景区域的空间覆盖状态。 */
+export type FingertipCoverageState = 'unknown' | 'uncovered' | 'partial' | 'complete'
+
+/** 指尖正式窗口配置。 */
+export interface FingertipCaptureConfig {
+  /** 正式采集目标时长，单位毫秒。 */
+  durationMillis: number
+}
+
+/** 一轮指尖采集的低频事实；绝对纳秒使用十进制字符串。 */
+export interface FingertipSnapshot {
+  /** 本轮唯一标识。 */
+  captureId: string
+  /** 正式 PPG 会话标识，观测期间为空。 */
+  sessionId: string | null
+  /** 当前原生阶段。 */
+  phase: FingertipPhase
+  /** ROI 空间覆盖估计；无有效输入时为空。 */
+  coveragePercent: number | null
+  /** 空间覆盖分类。 */
+  coverageState: FingertipCoverageState
+  /** 原生连续稳定且新鲜的就绪事实。 */
+  coverageReady: boolean
+  /** 正式目标时长，单位毫秒。 */
+  targetDurationMillis: number
+  /** 正式窗口已用时长，单位毫秒。 */
+  elapsedMillis: number
+  /** 正式窗口剩余时长，单位毫秒。 */
+  remainingMillis: number
+  /** 本轮真实结束原因。 */
+  endReason: string | null
+  /** 稳定错误码。 */
+  errorCode: string | null
+  /** 可展示的错误说明。 */
+  errorMessage: string | null
+  /** 本轮已定稿文件，与资源释放事实独立。 */
+  artifact: AcquisitionArtifact | null
+  /** 正式入口单调窗口下界，单位纳秒。 */
+  windowStartElapsedNanos: string | null
+  /** 正式入口单调窗口上界，单位纳秒。 */
+  windowEndElapsedNanos: string | null
+  /** 正式窗口接收的真实帧数。 */
+  receivedFrameCount: number
+  /** 首帧相机采样时间，单位纳秒。 */
+  firstFrameTimestampNanos: string | null
+  /** 末帧相机采样时间，单位纳秒。 */
+  lastFrameTimestampNanos: string | null
+  /** 本轮冻结配置及实际帧摘要。 */
+  cameraConfigSummary: CameraConfigSummary | null
+  /** 相机与补光资源是否已经释放。 */
+  resourcesReleased: boolean
+}
+
+/** 指尖观测轮次建立结果，不等待正式窗口结束。 */
+export interface FingertipStartResult extends AcquisitionCommandResult {
+  /** 成功建立的轮次标识；失败时为空。 */
+  captureId: string | null
+}
+
+/** 独立于文件保存的有界真实展示脉搏批次。 */
+export interface FingertipPulseBatch {
+  /** 本轮标识，用于拒绝迟到批次。 */
+  captureId: string
+  /** 来源正式 PPG 会话标识。 */
+  sessionId: string
+  /** 连续有效信号片段标识。 */
+  segmentId: number
+  /** 递增批次序号，缺号表示展示丢批。 */
+  sequence: number
+  /** 相对本轮正式首帧的真实毫秒时间，最多 64 点。 */
+  timesMillis: number[]
+  /** 与时间逐项对应的任意单位真实幅值。 */
+  values: number[]
+}
+
 /** 实现 Android 后摄生命周期、会话控制和低频通知的原生对象。 */
 export interface Acquisition extends HybridObject<{ android: 'kotlin' }> {
   getSnapshot(): AcquisitionSnapshot
@@ -400,6 +478,13 @@ export interface Acquisition extends HybridObject<{ android: 'kotlin' }> {
   startCapture(): Promise<AcquisitionCommandResult>
   stopCapture(): Promise<StopCaptureResult>
   closeCamera(): Promise<AcquisitionCommandResult>
+  startFingertipCapture(config: FingertipCaptureConfig): Promise<FingertipStartResult>
+  getFingertipSnapshot(): FingertipSnapshot | null
+  stopFingertipCapture(captureId: string): Promise<AcquisitionCommandResult>
+  addFingertipListener(listener: (snapshot: FingertipSnapshot | null) => void): number
+  removeFingertipListener(listenerId: number): void
+  addFingertipPulseListener(listener: (batch: FingertipPulseBatch) => void): number
+  removeFingertipPulseListener(listenerId: number): void
   listArtifacts(): Promise<AcquisitionArtifact[]>
   addListener(listener: (snapshot: AcquisitionSnapshot) => void): number
   removeListener(listenerId: number): void

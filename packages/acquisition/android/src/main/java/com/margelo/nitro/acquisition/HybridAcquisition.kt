@@ -25,9 +25,12 @@ import com.margelo.nitro.acquisition.Variant_NullType_Double
 
 /** 暴露手动相机控制、完成文件查询和低频状态监听。 */
 class HybridAcquisition : HybridAcquisitionSpec() {
+  /** 每个控制实例独立授权，不能停止其他页面或手动客户端持有的相机。 */
+  private val ownerId = java.util.UUID.randomUUID().toString()
   private val controller = PPGRuntime.get(
     checkNotNull(NitroModules.applicationContext) { "Nitro ReactApplicationContext is unavailable" },
   )
+  private val fingertipBridge = FingertipAcquisitionBridge(ownerId, controller.fingertip, controller::toNitroArtifact)
 
   /** 返回当前相机和会话状态，不触发设备副作用。 */
   override fun getSnapshot(): AcquisitionSnapshot = controller.getSnapshot()
@@ -66,9 +69,11 @@ class HybridAcquisition : HybridAcquisitionSpec() {
   }
 
   /** 按完整配置请求打开所选相机；桥接形状错误在触及控制器前返回结构化失败。 */
-  override fun openCamera(config: CameraConfig): Promise<AcquisitionCommandResult> = Promise.async {
+  override fun openCamera(config: CameraConfig): Promise<AcquisitionCommandResult> {
+    val openVersion = controller.beginOpen(ownerId)
+    return Promise.async {
     try {
-      controller.openCamera(config.toModel())
+      controller.openCamera(config.toModel(), ownerId, openVersion)
     } catch (error: CameraConfigFailure) {
       AcquisitionCommandResult(
         errorCode = Variant_NullType_String.create(error.code),
@@ -76,21 +81,51 @@ class HybridAcquisition : HybridAcquisitionSpec() {
       )
     }
   }
+  }
 
   /** 在预览就绪后创建单独的正式采集会话。 */
   override fun startCapture(): Promise<AcquisitionCommandResult> = Promise.async {
-    controller.startCapture()
+    controller.startCapture(ownerId)
   }
 
   /** 等待队列尾批和文件关闭后返回产物或结构化失败。 */
   override fun stopCapture(): Promise<StopCaptureResult> = Promise.async {
-    controller.stopCapture()
+    controller.stopCapture(ownerId)
   }
 
   /** 结束采集后解绑相机并保留已完成文件。 */
-  override fun closeCamera(): Promise<AcquisitionCommandResult> = Promise.async {
-    controller.closeCamera()
+  override fun closeCamera(): Promise<AcquisitionCommandResult> {
+    controller.requestClose(ownerId)
+    return Promise.async { controller.closeCamera(ownerId) }
   }
+
+  /** 建立本实例指尖轮次；正式开始由原生覆盖门控驱动。 */
+  override fun startFingertipCapture(config: FingertipCaptureConfig): Promise<FingertipStartResult> =
+    Promise.async { fingertipBridge.start(config.durationMillis) }
+
+  /** 读取本实例指尖事实，未知轮次保持显式空值。 */
+  override fun getFingertipSnapshot(): Variant_NullType_FingertipSnapshot =
+    fingertipBridge.snapshot()
+
+  /** 同步登记指定轮次的停止意图，再异步等待完整屏障。 */
+  override fun stopFingertipCapture(captureId: String): Promise<AcquisitionCommandResult> {
+    fingertipBridge.requestStop(captureId)
+    return Promise.async { fingertipBridge.stop(captureId) }
+  }
+
+  /** 订阅低频覆盖、阶段、正式计时与文件/资源事实。 */
+  override fun addFingertipListener(listener: (snapshot: Variant_NullType_FingertipSnapshot?) -> Unit): Double =
+    fingertipBridge.addListener(listener)
+
+  /** 删除低频指尖订阅，不停止采集。 */
+  override fun removeFingertipListener(listenerId: Double) = fingertipBridge.removeListener(listenerId)
+
+  /** 订阅每批最多 64 点、每订阅四批的真实标量波形。 */
+  override fun addFingertipPulseListener(listener: (batch: FingertipPulseBatch) -> Unit): Double =
+    fingertipBridge.addPulseListener(listener)
+
+  /** 删除波形订阅，不影响原始双 CSV 或原生截止。 */
+  override fun removeFingertipPulseListener(listenerId: Double) = fingertipBridge.removePulseListener(listenerId)
 
   /** 返回本进程已正常完成的采集文件引用。 */
   override fun listArtifacts(): Promise<Array<com.margelo.nitro.acquisition.AcquisitionArtifact>> = Promise.async {

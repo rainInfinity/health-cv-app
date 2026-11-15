@@ -10,6 +10,16 @@ export const ChartFrame = styled.View`
   border-radius: ${({ theme }) => theme.radius.md}px;
 `
 
+/** 内阴影固定在实际坐标边缘，不随曲线平移或占用绘图区高度。 */
+export const PlotEdge = styled.View`
+  position: absolute;
+  left: 4px;
+  right: 12px;
+  top: 8px;
+  bottom: 8px;
+  border-radius: 12px;
+`
+
 /** 扩展画布只在原生合成层平移，外层负责裁切六秒可见区域。 */
 export const MovingChart = styled(Animated.View)`
   position: absolute;
