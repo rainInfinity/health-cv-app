@@ -1,7 +1,7 @@
 /** 保存已确认的页面结构；数据与交互由 app.js 统一接管。 */
 import { measurementPages } from './measurement-pages.js';
 import { faceMeasurementPage } from './face-measurement.js';
-import { fingertipMeasurementPage } from './fingertip-measurement.js';
+import { bloodPressureMeasurementPage, fingertipMeasurementPage } from './contact-measurement.js';
 
 /** 登录和注册共享品牌组合，避免标志、名称或 Slogan 出现差异。 */
 const authBrand = `
@@ -17,6 +17,7 @@ export const pages = {
   ...measurementPages,
   'face-measurement': faceMeasurementPage,
   'fingertip-measurement': fingertipMeasurementPage,
+  'blood-pressure-measurement': bloodPressureMeasurementPage,
   desktop: `
 <div class="phone brand-desktop">
 <div class="status"><span>9:41</span><span class="system" aria-hidden="true">▮▮▮ ▰</span></div>
@@ -363,7 +364,7 @@ ${[
 <circle cx="73" cy="58" r="2.5" fill="var(--primary)"/>
 </g>
 </svg>
-<span class="function-copy"><span class="function-title">血压检测</span><span class="function-description">指尖检测，获取血压估计值。</span><span class="function-recency"></span></span>
+<span class="function-copy"><span class="function-title">血压检测</span><span class="function-description">覆盖后摄并贴靠胸口，获取血压估计值。</span><span class="function-recency"></span></span>
 <span class="function-chevron" aria-hidden="true">›</span>
 </button>
 <button type="button" class="function-card" data-metric="3" aria-label="血氧饱和度功能说明">

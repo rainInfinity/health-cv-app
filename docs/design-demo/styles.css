@@ -132,13 +132,13 @@ button:active:not(:disabled) { opacity: .78; }
 .demo-toast-states button { position: relative; width: 100%; min-height: 36px; padding: 7px 8px; text-align: left; font-size: 12px; line-height: 20px; white-space: nowrap; }
 .demo-toast-states button::before { content: ''; position: absolute; left: -8px; top: 50%; width: 8px; border-top: 1px solid #087D8340; }
 .demo-component-previews button:hover { background: var(--surface); }
-.demo-controls { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.demo-controls { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; width: 100%; min-width: 0; gap: 12px; margin-top: 16px; }
 .demo-reset, .demo-finger-control { display: block; min-height: 44px; border: 1px solid var(--border); border-radius: 9999px; background: var(--surface); padding: 10px 14px; font-size: 14px; line-height: 20px; white-space: nowrap; }
 .demo-finger-control[hidden] { display: none; }
 .demo-finger-control:disabled { cursor: default; background: var(--brand-subtle); color: var(--action); }
 .demo-finger-control:focus-visible { outline: 2px solid var(--action); outline-offset: 4px; }
 .demo-finger-control:not(:disabled):active { filter: brightness(.94); }
-.demo-stage { position: relative; }
+.demo-stage { position: relative; width: 390px; flex-shrink: 0; }
 .demo-mobile-label { font-size: 12px; color: var(--muted); margin-bottom: 10px; text-align: center; }
 .device { position: relative; width: 390px; height: 844px; max-height: calc(100dvh - 144px); overflow: hidden; border-radius: 32px; background: var(--canvas); box-shadow: 0 16px 64px #26262616; isolation: isolate; }
 .device-screen { height: 100%; }
@@ -476,7 +476,6 @@ button:active:not(:disabled) { opacity: .78; }
 .face-status-indicator { width: 14px; height: 14px; flex-shrink: 0; border: 2px solid currentColor; border-radius: 50%; }
 .face-session .face-heart-hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .face-timer { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 4px; padding-inline: 8px; }
-.face-readout-divider { flex: 0 0 1px; height: 36px; background: var(--border); pointer-events: none; }
 .face-timer-label { color: var(--muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .face-elapsed { display: block; color: var(--secondary); font-size: 28px; line-height: 36px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center; }
 .face-wave-panel { display: flex; flex: 1 0 auto; flex-direction: column; min-width: 0; min-height: 0; margin-top: 8px; padding-top: 8px; }
@@ -488,7 +487,14 @@ button:active:not(:disabled) { opacity: .78; }
 .wave-live[hidden] { display: none; }
 .wave-live svg { width: 22px; height: 22px; pointer-events: none; }
 .wave-live:active { background: var(--brand-subtle); }
-.pulse-wave { touch-action: pan-y; overscroll-behavior-x: contain; cursor: grab; }
+.pulse-wave {
+  position: relative; touch-action: pan-y; overscroll-behavior-x: contain; cursor: grab;
+}
+.pulse-wave::before {
+  content: ''; position: absolute; inset: 8px 12px 8px 4px; pointer-events: none;
+  border-radius: 12px;
+  box-shadow: inset 0 0 18px 3px color-mix(in srgb, var(--mint) 14%, transparent);
+}
 .pulse-wave:active { cursor: grabbing; }
 .pulse-wave:focus-visible, .wave-live:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
 /* 最小高度保证波形可读，其余高度弹性填满，避免 SVG 固有尺寸反向撑高容器。 */
@@ -515,8 +521,8 @@ button:active:not(:disabled) { opacity: .78; }
   .face-heart-value strong { font-size: 36px; line-height: 48px; }
 }
 /* 指尖取景延续引导页的正圆；外环只呈现覆盖程度，检测耗时单独计时。 */
-.phone.fingertip-measurement { --finger-cover-opacity: 0; display: flex; flex-direction: column; padding-bottom: 0; background: linear-gradient(165deg, var(--brand-subtle), var(--surface) 75%); }
-.fingertip-measurement > .status { flex-shrink: 0; }
+.phone.contact-measurement { --finger-cover-opacity: 0; display: flex; flex-direction: column; padding-bottom: 0; background: linear-gradient(165deg, var(--brand-subtle), var(--surface) 75%); }
+.contact-measurement > .status { flex-shrink: 0; }
 .finger-main { flex: 1 0 auto; display: flex; flex-direction: column; min-height: 0; }
 .finger-viewfinder { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px var(--page-gutter) 24px; text-align: center; }
 .finger-camera-wrap { position: relative; isolation: isolate; width: min(100%, clamp(216px, calc(100dvh - 534px), 332px)); aspect-ratio: 1; flex-shrink: 0; border-radius: 50%; box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 12%, transparent); }
@@ -531,7 +537,7 @@ button:active:not(:disabled) { opacity: .78; }
 .finger-camera-description { position: absolute; inset: 0; }
 .finger-coverage { position: absolute; bottom: 6px; left: 50%; transform: translate(-50%, 50%); display: flex; align-items: center; justify-content: center; width: 88px; padding: 4px 12px; border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--surface)); border-radius: 10px; background: var(--brand-subtle); color: var(--action); }
 .finger-coverage > strong { font-size: 20px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.finger-camera-notice { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: 80%; margin: 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--secondary); font-size: 14px; line-height: 22px; pointer-events: none; }
+.finger-camera-notice { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: 80%; margin: 0; padding: 12px 16px; border: 1px solid color-mix(in srgb, var(--surface) 55%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%); color: var(--ink); font-size: 14px; font-weight: 600; line-height: 22px; pointer-events: none; }
 .finger-camera-notice > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .finger-data { flex: 1 0 auto; display: flex; flex-direction: column; padding: 20px; border-radius: var(--radius) var(--radius) 0 0; background: var(--surface); }
 .finger-session { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; }
@@ -551,6 +557,34 @@ button:active:not(:disabled) { opacity: .78; }
 .finger-step figcaption { flex-shrink: 0; margin-top: 8px; }
 .finger-step h2 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; }
 .finger-step p { margin: 4px 0 0; color: var(--secondary); font-size: 12px; line-height: 18px; }
+/* 六帧均为 320 ms，贴靠高亮随对应矢量帧切换，不对人体轮廓做插值。 */
+.chest-guidance:not([inert]) .chest-reference-sequence { animation: chest-reference-sequence 1.92s steps(6, end) infinite; }
+@keyframes chest-reference-sequence {
+  from { transform: translateX(0); }
+  to { transform: translateX(-3072px); }
+}
+.finger-missing-guide > p { margin: 0; }
+.finger-missing-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px; margin-top: 20px; text-align: center; }
+.finger-missing-examples .finger-step-art { height: 176px; flex-shrink: 0; }
+.finger-missing-examples h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; }
+.finger-missing-examples .finger-back-hand { animation: finger-place 3.6s ease-in-out both; }
+.finger-missing-examples .finger-cover-feedback { animation: finger-cover-confirm 3.6s ease-in-out both; }
+/* 镜头与手机固定，手指抬起后移到相邻镜头；高亮与移动共享周期。 */
+.finger-switch-hand { animation: finger-switch-position 5s ease-in-out infinite; }
+.finger-switch-source { animation: finger-switch-source 5s ease-in-out infinite; }
+.finger-switch-target { animation: finger-switch-target 5s ease-in-out infinite; }
+.finger-switch-arrow { animation: finger-switch-direction 5s ease-in-out infinite; }
+@keyframes finger-switch-position {
+  0%, 20% { transform: translate(0, 0); opacity: 1; }
+  38% { transform: translate(75px, -110px); opacity: 1; }
+  56%, 80% { transform: translate(170px, 30px); opacity: 1; }
+  88% { transform: translate(170px, 30px); opacity: 0; }
+  89%, 94% { transform: translate(0, 0); opacity: 0; }
+  100% { transform: translate(0, 0); opacity: 1; }
+}
+@keyframes finger-switch-source { 0%, 20%, 100% { opacity: .8; } 32%, 94% { opacity: 0; } }
+@keyframes finger-switch-target { 0%, 38%, 92%, 100% { opacity: 0; } 56%, 80% { opacity: .9; } }
+@keyframes finger-switch-direction { 0%, 20%, 68%, 100% { opacity: 0; } 32%, 54% { opacity: 1; } }
 .finger-wave-panel { display: flex; flex-direction: column; }
 .finger-wave-panel > .face-wave-heading { flex-shrink: 0; }
 /* 隔离 ECharts 旧 SVG 的固有高度，实际绘图区高度由 Flex 剩余空间决定。 */
@@ -563,10 +597,10 @@ button:active:not(:disabled) { opacity: .78; }
 .finger-pagination > button[aria-current="true"]::before { clip-path: inset(0 0 round 3px); }
 .finger-pagination > button:active { background: var(--brand-subtle); }
 .finger-pagination > button:focus-visible, .finger-panel-slot:focus-visible { outline: 2px solid var(--action); outline-offset: -2px; }
-.fingertip-measurement > .gesture { position: static; flex-shrink: 0; margin: 0 auto 8px; }
-.fingertip-measurement:is([data-phase="covering"], [data-phase="running"], [data-phase="completed"]) .finger-state { background: var(--brand-subtle); color: var(--action); }
-.fingertip-measurement[data-phase="running"] .finger-countdown > time { color: var(--action); }
-.fingertip-measurement:is([data-phase="covering"], [data-phase="running"]) .face-status-indicator { border-color: color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; }
+.contact-measurement > .gesture { position: static; flex-shrink: 0; margin: 0 auto 8px; }
+.contact-measurement:is([data-phase="covering"], [data-phase="running"], [data-phase="completed"]) .finger-state { background: var(--brand-subtle); color: var(--action); }
+.contact-measurement[data-phase="running"] .finger-countdown > time { color: var(--action); }
+.contact-measurement:is([data-phase="covering"], [data-phase="running"]) .face-status-indicator { border-color: color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; }
 @media (max-height: 740px) {
   .finger-viewfinder { padding-top: 4px; }
   .finger-data { padding: 16px; }
@@ -645,6 +679,7 @@ button:active:not(:disabled) { opacity: .78; }
 .sheet-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .sheet-header h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .sheet-close { width: 44px; height: 44px; border: 0; background: var(--subtle); border-radius: 50%; font-size: 24px; flex-shrink: 0; }
+#sheet[data-confirm-only="true"] .sheet-header { justify-content: center; }
 #sheet-content { font-size: 14px; line-height: 24px; }
 #sheet-content p { color: var(--secondary); }
 #sheet-content .cta { margin-top: 20px; }
@@ -674,7 +709,7 @@ button:active:not(:disabled) { opacity: .78; }
   .device { margin-top: 22px; width: 100%; height: calc(100dvh - 22px); max-height: none; border-radius: 0; box-shadow: none; }
 }
 @media (min-width: 500px) and (max-width: 800px) {
-  .device { max-width: 430px; margin-left: auto; margin-right: auto; }
+  .device, .demo-controls { max-width: 430px; margin-left: auto; margin-right: auto; }
 }
 @media (max-width: 359px) {
   :root { --page-gutter: 16px; --card-padding: 14px; --home-bottom: 12px; }
@@ -699,10 +734,10 @@ button:active:not(:disabled) { opacity: .78; }
   .toast { animation: toast-appear 120ms ease-out; }
   .toast[data-status=loading] .toast-icon .icon, .button-spinner { animation: toast-spin 900ms linear infinite; }
   .face-measurement[data-phase="running"] .face-status-indicator,
-  .fingertip-measurement:is([data-phase="covering"], [data-phase="running"]) .face-status-indicator { animation: toast-spin 900ms linear infinite; }
-  .fingertip-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::before,
-  .fingertip-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::after { animation: finger-preview-ripple 3.2s ease-out infinite; }
-  .fingertip-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::after { animation-delay: -1.6s; }
+  .contact-measurement:is([data-phase="covering"], [data-phase="running"]) .face-status-indicator { animation: toast-spin 900ms linear infinite; }
+  .contact-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::before,
+  .contact-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::after { animation: finger-preview-ripple 3.2s ease-out infinite; }
+  .contact-measurement:is([data-phase="covering"], [data-phase="running"]) .finger-camera-wrap::after { animation-delay: -1.6s; }
   @keyframes finger-preview-ripple {
     0% { transform: scale(1); opacity: 0; }
     18% { opacity: .45; }

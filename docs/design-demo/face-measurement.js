@@ -26,12 +26,10 @@ export const faceMeasurementPage = `<div class="phone face-measurement" data-pha
         <div class="face-heart-label"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg><h2>平均心率</h2></div>
         <div class="face-heart-value"><strong data-face-heart>--</strong><span>次/分</span></div>
       </div>
-      <span class="face-readout-divider" aria-hidden="true"></span>
       <div class="face-timer">
         <span class="face-timer-label">检测计时</span>
         <time class="face-elapsed" data-face-time aria-label="检测计时">00:00</time>
       </div>
-      <span class="face-readout-divider" aria-hidden="true"></span>
       <div class="face-session">
         <div class="face-capture-status" role="status"><span class="face-status-indicator" aria-hidden="true"></span><span data-face-status>待开始</span></div>
         <p class="face-heart-hint" data-face-hint>点击开始</p>

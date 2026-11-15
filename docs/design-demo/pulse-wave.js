@@ -8,7 +8,7 @@ export function mountPulseWave(plot, pulseAt) {
   const range = panel.querySelector('[data-wave-range]');
   const liveButton = panel.querySelector('[data-wave-live]');
   const colors = getComputedStyle(plot);
-  const tone = colors.getPropertyValue('--action').trim();
+  const tone = colors.getPropertyValue('--primary').trim();
   // 模拟幅度上界取 1.01，通过固定纵轴范围将数据放在坐标高度的 10%–85%（底边为 0%）。
   const amplitudeSpan = 1.01 / (.85 - .1);
   // 每项为 [采样开始后的秒数, 模拟幅度]；历史项一经追加便不再改写。
@@ -22,7 +22,7 @@ export function mountPulseWave(plot, pulseAt) {
     tooltip: { show: false },
     xAxis: {
       type: 'value', min: -6, max: 0,
-      axisLine: { show: true, onZero: false, lineStyle: { color: colors.getPropertyValue('--border').trim(), opacity: .7 } },
+      axisLine: { show: false },
       axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false },
     },
     yAxis: { type: 'value', min: -.1 * amplitudeSpan, max: .9 * amplitudeSpan, show: false },
@@ -36,7 +36,7 @@ export function mountPulseWave(plot, pulseAt) {
     series: [{
       id: 'pulse', type: 'line', data: [], showSymbol: false, silent: true,
       lineStyle: {
-        width: 2.5, cap: 'round', join: 'round',
+        width: 1.5, cap: 'round', join: 'round',
         color: {
           type: 'linear', x: 0, y: 0, x2: 1, y2: 0, global: true,
           colorStops: [{ offset: 0, color: echartsColor.modifyAlpha(tone, 0) }, { offset: .14, color: tone }, { offset: 1, color: tone }],

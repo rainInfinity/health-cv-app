@@ -5,7 +5,7 @@ import { allRecords, mountHistoryPanel, reading, initialHistory, periodRange, ra
 import { escapeHtml, icon, measurementRecency } from './ui.js';
 import { initialProfile, profileFields, createProfilePatch, applyProfilePatch } from './profile.js';
 import { mountFaceMeasurement } from './face-measurement.js';
-import { mountFingertipMeasurement } from './fingertip-measurement.js';
+import { mountContactMeasurement } from './contact-measurement.js';
 
 const app = document.querySelector('#app');
 const sheet = document.querySelector('#sheet');
@@ -128,21 +128,25 @@ function startAuthAction(button, label, message, complete) {
 }
 
 /** 在手机区域内打开弹层，禁用背景页面并保留焦点返回位置。 */
-function openSheet(title, html) {
+function openSheet(title, html, { confirmOnly = false } = {}) {
   if (!sheet.open) lastFocus = document.activeElement;
   const openingOpacity = sheet.open ? getComputedStyle(sheetOverlay).opacity : '0';
   sheetAnimation?.cancel();
   sheetClosing = false;
+  sheet.dataset.confirmOnly = String(confirmOnly);
+  const closeButton = sheet.querySelector('.sheet-close');
+  closeButton.hidden = confirmOnly;
   document.querySelector('#sheet-title').textContent = title;
   sheetContent.innerHTML = html;
   app.inert = true;
+  document.querySelector('.demo-controls').inert = true;
   sheetOverlay.hidden = false;
   if (!sheet.open) sheet.show();
   sheetAnimation = sheetOverlay.animate(
     [{ opacity: openingOpacity }, { opacity: 1 }],
     { duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200, easing: 'ease-out' },
   );
-  sheet.querySelector('.sheet-close').focus();
+  (confirmOnly ? sheetContent.querySelector('button') : closeButton).focus();
 }
 
 /** 淡出完成后才隐藏弹层并恢复焦点；重新打开时取消旧的关闭动画。 */
@@ -162,6 +166,7 @@ function closeSheet() {
     sheetAnimation = undefined;
     sheetClosing = false;
     app.inert = false;
+    document.querySelector('.demo-controls').inert = false;
     if (lastFocus?.isConnected) lastFocus.focus();
   };
 }
@@ -214,7 +219,9 @@ function render() {
   if (activeRoute === 'login' || activeRoute === 'register') bindAuth();
   if (activeRoute === 'onboarding') bindOnboarding();
   if (activeRoute === 'face-measurement') disposeMeasurement = mountFaceMeasurement(app);
-  if (activeRoute === 'fingertip-measurement') disposeMeasurement = mountFingertipMeasurement(app);
+  if (activeRoute === 'fingertip-measurement' || activeRoute === 'blood-pressure-measurement') {
+    disposeMeasurement = mountContactMeasurement(app, (title, html) => openSheet(title, html, { confirmOnly: true }));
+  }
   if (activeRoute.startsWith('measure-')) {
     if (measurementTarget?.route === activeRoute) {
       app.querySelector('.guide-topbar > span').textContent = measurementTarget.label;
@@ -354,11 +361,10 @@ function metricDetail(index) {
 
 /** 测量入口只介绍交互，不打开相机，也不自动产生结果。 */
 function measurement(index) {
+  if (index === 0) return cameraMeasurement('chest');
   if (index === 1 || index === 2) return cameraMeasurement('fingertip');
   const metric = records[index];
-  const instructions = index === 0
-    ? ['测量前保持安静，按照正式功能的检测指引准备。', '正式功能需要相机等权限；这个网站不会请求权限。', '完成检测和处理后才会产生结果，Demo 不模拟医学推理。']
-    : ['本页展示对应功能的入口与说明。', '网站不连接传感器、相机或风险评估服务。', '可前往历史页体验固定样例的筛选与详情。'];
+  const instructions = ['本页展示对应功能的入口与说明。', '网站不连接传感器、相机或风险评估服务。', '可前往历史页体验固定样例的筛选与详情。'];
   openSheet(metric.title, `<p>${metric.description}</p><ol>${instructions.map((text) => `<li>${text}</li>`).join('')}</ol><p class="scope-note">演示模式，不会执行真实测量或上传。</p><button type="button" class="cta" data-action="history-route" data-metric="${index}">查看示例记录 ${icon('arrow')}</button><button type="button" class="sheet-secondary" data-action="close-sheet">返回</button>`);
 }
 
@@ -380,12 +386,6 @@ function captureEntry(kind) {
 /** 开始前提醒开启声音；跳过说明页也需确认，不读取或调整系统音量。 */
 function promptMeasurement(kind) {
   openSheet('提示', `<p>为便于听取检测过程中的操作引导，请打开手机声音，并将媒体音量调至清晰可闻。</p><button type="button" class="cta" data-action="measurement-confirm" data-measurement="${kind}">立即检测</button><button type="button" class="sheet-secondary" data-action="close-sheet">返回准备</button>`);
-}
-
-/** 说明页和跳过说明的入口共用演示反馈，绝不启动真实测量。 */
-function previewMeasurement() {
-  closeSheet();
-  toast('仅为设计演示，不启动相机，不记录或上传数据。');
 }
 
 /** 用户可修改的资料只保留在当前标签页，不冒充服务端更新。 */
@@ -427,7 +427,7 @@ function onClick(event) {
   if (action === 'measurement-preview') return promptMeasurement(app.querySelector('[data-guide]').dataset.guide);
   if (action === 'measurement-confirm') {
     const kind = control.dataset.measurement;
-    return kind === 'face' || kind === 'fingertip' ? navigate(`${kind}-measurement`) : previewMeasurement();
+    return navigate(kind === 'chest' ? 'blood-pressure-measurement' : `${kind}-measurement`);
   }
   if (action === 'close-sheet') return closeSheet();
   if (action === 'preview-sheet') return openSheet('弹窗预览', '<p>这是手机区域内的示例弹窗，仅用于预览样式，不会修改演示数据。</p><p>可点击关闭按钮、遮罩或按 Esc 关闭。</p><button type="button" class="cta" data-action="close-sheet">知道了</button>');
@@ -578,7 +578,7 @@ const navigationGroups = [
 const functionPreviewRoutes = [
   { route: 'measure-face', label: '面部检测引导', measurement: 'face-measurement' },
   { route: 'measure-fingertip', label: '指尖检测引导', measurement: 'fingertip-measurement' },
-  { route: 'measure-chest', label: '血压检测引导' },
+  { route: 'measure-chest', label: '血压检测引导', measurement: 'blood-pressure-measurement' },
 ];
 document.querySelector('.demo-routes').innerHTML = `<div class="demo-nav-root">页面</div><div class="demo-nav-branches">${navigationGroups.map((group, index) =>
   `<section class="demo-nav-group" aria-labelledby="demo-group-${index}"><h2 id="demo-group-${index}">${group.label}</h2><ul>${group.children.map((route) => `<li><a href="#${route}">${routes[route]}</a>${route === 'home' || route === 'account' ? `<ul class="demo-state-views"><li><a href="#${route}-guest" aria-label="${routes[route]}，未登录">未登录</a></li><li><a href="#${route}-logged-in" aria-label="${routes[route]}，已登录">已登录</a></li></ul>` : ''}${route === 'functions' ? `<ul class="demo-function-views">${functionPreviewRoutes.map(({ route: preview, label, measurement }) => `<li><a href="#${preview}">${label}</a>${measurement ? `<ul class="demo-measure-views"><li><a href="#${measurement}">${routes[measurement]}</a></li></ul>` : ''}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul></section>`,
@@ -611,12 +611,12 @@ document.addEventListener('keydown', (event) => {
 });
 document.querySelector('.sheet-close').addEventListener('click', closeSheet);
 sheetOverlay.addEventListener('click', (event) => {
-  if (event.target === sheetOverlay) closeSheet();
+  if (event.target === sheetOverlay && sheet.dataset.confirmOnly !== 'true') closeSheet();
 });
 sheet.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
-    closeSheet();
+    if (sheet.dataset.confirmOnly !== 'true') closeSheet();
   }
   if (event.key !== 'Tab') return;
   const controls = [...sheet.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]

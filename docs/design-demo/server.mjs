@@ -12,7 +12,7 @@ const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ...['app.js', 'pages.js', 'measurement-pages.js', 'face-measurement.js', 'fingertip-measurement.js', 'pulse-wave.js', 'data.js', 'history.js', 'ui.js', 'profile.js'].map((name) => [`/${name}`, [name, 'text/javascript; charset=utf-8']]),
+  ...['app.js', 'pages.js', 'measurement-pages.js', 'face-measurement.js', 'contact-measurement.js', 'contact-illustrations.js', 'chest-reference-illustrations.js', 'pulse-wave.js', 'data.js', 'history.js', 'ui.js', 'profile.js'].map((name) => [`/${name}`, [name, 'text/javascript; charset=utf-8']]),
   ['/vendor/echarts.esm.min.js', ['../../node_modules/echarts/dist/echarts.esm.min.js', 'text/javascript; charset=utf-8']],
   ...[
     ['xinmu-logo.svg', 'image/svg+xml'],
