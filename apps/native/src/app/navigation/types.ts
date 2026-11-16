@@ -71,8 +71,10 @@ export type RootStackParamList = {
   MeasurementGuide: MeasurementRouteParams
   /** 显式开始后才打开真实前摄的面部心率页。 */
   FaceMeasurement: { target?: MeasurementTarget } | undefined
-  /** 无权限和采集副作用的指尖本地展示页。 */
+  /** 明确入口后准备真实后摄的指尖检测页。 */
   FingertipMeasurement: { target?: MeasurementTarget } | undefined
+  /** 覆盖及 IMU 联合准入驱动的血压本地采集页。 */
+  BloodPressureMeasurement: { target?: MeasurementTarget } | undefined
   /** 真实登录表单；可仅回填用户名。 */
   Login: { username?: string } | undefined
   /** 真实注册表单；可仅回填用户名。 */

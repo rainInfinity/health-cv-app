@@ -15,10 +15,10 @@ import { AppText } from '@/shared/components/AppText'
 import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
 import { useFeedback } from '@/shared/components/FeedbackHost'
 import { XinmuLogo } from '@/shared/graphics'
-import { FingertipInstructionArtwork } from '@/pages/measurement/FingertipMeasurement/FingertipInstructionArtwork'
-import { FingertipPreview } from '@/pages/measurement/FingertipMeasurement/FingertipPreview'
+import { FingertipInstructionArtwork } from '@/pages/measurement/ContactMeasurement/FingertipInstructionArtwork'
+import { FingertipPreview } from '@/pages/measurement/ContactMeasurement/FingertipPreview'
 import { FingertipPulseWave } from '@/pages/measurement/FingertipMeasurement/FingertipPulseWave'
-import { FingertipPlacementGuide } from '@/pages/measurement/FingertipMeasurement/FingertipPlacementGuide'
+import { FingertipPlacementGuide } from '@/pages/measurement/ContactMeasurement/FingertipPlacementGuide'
 
 import { useFingertipMeasurement } from './useFingertipMeasurement'
 import { fingertipMessages } from './fingertipMessages'
@@ -26,7 +26,7 @@ import {
   BrandSlot, Carousel, Countdown, DataPanel, HeaderAction, HeaderTitle, Instructions,
   PageButton, PageMark, Pagination, Screen, Session, StatusBadge, StatusGroup, Step,
   Toolbar, Viewfinder, localStyles,
-} from './styles'
+} from '../ContactMeasurement/styles'
 
 
 /** 明确入口自动授权准备，正式开始与三十秒截止均消费原生事实。 */

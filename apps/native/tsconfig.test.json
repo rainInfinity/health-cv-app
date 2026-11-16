@@ -37,6 +37,8 @@
     "src/app/preferences/measurementGuide.ts",
     "src/app/measurement/entry.ts",
     "src/app/startup/startupFlow.ts",
+    "src/pages/measurement/FingertipMeasurement/fingertipPresentation.ts",
+    "src/pages/measurement/BloodPressureMeasurement/bloodPressurePresentation.ts",
     "src/pages/home/healthPresentation.ts",
     "src/pages/user/authFormErrors.ts",
     "src/pages/user/signOutFeedback.ts",

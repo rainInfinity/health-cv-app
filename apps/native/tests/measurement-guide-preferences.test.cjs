@@ -44,7 +44,7 @@ test('从一个指尖指标保存偏好，其他指尖指标与部位入口共�
   assert.equal(createMeasurementGuidePreferences().fingertip.get(), false);
 });
 
-test('持久跳过偏好让各入口直达检测页，不经过引导；未接入方式不伪造页面', () => {
+test('持久跳过偏好让面部、指尖和血压入口直达各自检测页，不经过引导', () => {
   const preference = createMeasurementGuidePreferences();
   preference.face.set(true);
   preference.fingertip.set(true);
@@ -52,19 +52,29 @@ test('持久跳过偏好让各入口直达检测页，不经过引导；未接�
   const restored = createMeasurementGuidePreferences();
   for (const entry of [...Object.values(METHOD_ENTRIES), ...Object.values(FEATURE_ENTRIES)]) {
     const route = resolveMeasurementEntry(entry, restored[entry.method].get());
-    if (entry.method === 'chest') {
-      assert.equal(route, null);
-    } else {
-      assert.deepEqual(route, [
-        entry.method === 'face' ? 'FaceMeasurement' : 'FingertipMeasurement',
-        { target: entry.target },
-      ]);
-    }
+    assert.deepEqual(route, [
+      entry.method === 'face' ? 'FaceMeasurement' : entry.method === 'fingertip' ? 'FingertipMeasurement' : 'BloodPressureMeasurement',
+      { target: entry.target },
+    ]);
   }
   restored.fingertip.set(false);
   assert.deepEqual(resolveMeasurementEntry(FEATURE_ENTRIES.oxygen, restored.fingertip.get()), [
     'MeasurementGuide', FEATURE_ENTRIES.oxygen,
   ]);
+});
+
+test('血压部位与指标共用胸口偏好，未跳过进入准备，重建后直接到同一血压页', () => {
+  const preference = createMeasurementGuidePreferences();
+  for (const entry of [METHOD_ENTRIES.chest, FEATURE_ENTRIES.pressure]) {
+    assert.deepEqual(resolveMeasurementEntry(entry, preference.chest.get()), ['MeasurementGuide', entry]);
+  }
+  preference.chest.set(true);
+  const restored = createMeasurementGuidePreferences();
+  for (const entry of [METHOD_ENTRIES.chest, FEATURE_ENTRIES.pressure]) {
+    assert.deepEqual(resolveMeasurementEntry(entry, restored.chest.get()), ['BloodPressureMeasurement', { target: 'bloodPressure' }]);
+  }
+  assert.equal(restored.face.get(), false);
+  assert.equal(restored.fingertip.get(), false);
 });
 
 test('缺失或非法持久值不跳过，合法方式不受损坏邻项影响', () => {

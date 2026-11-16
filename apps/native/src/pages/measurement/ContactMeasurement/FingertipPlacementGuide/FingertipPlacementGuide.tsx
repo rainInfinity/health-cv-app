@@ -10,7 +10,7 @@ import { ActionButton } from '@/shared/components/ActionButton'
 import { AppText } from '@/shared/components/AppText'
 import { DialogActions, DialogMessageScroll, DialogSurface, Overlay } from '@/shared/components/FeedbackDialog/styles'
 import { FingertipRearCameraArtwork } from '../FingertipRearCameraArtwork'
-import { fingertipMessages } from '../fingertipMessages'
+import { fingertipMessages } from '../../FingertipMeasurement/fingertipMessages'
 
 import { Caption, Example, Examples, GuideContent } from './styles'
 

@@ -32,17 +32,17 @@ export const TARGET_MESSAGE_KEYS = {
   fingertipVitals: 'targetFingertip',
 } as const satisfies Record<MeasurementTarget, string>
 
-/** 功能入口可到达的页面；null 表示该检测方式尚未接入。 */
+/** 功能入口按方式与设备偏好到达唯一产品检测页面。 */
 type MeasurementEntryRoute =
   | [name: 'MeasurementGuide', params: MeasurementRouteParams]
   | [name: 'FaceMeasurement', params: { target?: MeasurementTarget }]
   | [name: 'FingertipMeasurement', params: { target?: MeasurementTarget }]
-  | null
+  | [name: 'BloodPressureMeasurement', params: { target?: MeasurementTarget }]
 
 /** 跳过偏好同时跳过引导和声音提醒，不借用隐藏的引导页承接导航。 */
 export function resolveMeasurementEntry(entry: MeasurementRouteParams, skipped: boolean): MeasurementEntryRoute {
   if (!skipped) return ['MeasurementGuide', entry]
   if (entry.method === 'face') return ['FaceMeasurement', { target: entry.target }]
   if (entry.method === 'fingertip') return ['FingertipMeasurement', { target: entry.target }]
-  return null
+  return ['BloodPressureMeasurement', { target: entry.target }]
 }

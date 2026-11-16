@@ -12,10 +12,10 @@ import { useTheme } from 'styled-components/native'
 
 import { AppText } from '@/shared/components/AppText'
 
-import { localStyles } from '@/pages/measurement/FingertipMeasurement/styles'
+import { localStyles } from '@/pages/measurement/ContactMeasurement/styles'
 import { Notice, NoticeCenter, PreviewFrame } from './styles'
-import { fingertipMessages } from '../fingertipMessages'
-import type { FingertipDisplay, FingertipDisplaySnapshot, FingertipPresentation } from '../fingertipPresentation'
+import { fingertipMessages } from '../../FingertipMeasurement/fingertipMessages'
+import type { FingertipDisplay, FingertipDisplaySnapshot, FingertipPresentation } from '../../FingertipMeasurement/fingertipPresentation'
 
 interface FingertipPreviewProps {
   /** 正圆画布直径，单位 dp。 */
@@ -27,7 +27,9 @@ interface FingertipPreviewProps {
   /** 系统减少动态效果。 */
   reducedMotion: boolean
   /** 页面私有覆盖／提示投影，不订阅采集业务或完整快照。 */
-  display: FingertipDisplay
+  display: Pick<FingertipDisplay, 'getSnapshot' | 'subscribe'>
+  /** 调用方提供具体方式的阶段指引，不改变覆盖事实。 */
+  notice?: string
   /** 本地错误与取消必须立即覆盖普通操作提示。 */
   overridePresentation: FingertipPresentation | null
   /** 授权后挂载真实预览，不隐含打开命令。 */
@@ -154,16 +156,16 @@ const PreviewScene = memo(function PreviewScene({ diameter, coverageProgress, pr
 })
 
 /** 覆盖数值／文字的局部订阅边界，不让 250ms 更新重建相机或波纹。 */
-function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, overridePresentation, blurTarget }: Pick<FingertipPreviewProps, 'display' | 'coverageProgress' | 'reducedMotion' | 'animating' | 'overridePresentation'> & { /** 只取相机与装饰背景，不包含提示文字。 */ blurTarget: RefObject<View | null> }) {
+function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, overridePresentation, notice: customNotice, blurTarget }: Pick<FingertipPreviewProps, 'display' | 'coverageProgress' | 'reducedMotion' | 'animating' | 'overridePresentation' | 'notice'> & { /** 只取相机与装饰背景，不包含提示文字。 */ blurTarget: RefObject<View | null> }) {
   const snapshot = useSyncExternalStore(display.subscribe, display.getSnapshot)
   const messages = useStore(fingertipMessages)
   const presentation = overridePresentation ?? snapshot.presentation
-  const notice = presentation === 'ready' ? messages.hintReady
+  const notice = customNotice ?? (presentation === 'ready' ? messages.hintReady
     : presentation === 'partial' ? messages.hintPartial
       : presentation === 'covered' ? messages.hintCovered
         : presentation === 'running' ? messages.hintRunning
           : presentation === 'stopping' ? messages.hintStopping
-            : presentation === 'completed' ? messages.hintCompleted : messages.hintInterrupted
+            : presentation === 'completed' ? messages.hintCompleted : messages.hintInterrupted)
 
   useEffect(() => {
     const value = snapshot.coveragePercent ?? 0
@@ -192,14 +194,14 @@ function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, 
 }
 
 /** 保留圆形布局与同一个 Animated.Value；覆盖反馈和稳定预览互不重绘。 */
-export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion, display, overridePresentation }: FingertipPreviewProps) {
+export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion, display, overridePresentation, notice }: FingertipPreviewProps) {
   const blurTarget = useRef<View | null>(null)
   return (
     <PreviewFrame style={{ width: diameter, height: diameter }}>
       <BlurTargetView ref={blurTarget} style={[StyleSheet.absoluteFill, localStyles.circle]} accessible={false} importantForAccessibility="no-hide-descendants">
         <PreviewScene diameter={diameter} coverageProgress={coverageProgress} previewMounted={previewMounted} onPreviewLayout={onPreviewLayout} animating={animating} reducedMotion={reducedMotion} />
       </BlurTargetView>
-      <CoverageOverlay display={display} coverageProgress={coverageProgress} animating={animating} reducedMotion={reducedMotion} overridePresentation={overridePresentation} blurTarget={blurTarget} />
+      <CoverageOverlay display={display} coverageProgress={coverageProgress} animating={animating} reducedMotion={reducedMotion} overridePresentation={overridePresentation} notice={notice} blurTarget={blurTarget} />
     </PreviewFrame>
   )
 })

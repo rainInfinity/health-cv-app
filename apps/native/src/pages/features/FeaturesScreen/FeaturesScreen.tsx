@@ -16,8 +16,6 @@ import type { MeasurementRouteParams, RootStackParamList } from '@/app/navigatio
 import { FEATURE_ENTRIES as FEATURE_ROUTES, METHOD_ENTRIES, resolveMeasurementEntry } from '@/app/measurement/entry'
 import { measurementGuideSkipped } from '@/app/preferences'
 import { CapturePhoto } from '@/pages/features/CapturePhoto'
-import { measurementMessages } from '@/pages/measurement/MeasurementGuide/measurementMessages'
-import { useFeedback } from '@/shared/components/FeedbackHost'
 import { AppCard } from '@/shared/components/AppCard'
 import { AppText } from '@/shared/components/AppText'
 import { PageContainer } from '@/shared/components/PageContainer'
@@ -70,8 +68,6 @@ export function FeaturesScreen() {
   const authState = useAuthState()
   const presentation = selectHealthPresentation(authState)
   const messages = useStore(featuresMessages)
-  const preparationMessages = useStore(measurementMessages)
-  const { showModal } = useFeedback()
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const [category, setCategory] = useState<'method' | 'metric'>('method')
   const [tabWidth, setTabWidth] = useState(0)
@@ -103,16 +99,7 @@ export function FeaturesScreen() {
   /** 在入口直接应用设备偏好，不挂载隐藏引导页或补弹声音提醒。 */
   const enterMeasurement = (entry: MeasurementRouteParams) => {
     const destination = resolveMeasurementEntry(entry, measurementGuideSkipped[entry.method].get())
-    if (destination != null) {
-      navigation.navigate(...destination)
-      return
-    }
-    showModal({
-      title: preparationMessages.notConnectedTitle,
-      message: preparationMessages.chestNotConnected,
-      closeLabel: preparationMessages.closeReminder,
-      actions: [{ label: preparationMessages.understood, primary: true }],
-    })
+    navigation.navigate(...destination)
   }
 
   return (

@@ -71,7 +71,7 @@ export function MeasurementGuideScreen({ navigation, route }: NativeStackScreenP
     setDisclaimerHeight((current) => current === nextHeight ? current : nextHeight)
   }, [])
 
-  /** 提醒和未接入反馈都只关闭当前引导页的弹层。 */
+  /** 声音提醒只关闭当前引导页的弹层。 */
   const cancelDialog = useCallback(() => closeDialog(), [closeDialog])
 
   useFocusEffect(useCallback(() => {
@@ -83,22 +83,15 @@ export function MeasurementGuideScreen({ navigation, route }: NativeStackScreenP
     return () => subscription.remove()
   }, [cancelDialog, dialog]))
 
-  /** 跳过时移除引导层级；未接入方式只显示真实能力边界。 */
+  /** 跳过时移除准备层级，其他指尖式流程保留准备页供返回。 */
   const startMeasurement = useCallback(() => {
     const destination = resolveMeasurementEntry({ method, target }, true)
-    if (destination == null) {
-      showDialog({
-        title: messages.notConnectedTitle,
-        message: messages.chestNotConnected,
-        closeLabel: messages.closeReminder,
-        actions: [{ label: messages.understood, primary: true }],
-      })
-    } else if (method === 'face' || skipped) {
+    if (method === 'face' || skipped) {
       navigation.replace(...destination)
     } else {
       navigation.navigate(...destination)
     }
-  }, [messages, method, navigation, showDialog, skipped, target])
+  }, [method, navigation, skipped, target])
 
   /** 已勾选时当次也不提醒；其他情况先在引导页内完成声音确认。 */
   const prompt = useCallback(() => {

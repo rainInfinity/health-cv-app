@@ -1,4 +1,4 @@
-/** 指尖展示沿用 Demo 的圆形取景、白面板及横向双页布局。 */
+/** 指尖与血压共用的圆形取景、白面板及横向双页布局。 */
 
 import { Animated, StyleSheet } from 'react-native'
 import styled from 'styled-components/native'
