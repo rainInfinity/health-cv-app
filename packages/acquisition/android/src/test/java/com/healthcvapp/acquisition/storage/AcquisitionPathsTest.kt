@@ -1,4 +1,4 @@
-/** 验证统一路径策略保持既有目录、文件名与会话隔离。 */
+/** 验证统一路径策略按数据类型组织产物并保持文件名与会话隔离。 */
 
 package com.healthcvapp.acquisition.storage
 
@@ -14,13 +14,13 @@ import org.junit.Test
 /** 使用临时目录验证主动和被动产物的路径布局。 */
 class AcquisitionPathsTest {
   @Test
-  fun `ppg and passive sessions keep legacy paths and isolate session files`() = withTemporaryDirectory { root ->
+  fun `ppg and passive sessions use their designated roots and isolate session files`() = withTemporaryDirectory { root ->
     val paths = AcquisitionPaths(root)
     val ppgSession = paths.ppgSessionDirectory("legacy_session-01")
     val passiveSessionId = "7f4ca24c-27cc-4d88-86e5-153d76f90123"
     val passiveSession = paths.passiveVideoSessionDirectory(passiveSessionId)
 
-    assertEquals(File(root, "acquisition/legacy_session-01"), ppgSession)
+    assertEquals(File(root, "acquisition/ppg/legacy_session-01"), ppgSession)
     assertEquals(File(ppgSession, "ppg.csv.part"), paths.ppgPartialFile("legacy_session-01"))
     assertEquals(File(ppgSession, "ppg.csv"), paths.ppgCompletedFile("legacy_session-01"))
     assertEquals(File(ppgSession, "frame.csv.part"), paths.framePartialFile("legacy_session-01"))
@@ -66,7 +66,7 @@ class AcquisitionPathsTest {
     val gyroscope = paths.sensorSessionDirectory(SensorKind.GYROSCOPE, "session-1")
     val nextSession = paths.sensorSessionDirectory(SensorKind.ACCELEROMETER, "session-2")
 
-    assertEquals(File(root, "acquisition/sensors/accelerometer/session-1"), accelerometer)
+    assertEquals(File(root, "acquisition/accelerometer/session-1"), accelerometer)
     assertEquals(File(accelerometer, "accelerometer.csv.part"), paths.sensorPartialFile(SensorKind.ACCELEROMETER, "session-1"))
     assertEquals(File(accelerometer, "accelerometer.csv"), paths.sensorCompletedFile(SensorKind.ACCELEROMETER, "session-1"))
     assertNotEquals(accelerometer, gyroscope)

@@ -158,8 +158,8 @@ class PPGFrameHandlerTest {
       assertTrue(outcome.isFailure)
       assertEquals("PIXEL_PROCESSING_FAILED", session.terminalFailure?.code)
       assertEquals(1, image.closeCount)
-      assertFalse(root.resolve("acquisition/frame-partial-block-failure/ppg.csv").exists())
-      assertFalse(root.resolve("acquisition/frame-partial-block-failure/frame.csv").exists())
+      assertFalse(root.resolve("acquisition/ppg/frame-partial-block-failure/ppg.csv").exists())
+      assertFalse(root.resolve("acquisition/ppg/frame-partial-block-failure/frame.csv").exists())
     }
   }
 
@@ -187,8 +187,8 @@ class PPGFrameHandlerTest {
       assertEquals(failure, session.terminalFailure?.cause)
       assertEquals(1, image.closeCount)
       assertThrows(IllegalStateException::class.java) { retainedReader!!.readY(0, 0) }
-      assertFalse(root.resolve("acquisition/frame-failure/ppg.csv").exists())
-      assertFalse(root.resolve("acquisition/frame-failure/frame.csv").exists())
+      assertFalse(root.resolve("acquisition/ppg/frame-failure/ppg.csv").exists())
+      assertFalse(root.resolve("acquisition/ppg/frame-failure/frame.csv").exists())
     }
   }
 

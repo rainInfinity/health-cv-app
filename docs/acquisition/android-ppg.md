@@ -277,7 +277,7 @@ PPG锁定和两个writer准备完毕、当前准入再次复核通过后，从�
 
 ## 会话、文件与停止完成
 
-每次正式采集使用独立会话标识和应用专属外部持久目录：`getExternalFilesDir(null)/acquisition/<sessionId>/`，当前包名对应 `Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/`。`AcquisitionPaths` 集中维护 `ppg.csv.part`、`frame.csv.part` 与对应完成路径；`AcquisitionFileStore` 负责拒覆盖新输出及单文件提升。正常停止等待在途帧及关联完成、排空队列后，由 `PPGSessionOutput` 关闭两个 writer 并协调完成路径；停止收尾期间不允许开始下一次采集。
+每次正式采集使用独立会话标识和应用专属外部持久目录：`getExternalFilesDir(null)/acquisition/ppg/<sessionId>/`，当前包名对应 `Android/data/com.healthcvapp.mobile/files/acquisition/ppg/<sessionId>/`。手动 PPG、产品指尖和血压 PPG 均使用此目录规则。`AcquisitionPaths` 集中维护 `ppg.csv.part`、`frame.csv.part` 与对应完成路径；`AcquisitionFileStore` 负责拒覆盖新输出及单文件提升。正常停止等待在途帧及关联完成、排空队列后，由 `PPGSessionOutput` 关闭两个 writer 并协调完成路径；停止收尾期间不允许开始下一次采集。
 
 像素处理、容量不足、消费者或文件写入失败会关闭该会话的记录入口并释放资源，不返回成功产物；未完成的 `.part` 不会伪装成 `ppg.csv`，也不承诺自动删除。关闭相机正常停止当前会话，已完成文件不会因此删除。产品指尖的覆盖丢失、用户停止及后台中断保留真实原因，可保留已正常定稿的原始文件，但不冒充采满目标；技术失败与资源释放失败分别反馈。
 

@@ -73,7 +73,7 @@ class SensorControllerTest {
       assertEquals("SENSOR_REGISTRATION_FAILED", registrationError.code)
       assertEquals(SensorPhase.FAILED, activeController.getSnapshot().phase)
       assertEquals(0, adapter.unregisterCount)
-      assertFalse(File(root, "acquisition/sensors/accelerometer/${activeController.getSnapshot().sessionId}/accelerometer.csv").exists())
+      assertFalse(File(root, "acquisition/accelerometer/${activeController.getSnapshot().sessionId}/accelerometer.csv").exists())
 
       adapter.registrationResult = true
       activeController.startCapture("test-owner", "retry", 20_000.0)
@@ -291,13 +291,13 @@ class SensorControllerTest {
 
         val error = captureFailure { controller.stopCapture("test-owner", "damaged") }
         val sessionId = checkNotNull(controller.getSnapshot().sessionId)
-        val partialFile = File(root, "acquisition/sensors/accelerometer/$sessionId/accelerometer.csv.part")
+        val partialFile = File(root, "acquisition/accelerometer/$sessionId/accelerometer.csv.part")
 
         assertEquals("SENSOR_DATA_INVALID", error.code)
         assertFalse(adapter.hasListener)
         assertTrue(partialFile.isFile)
         assertEquals(1, partialFile.readLines().size)
-        assertFalse(File(root, "acquisition/sensors/accelerometer/$sessionId/accelerometer.csv").exists())
+        assertFalse(File(root, "acquisition/accelerometer/$sessionId/accelerometer.csv").exists())
       }
     }
   }

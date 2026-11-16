@@ -134,13 +134,15 @@ adb -s <device-serial> emu sensor set magnetic-field 7.25:8.25:9.25
 
 新采集产物位于 `getExternalFilesDir(null)` 下，当前包名通常对应 `/sdcard/Android/data/com.healthcvapp.mobile/files/`。设备允许时可直接用 ADB 读取和拉取，不需要 root、`run-as` 或 debuggable 构建，也不新增存储权限。该目录不是公共目录，普通应用及文件管理器访问仍受系统限制，卸载应用仍会删除其中的文件。外部根目录不可用时明确失败，不回退内部目录。不要在运行中的缓冲文件暂不可读时断言没有采样。
 
+以下传感器命令中的 `<kind>` 替换为 `accelerometer`、`gyroscope`、`magnetometer` 或 `gravity`。
+
 ```sh
 adb -s <device-serial> shell find /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition -type f -print
-adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/ppg.csv'
-adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/frame.csv'
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/ppg/<sessionId>/ppg.csv'
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/ppg/<sessionId>/frame.csv'
 adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/session.json'
 adb -s <device-serial> shell wc -l '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/pulse.csv' '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/hr.csv'
-adb -s <device-serial> shell find /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/sensors -type f -print
+adb -s <device-serial> shell find '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<kind>' -type f -print
 adb -s <device-serial> pull /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition ./acquisition
 ```
 
@@ -159,9 +161,9 @@ adb -s <device-serial> shell dumpsys sensorservice
 adb -s <device-serial> shell dumpsys activity services com.healthcvapp.mobile/com.healthcvapp.acquisition.passive.service.PassiveCaptureService
 ```
 
-- **PPG：** 新完成目录为外部根目录下的 `acquisition/<sessionId>/`，双 CSV 均关闭并提升才是完成产物；按帧分组核对块编号与精确传感器时间戳。
+- **PPG：** 新完成目录为外部根目录下的 `acquisition/ppg/<sessionId>/`，双 CSV 均关闭并提升才是完成产物；按帧分组核对块编号与精确传感器时间戳。
 - **RPPG：** 按 [统一文件 schema](../acquisition/android-rppg.md#文件-schema-与完整发布) 核查完整标记、来源、终止／信号结论、配置／相机摘要和计数。合法中断含 `interrupted`，不等于技术失败；无有效心率不是准确率结论。
-- **传感器：** 外部根目录下的 `acquisition/sensors/<kind>/<sessionId>/<kind>.csv` 至少有一条样本才完成；`.part` 不属于完成产物。
+- **传感器：** 外部根目录下的 `acquisition/<kind>/<sessionId>/<kind>.csv` 至少有一条样本才完成；`.part` 不属于完成产物。
 - **历史视频：** `files/passive-capture/<sessionId>/video.mp4` 不转换为新 RPPG，不作为新会话结果。
 - **查询寿命：** PPG／传感器列表仅维护当前进程完成引用，重启后列表重置但文件仍保留；RPPG 查询扫描外部新结果与已有内部结果的已发布最终目录。各类临时文件都不能冒充完成文件，也没有通用自动清理承诺。
 - **资源：** 主动页离开后检查相机释放；被动服务等待时不应占相机。传感器与被动服务有独立生命周期，不能要求主动相机关闭就同时停止其他源。

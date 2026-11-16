@@ -21,16 +21,16 @@
 
 三种时间用于保留回调接收、系统事件和进程单调时钟的区别；它们不是 Unix 时间戳。请求的采样间隔与注册到 Android 的间隔均以整数微秒表示，注册值会考虑设备报告的正 `minDelay`；该参数不代表稳定的实际采样频率。
 
-新文件使用应用专属外部目录 `getExternalFilesDir(null)`，按类型和会话隔离：
+新文件使用应用专属外部目录 `getExternalFilesDir(null)`，直接按类型和会话隔离，不再设置 `sensors/` 中间目录；`<kind>` 为 `accelerometer`、`gyroscope`、`magnetometer` 或 `gravity`：
 
 ```text
-<externalFilesDir>/acquisition/sensors/<kind>/<sessionId>/<kind>.csv.part
-<externalFilesDir>/acquisition/sensors/<kind>/<sessionId>/<kind>.csv
+<externalFilesDir>/acquisition/<kind>/<sessionId>/<kind>.csv.part
+<externalFilesDir>/acquisition/<kind>/<sessionId>/<kind>.csv
 ```
 
 `.part` 是未完成文件；只有正常停止、writer 关闭成功且至少写入一条样本后，文件才提升为 `.csv` 并返回产物引用。会话失败不会作为完成文件返回。产物记录类型、会话标识、路径、文件字节数、样本行数、起止单调毫秒、请求／注册微秒间隔、物理单位和坐标系。
 
-完成文件保存在 `Android/data/com.healthcvapp.mobile/files/acquisition/sensors/` 中，独立传感器和血压 ACC 使用同一外部根目录。目录不可用时明确失败，不回退内部目录；不新增存储权限，普通应用访问仍受限制，卸载应用仍会删除文件。已有内部文件不迁移、不删除。`listArtifacts()` 只返回当前进程记录的完成引用，不扫描磁盘；进程重启后查询列表重置，已完成文件仍保留。
+完成文件保存在 `Android/data/com.healthcvapp.mobile/files/acquisition/<kind>/<sessionId>/` 中，独立传感器和血压 ACC 使用同一外部根目录；血压 ACC 位于 `acquisition/accelerometer/<accSessionId>/accelerometer.csv`，仍使用 ACC 自己的会话标识。目录不可用时明确失败，不回退内部目录；不新增存储权限，普通应用访问仍受限制，卸载应用仍会删除文件。已有内部文件不迁移、不删除。`listArtifacts()` 只返回当前进程记录的完成引用，不扫描磁盘；进程重启后查询列表重置，已完成文件仍保留。
 
 表头与字段顺序保持既有协议；与外部后端的兼容性不在本地采集保证范围内。
 

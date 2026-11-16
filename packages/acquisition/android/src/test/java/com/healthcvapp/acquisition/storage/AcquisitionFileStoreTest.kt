@@ -16,7 +16,7 @@ import org.junit.Test
 class AcquisitionFileStoreTest {
   @Test
   fun `new output and preallocated file reject overwrite and preserve existing bytes`() = withStore { root, store ->
-    val output = File(root, "acquisition/session-1/ppg.csv.part")
+    val output = File(root, "acquisition/ppg/session-1/ppg.csv.part")
     store.createNewOutput(output).use { it.write("original".toByteArray(Charsets.UTF_8)) }
 
     val outputError = assertThrows(IOException::class.java) { store.createNewOutput(output) }
@@ -32,7 +32,7 @@ class AcquisitionFileStoreTest {
 
   @Test
   fun `promotion returns only a moved file and never replaces an occupied destination`() = withStore { root, store ->
-    val directory = File(root, "acquisition/session-1")
+    val directory = File(root, "acquisition/ppg/session-1")
     val partial = File(directory, "ppg.csv.part")
     val completed = File(directory, "ppg.csv")
     store.createNewOutput(partial).use { it.write("finished".toByteArray(Charsets.UTF_8)) }

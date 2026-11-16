@@ -8,9 +8,9 @@ import com.healthcvapp.acquisition.sensors.model.SensorKind
 
 /** 从注入的持久根目录解析采集路径；新产物使用外部根目录，历史文件保留原位置。 */
 internal class AcquisitionPaths(private val filesDirectory: File) {
-  /** 返回主动 PPG 会话目录，保留既有 sessionId 约束。 */
+  /** 返回按信号类型和会话隔离的 PPG 目录。 */
   fun ppgSessionDirectory(sessionId: String): File =
-    File(File(filesDirectory, ACQUISITION_DIRECTORY), requirePpgSessionId(sessionId))
+    File(File(File(filesDirectory, ACQUISITION_DIRECTORY), PPG_DIRECTORY), requirePpgSessionId(sessionId))
 
   /** 返回 PPG 尚未完成的 CSV 路径。 */
   fun ppgPartialFile(sessionId: String): File = File(ppgSessionDirectory(sessionId), PPG_PARTIAL_FILE)
@@ -79,7 +79,7 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
   /** 返回按类型和会话隔离的传感器目录。 */
   fun sensorSessionDirectory(kind: SensorKind, sessionId: String): File {
     require(SENSOR_SESSION_ID_PATTERN.matches(sessionId)) { "sessionId must be a safe path component" }
-    return File(File(File(filesDirectory, ACQUISITION_DIRECTORY), SENSOR_DIRECTORY), "${kind.wireName}/$sessionId")
+    return File(File(filesDirectory, ACQUISITION_DIRECTORY), "${kind.wireName}/$sessionId")
   }
 
   /** 返回传感器尚未完成的 CSV 路径。 */
@@ -113,6 +113,7 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
 
   private companion object {
     const val ACQUISITION_DIRECTORY = "acquisition"
+    const val PPG_DIRECTORY = "ppg"
     const val RPPG_DIRECTORY = "rppg"
     const val RPPG_PULSE_FILE = "pulse.csv"
     const val RPPG_HEART_RATE_FILE = "hr.csv"
@@ -125,7 +126,6 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
     const val PASSIVE_VIDEO_PARTIAL_FILE = "video.mp4.part"
     const val PASSIVE_VIDEO_COMPLETED_FILE = "video.mp4"
     val PPG_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
-    const val SENSOR_DIRECTORY = "sensors"
     val SENSOR_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
     val RPPG_SESSION_ID_PATTERN = Regex("[A-Za-z0-9_-]+")
   }

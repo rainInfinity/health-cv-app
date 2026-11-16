@@ -96,8 +96,8 @@ class PPGCaptureSessionTest {
     runCurrent()
     assertTrue(enteredFrameWrite.isCompleted)
     assertFalse(stop.isCompleted)
-    assertFalse(directory.resolve("acquisition/session-one/ppg.csv").exists())
-    assertFalse(directory.resolve("acquisition/session-one/frame.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/session-one/ppg.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/session-one/frame.csv").exists())
 
     finishFrameWrite.complete(Unit)
     runCurrent()
@@ -296,7 +296,7 @@ class PPGCaptureSessionTest {
     val outcome = stop.await()
 
     assertTrue(outcome.isFailure)
-    assertFalse(File(directory.resolve("acquisition/overflow/ppg.csv").path).exists())
+    assertFalse(File(directory.resolve("acquisition/ppg/overflow/ppg.csv").path).exists())
     assertNotNull(session.terminalFailure)
     advanceUntilIdle()
   }
@@ -314,7 +314,7 @@ class PPGCaptureSessionTest {
 
     assertTrue(outcome.isFailure)
     assertEquals("PIXEL_PROCESSING_FAILED", session.terminalFailure?.code)
-    assertFalse(directory.resolve("acquisition/pixel-failure/ppg.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/pixel-failure/ppg.csv").exists())
   }
 
   @Test
@@ -337,8 +337,8 @@ class PPGCaptureSessionTest {
 
     assertTrue(outcome.isFailure)
     assertEquals("FRAME_METADATA_UNMATCHED", (outcome.exceptionOrNull() as PPGCaptureFailure).code)
-    assertFalse(directory.resolve("acquisition/unmatched/ppg.csv").exists())
-    assertFalse(directory.resolve("acquisition/unmatched/frame.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/unmatched/ppg.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/unmatched/frame.csv").exists())
   }
 
 
@@ -370,7 +370,7 @@ class PPGCaptureSessionTest {
     assertTrue(outcome.isFailure)
     assertEquals("FILE_WRITE_FAILED", session.terminalFailure?.code)
     assertTrue(writerClosed)
-    assertFalse(directory.resolve("acquisition/write-failure/ppg.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/write-failure/ppg.csv").exists())
   }
   @Test
   fun frameWriterFailureNeverPublishesEitherCompletedCsv() = runTest {
@@ -405,8 +405,8 @@ class PPGCaptureSessionTest {
     assertTrue(outcome.isFailure)
     assertEquals("FILE_WRITE_FAILED", session.terminalFailure?.code)
     assertTrue(frameWriterClosed)
-    assertFalse(directory.resolve("acquisition/frame-write-failure/ppg.csv").exists())
-    assertFalse(directory.resolve("acquisition/frame-write-failure/frame.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/frame-write-failure/ppg.csv").exists())
+    assertFalse(directory.resolve("acquisition/ppg/frame-write-failure/frame.csv").exists())
   }
 
   private suspend fun start(session: PPGCaptureSession) {
