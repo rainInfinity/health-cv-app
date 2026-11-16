@@ -43,7 +43,7 @@ adb -s <device-serial> install -r apps/native/android/app/build/outputs/apk/rele
 
 脚本生成 Nitrogen 绑定后执行 `assembleRelease`，APK 路径如上。Release bundle 跟踪 `.env`、`.env.local`、`.env.production`、`.env.production.local`；脚本清除 Gradle 子进程的 `CI`，使用一次性 daemon。环境文件改变后重新构建，不能只重装旧 APK。
 
-当前 Release 与 Debug 都使用 `debug.keystore`，仅供内部安装，不是正式发布签名。相同签名覆盖安装可保留数据；不要为解决连接问题随意卸载、清数据或清除 AVD 用户数据，以免丢失私有采集文件。
+当前 Release 与 Debug 都使用 `debug.keystore`，仅供内部安装，不是正式发布签名。相同签名覆盖安装可保留数据；不要为解决连接问题随意卸载、清数据或清除 AVD 用户数据，以免丢失应用专属外部目录及已有内部目录中的采集文件。
 
 ## Metro、ADB 与连接排错
 
@@ -130,9 +130,21 @@ adb -s <device-serial> emu sensor set magnetic-field 7.25:8.25:9.25
 
 重力传感器是否可用及其派生输出以 AVD 设备为准，不把上面的加速度输入直接当成重力期望值。字段、单位、坐标系、失败与资源边界见 [传感器采集协议](../acquisition/android-sensors.md)。
 
-## 私有文件与资源核查
+## 采集文件与资源核查
 
-以下 `run-as` 命令适用于可调试构建；普通非 debuggable Release 不能据此访问私有文件，应使用页面产物引用或安装相应调试构建，不用 root 绕过应用边界。不要在运行中的缓冲文件暂不可读时断言没有采样。
+新采集产物位于 `getExternalFilesDir(null)` 下，当前包名通常对应 `/sdcard/Android/data/com.healthcvapp.mobile/files/`。设备允许时可直接用 ADB 读取和拉取，不需要 root、`run-as` 或 debuggable 构建，也不新增存储权限。该目录不是公共目录，普通应用及文件管理器访问仍受系统限制，卸载应用仍会删除其中的文件。外部根目录不可用时明确失败，不回退内部目录。不要在运行中的缓冲文件暂不可读时断言没有采样。
+
+```sh
+adb -s <device-serial> shell find /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition -type f -print
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/ppg.csv'
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/frame.csv'
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/session.json'
+adb -s <device-serial> shell wc -l '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/pulse.csv' '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/hr.csv'
+adb -s <device-serial> shell find /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/sensors -type f -print
+adb -s <device-serial> pull /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition ./acquisition
+```
+
+已有内部文件不搬移、不删除；RPPG 查询合并内外两处完整结果，历史视频继续使用内部目录。以下旧路径读取命令仅适用于可调试构建的 `run-as`；普通非 debuggable Release 不能据此直接读取内部文件，不用 root 绕过应用边界：
 
 ```sh
 adb -s <device-serial> shell run-as com.healthcvapp.mobile find files/acquisition -type f -print
@@ -147,11 +159,11 @@ adb -s <device-serial> shell dumpsys sensorservice
 adb -s <device-serial> shell dumpsys activity services com.healthcvapp.mobile/com.healthcvapp.acquisition.passive.service.PassiveCaptureService
 ```
 
-- **PPG：** 完成目录为 `files/acquisition/<sessionId>/`，双 CSV 均关闭并提升才是完成产物；按帧分组核对块编号与精确传感器时间戳。
+- **PPG：** 新完成目录为外部根目录下的 `acquisition/<sessionId>/`，双 CSV 均关闭并提升才是完成产物；按帧分组核对块编号与精确传感器时间戳。
 - **RPPG：** 按 [统一文件 schema](../acquisition/android-rppg.md#文件-schema-与完整发布) 核查完整标记、来源、终止／信号结论、配置／相机摘要和计数。合法中断含 `interrupted`，不等于技术失败；无有效心率不是准确率结论。
-- **传感器：** `files/acquisition/sensors/<kind>/<sessionId>/<kind>.csv` 至少有一条样本才完成；`.part` 不属于完成产物。
+- **传感器：** 外部根目录下的 `acquisition/sensors/<kind>/<sessionId>/<kind>.csv` 至少有一条样本才完成；`.part` 不属于完成产物。
 - **历史视频：** `files/passive-capture/<sessionId>/video.mp4` 不转换为新 RPPG，不作为新会话结果。
-- **查询寿命：** PPG／传感器列表仅维护当前进程完成引用，重启后列表重置但文件仍保留；RPPG 查询扫描已发布最终目录。各类临时文件都不能冒充完成文件，也没有通用自动清理承诺。
+- **查询寿命：** PPG／传感器列表仅维护当前进程完成引用，重启后列表重置但文件仍保留；RPPG 查询扫描外部新结果与已有内部结果的已发布最终目录。各类临时文件都不能冒充完成文件，也没有通用自动清理承诺。
 - **资源：** 主动页离开后检查相机释放；被动服务等待时不应占相机。传感器与被动服务有独立生命周期，不能要求主动相机关闭就同时停止其他源。
 
 ## MCD 模拟器人脸素材

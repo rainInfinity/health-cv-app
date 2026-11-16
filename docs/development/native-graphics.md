@@ -60,7 +60,9 @@ for name in ('op1', 'op2', 'op3'):
 PY
 ```
 
-准备页 `OperationPhoto` 复用 Demo 的 360 坐标系、138 半径圆裁、双水纹及端点渐隐几何。照片使用原生 Image 与圆形容器裁剪，固定画布只作整体缩放；水纹使用预计算路径与端点分段透明度，避免 SVG 图片裁剪和离屏蒙版参与入页转场。私有 `FingertipInstructionArtwork` 移植 Demo 正面／背面 SVG；`FingertipPreview` 的覆盖环、红色渐入和说明图局部节点共享线性 Animated 值，百分比独立读取实际动画进度，不以每个覆盖快照重绘整页。静态黑色底图、红色渐变和动态覆盖环分层，红色层缓存后只调整透明度，避免圆环每帧重绘径向渐变；中央产品提示用 `expo-blur` 原生模糊层和独立清晰文字叠放，不参与 SVG 栅格化，不再显示相机占位图标或圆形下方的提示行。后摄预览使用 TextureView，模糊目标不包含提示本身；系统版本与外观边界见[检测页面约定](./frontend-development.md#28-检测准备与检测页面)。后台／失焦暂停或清理，减少动态效果时直接更新。上述页面专用组合不扩充通用图形接口，照片和模拟覆盖不属于采集数据。
+准备页 `OperationPhoto` 复用 Demo 的 360 坐标系、138 半径圆裁、双水纹及端点渐隐几何。照片使用原生 Image 与圆形容器裁剪，固定画布只作整体缩放；水纹使用预计算路径与端点分段透明度，避免 SVG 图片裁剪和离屏蒙版参与入页转场。`pages/measurement/ContactMeasurement` 承载指尖与血压实际共用的 `FingertipInstructionArtwork`、`FingertipRearCameraArtwork`、`FingertipPreview` 和 `FingertipPlacementGuide`。圆形真实相机、静态底图、覆盖环、局部手指节点及文字分别分层；覆盖环和说明图共享局部 Animated 值，数字读取节流后的真实空间覆盖，不读取动画中间值或用红色模拟层替代预览。中央提示使用 `expo-blur` 原生模糊层与独立清晰文字，模糊目标不含提示本身；后摄使用 TextureView，系统版本与外观边界见[检测页面约定](./frontend-development.md#28-检测准备与检测页面)。这些产品组合不扩充通用图形入口，照片及动作图不属于采集数据。
+
+`BloodPressureMeasurement/ChestInstructionArtwork` 的十二帧矢量完整迁移设计稿 `chest-reference-illustrations.js`，原生运行时不读取 Demo、不直接嵌入 GIF、截图或 WebView。保留两组原始 512×512 轮廓、颈部以下双肩透视、自然握持、摄像头位置、衣物分界及皮肤内轻量阴影；主题替换原 CSS 色变量，每实例使用独立裁切／引用 ID，前三帧无贴靠高亮、后三帧保留手机上方青绿短线。两图共享同一 native driver 离散帧值，每 320 ms 切帧、周期 1.92 秒，原生合成层只切换静态帧透明度，不补间人体路径或逐帧同步 React；非当前页、失焦或后台停止，减少动态效果遵循已有静态约定。高亮不表示原生准入或胸口识别。
 
 ### Android SVG 陷阱
 

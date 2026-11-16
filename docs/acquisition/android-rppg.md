@@ -80,7 +80,7 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 ## 文件 schema 与完整发布
 
-文件位于应用私有 `filesDirectory/acquisition/rppg/`。会话先写入隐藏临时目录 `.<sessionId>.tmp/`，成功发布后目录改为 `<sessionId>/`；三份文件名固定如下。
+新文件位于应用专属外部 `getExternalFilesDir(null)/acquisition/rppg/`，当前为 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`。不新增存储权限，外部根目录不可用时明确失败，不回退内部目录；普通应用访问仍受限制，卸载应用会删除文件。已有内部 `filesDir/acquisition/rppg/` 不迁移、不删除，主动／被动查询分别合并两处已发布结果并按会话标识排序。会话先写入隐藏临时目录 `.<sessionId>.tmp/`，成功发布后目录改为 `<sessionId>/`；三份文件名固定如下。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -127,7 +127,7 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 `subscribeRealtime()` 只暴露有限展示队列中的 POS 任意单位标量、相对传感器原点的样本时间和批次／片段序号；样本与完整 `pulse.csv` 同源，订阅慢时只丢弃该订阅自己的旧批次。`sequence` 或 `segmentIndex` 不连续时展示曲线必须断开。状态中的纳秒绝对时间以十进制字符串跨桥，避免 JS 浮点数精度损失；就绪进度最多每 250 ms 更新一次，状态转换和新心率结果即时通知。
 
-该窄例外不传输 `ImageProxy`、原始帧／RGB／ROI／面部关键点、逐帧相机元数据或完整历史样本；实时队列不替代文件记录，也不因 JS 未订阅而停止持久化。`listArtifacts()` 仅返回已发布本地产物的会话标识、文件类型、私有路径和大小，不读取或复制文件内容。客户端没有认证、HTTP、上传或被动采集启停依赖；原始 PPG 仍没有逐帧记录或高速批次的 JS 接口，见 [Android 相机 PPG 采集协议](android-ppg.md)。
+该窄例外不传输 `ImageProxy`、原始帧／RGB／ROI／面部关键点、逐帧相机元数据或完整历史样本；实时队列不替代文件记录，也不因 JS 未订阅而停止持久化。`listArtifacts()` 仅返回已发布本地产物的会话标识、文件类型、真实绝对路径和大小，不读取或复制文件内容。新结果引用外部路径，已有内部结果保留原路径。客户端没有认证、HTTP、上传或被动采集启停依赖；原始 PPG 仍没有逐帧记录或高速批次的 JS 接口，见 [Android 相机 PPG 采集协议](android-ppg.md)。
 
 ### 产品面部页的接入边界
 

@@ -2,13 +2,13 @@
 
 ## 范围与数据边界
 
-Android 后置相机 PPG 的 CameraX、像素处理、队列与 CSV 写入均在原生侧；JavaScript 只接收控制结果、低频状态、提示、结构化错误和完成产物引用，不接收 `ImageProxy`、像素、原始 PPG 行或逐帧相机元数据。原生预览通过 Nitro 视图呈现，不经 JavaScript 传递图像。有界展示标量是显式例外：`AcquisitionClient` 提供独立的指尖脉搏订阅，RPPG 使用其独立客户端，详见 [Android RPPG 采集说明](android-rppg.md)。两者不放开原始记录批次接口。
+Android 后置相机 PPG 的 CameraX、像素处理、队列与 CSV 写入均在原生侧；JavaScript 只接收控制结果、低频状态、提示、结构化错误和完成产物引用，不接收 `ImageProxy`、像素、原始 PPG 行或逐帧相机元数据。原生预览通过 Nitro 视图呈现，不经 JavaScript 传递图像。有界展示标量是显式例外：`AcquisitionClient` 提供独立的指尖脉搏订阅，RPPG 使用其独立客户端，详见 [Android RPPG 采集说明](android-rppg.md)。两者不放开原始记录批次接口；血压只提供低频事实，不提供血压、心震波形或原始 IMU 订阅。
 
 PPG 路径不提供 iOS、上传、云端处理、真实覆盖面积或医学质量判断。共享 `DataHub<T>` 已用于 PPG、RPPG 和传感器，各数据源与会话持有独立实例。
 
 ## 主动采集控制器
 
-`PPGRuntime` 为 Nitro `Acquisition` 控制对象与 `CameraPreview` 视图提供同一个进程级 `PPGController`。控制器持有主动 PPG 相机、预览视图引用、相机会话和活动 `PPGCaptureSession`，并串行执行打开、开始、停止和关闭命令；挂载预览视图本身不会打开相机。每个 Nitro 控制实例持有独立调用方身份；共享控制器不等于任意实例都可停止当前所有者的相机。指尖门控、截止及文件屏障在原生，不依赖页面订阅。
+`PPGRuntime` 为 Nitro `Acquisition` 控制对象与 `CameraPreview` 视图提供同一个进程级 `PPGController`。控制器持有主动 PPG 相机、预览视图引用、相机会话和活动 `PPGCaptureSession`，并串行执行打开、开始、停止和关闭命令；挂载预览视图本身不会打开相机。每个 Nitro 控制实例持有独立调用方身份；共享控制器不等于任意实例都可停止当前所有者的相机。指尖与血压各有原生轮次控制器，准入、截止及文件屏障不依赖页面订阅；同一相机控制实例不能绕过手动 PPG、指尖和血压之间的活动方案互斥。
 
 相机回调绑定其所属的会话引用并交给 `PPGFrameHandler`，关闭或切换会话后的旧帧不能写入新会话。控制器通过低频快照和状态监听发送运行状态、经验提示及既有结构化错误码与消息；图像、像素和逐帧记录不传给 JavaScript。
 
@@ -216,14 +216,72 @@ unsubscribeState()
 
 本轮展示历史仅保留在页面局部内存，图表只消费六秒窗口及有限边缘点；说明页隐藏绘图不停止接收、采集或保存。丢批、断段与采集缺口断线，不读取文件补造历史。结束可回看本轮，重测清空、离页释放；不生成 `pulse.csv`、跨进程波形回放或健康记录。原始 `ppg.csv / frame.csv` 持久保留，不因清空展示、返回或重测删除。原始文件存在但无可用脉搏时，曲线保持真实空态。
 
+## 血压双阶段工程准入与联合窗口
+
+血压入口仍显式准备真实后摄、授权和原生预览，复用单块 `[1,1]`、720×720／30 FPS 偏好及按能力选择的可选补光；没有支持补光不单独阻断。`BloodPressureController` 负责独立轮次，不通过指尖单源自动开始接口模拟等待贴胸。公开阶段为 `observing_finger / awaiting_chest / starting / capturing / stopping / completed / interrupted / failed`：完整覆盖连续三秒且输入新鲜后才进入贴胸准备，准备期倒计时仍为目标时长，且不保存正式记录。
+
+### 公开血压接口与低频事实
+
+```ts
+// 已显式授权并完成预览宿主等待、能力查询与 openCamera(config)。
+const unsubscribe = client.subscribeBloodPressure((snapshot) => {
+  // 无本轮时为空；使用原生 phase、elapsedMillis / remainingMillis。
+})
+const captureId = await client.startBloodPressureCapture({ durationMillis: 30_000 })
+const snapshot = client.getBloodPressureSnapshot()
+// 正常截止由原生执行；提前停止只作用于本所有者的确切轮次。
+await client.stopBloodPressureCapture(captureId)
+await client.closeCamera()
+unsubscribe()
+```
+
+`BloodPressureCaptureConfig.durationMillis` 必须为 1–86,400,000 的整数毫秒，产品使用 30,000；非法值返回 `BLOOD_PRESSURE_CONFIG_INVALID`。`startBloodPressureCapture` 只确认观测轮次及身份，不等待准入或采满。创建客户端、读取、订阅及解除订阅均不打开相机、不注册 IMU、不创建正式文件；解除订阅不停止轮次。低频普通变化由原生最多每 250 ms 合并，关键阶段立即通知，Nitro 在主线程交付；解除订阅使已排队通知失效，不依赖 JS 定时器执行截止。
+
+`BloodPressureSnapshot` 关联本轮 `captureId`、PPG `sessionId` 与 `accSessionId`，并提供覆盖百分比／分类／就绪、可空 `tiltDegrees / stable / scgCandidate`、原生进度、原因、错误、冻结 `cameraConfigSummary`、PPG `artifact`、`accArtifact`、各源真实计数和首末原始采样时间、`resourcesReleased`。未知 IMU 项为 `null`，不是默认 0 或 `false`；没有 IMU 样本数组、滤波序列、逐事件状态或波形接口。启动保留控制器可判别错误，例如 `CAMERA_NOT_READY / CAPTURE_STATE_INVALID / SENSOR_BUSY`，客户端转为保留原码和说明的 `AcquisitionError`，不把真实设备根因改写为成功或缺失轮次身份。
+
+`stopBloodPressureCapture(captureId)` 先同步封闭本轮入口并撤销待开窗，再等待组内完成屏障。`closeCamera()` 沿用 `PPGController` 的所有权与关闭入口，等待在途命令、PPG 精确配对、PPG／ACC 尾批及文件、相机／补光和本轮 ACC／gyro 监听释放；并发关闭共用屏障，真实释放失败保留对象供再次关闭。旧身份不能停止新轮，不拥有相机的客户端不能释放占用者，也不能停止组外独立传感器或被动服务。
+
+### 姿态、稳定性与持续心震候选
+
+原生准入为 `coverageReady && stable && (tiltDegrees >= 30 || scgCandidate == true)`。倾角指屏幕平面相对水平面的无向夹角：平放朝上或朝下为 0°、竖直为 90°，以重力估计 `acos(clamp(abs(g.z) / norm(g), 0, 1))` 计算；30°包含边界，不是偏离竖直30°，不依赖屏幕旋转或先观察竖起动作。稳定且倾角达标不必等待心震窗口；不足30°时可由稳定及真实心震候选放行。该工程准入不能证明胸口位置、有效心搏或医学质量，姿态合理而未贴胸的稳定持机仍可能通过。
+
+本轮请求 ACC 5,000 µs、gyro 20,000 µs，分别约200／50 Hz，仅为请求间隔，不是实采承诺；两个真实设备均必须可用且成功注册。稳定在最近一秒窗口每100 ms评估，ACC 经约3 Hz低通、减窗口三轴均值后取向量 RMS，初值门槛0.15 m/s²；原始角速度向量 RMS 初值0.05 rad/s。两个条件连续通过两秒才稳定，低通、积分和计时均使用真实事件间隔，完整窗口建立后最快约三秒确认。任一路事件或接收时间回退、相邻间隔超过200 ms会清除历史、稳定累计及候选；接收时间落后事件时间超过200 ms的延迟输入也被拒绝。未获得完整、新鲜输入时相应事实未知。
+
+两路 IMU 可在独立回调线程上处理，跨源新鲜度使用本次及已接收样本中的最新接收时刻作为评估参考；不能因较早收到的回调较晚获得算法锁，就把另一来源已收到的新样本当成未来输入并清空累计。每个来源自身的事件／接收时间仍必须单调，真实缺口、陈旧输入和正式窗口检查保持不变。
+
+心震在 `awaiting_chest / starting / capturing` 持续处理，与倾角及哪条路径已通过无关。原始 `-accZ` 的推理分支使用8–24 Hz因果 Butterworth 带通：二阶低通原型经带通变换成为两节 biquad、总四极点；真实32个事件间隔估计采样率，变化超过10%重建，实际间隔的 Nyquist 无法支持24 Hz时保持候选未知，不缩窄频带。排除建立段后，最近四秒每250 ms评估；绝对值经3 Hz低通形成包络，在仅用于推理的50 Hz有限网格上计算去均值归一化自相关，检查40–180次／分钟的重复峰和二倍周期相关。能量保留滤后原始量纲，至少四个一秒分段中的三个满足门槛，且连续两次完整评估满足能量、包络变化及重复性才形成候选；常量、低幅噪声或单次冲击不能仅因非零波动被判为存在。
+
+固定参数的可追溯来源为 `packages/acquisition/android/src/main/java/com/healthcvapp/acquisition/ppg/bloodpressure/imu/BloodPressureImuConfig.kt`，配置注释中的参数版本为 `scg-local-engineering-v1`，不是新增的运行时桥接字段。以下参数作为**本机工程准入的固定基线**，不构成通用人体阈值或医学质量承诺：
+
+| 配置项 | 当前工程基线 |
+| --- | --- |
+| `scgNoiseReferenceRms` | 0.005 m/s² |
+| `scgEnergyAboveNoiseFactor` | 16；均方能量门槛0.0004 m²/s⁴，等效 RMS 0.02 m/s² |
+| `scgEnvelopeCorrelationThreshold` | 0.65 |
+| `scgSecondRepetitionThreshold` | 0.45 |
+| `scgMinimumEnvelopeVariation` | 0.15，包络标准差／均值，用于排除恒幅载波残纹 |
+| `scgFilterSettlingNanos` | 1,000,000,000 ns |
+
+上述参数不承诺其他设备、人群或医学效果；确定性输入和模拟器不能代替真实人体对照。端侧不先逐窗z-score放大低幅噪声，不迁移后端二阶1–25 Hz、离线 `filtfilt`、z-score与VMD的AO重建；实时因果候选不与后端离线结果数值等价。原始ACC和PPG同源分流，推理、重力估计、有限包络网格及滤波不改变CSV轴值、三种时间或量纲。
+
+开窗前覆盖失效退回指尖观测并清除旧IMU累计；仅稳定或两条替代条件失效则继续贴胸等待，撤销未开窗writer，不发布只有表头的产物。正式采集中IMU持续观测，但稳定、倾角或候选变化不暂停、不补时、不重开；覆盖维持仍按95%与1.5秒丢失宽限处理，确认覆盖丢失结束整个本轮。后台、离页或销毁也收尾整组，恢复不续采。
+
+### 共同接收窗口与组合完成
+
+PPG锁定和两个writer准备完毕、当前准入再次复核通过后，从原生 `elapsedRealtimeNanos` 建立同一半开窗口 `[T0,T1)`。PPG检查帧处理入口时间，ACC检查回调接收时间，并排除原始事件时间早于T0或不早于T1的历史／越界事件；共享组内激活标记避免顺序安装期间单源提前写入。准备数据不回填，截止先撤销激活并封闭两路入口，再完成已接受的在途配对与尾批，不依赖JS是否消费进度。
+
+血压 `windowStartElapsedNanos / windowEndElapsedNanos` 始终分别为共同控制T0和**计划T1**，实际封闭由独立 `stoppedAtElapsedNanos` 表达，未正式开窗时为空；与指尖终态上界的既有语义不同。绝对纳秒跨桥保持十进制字符串，倒计时直接使用原生毫秒进度。各源首末采样时间取各自原始相机／事件时钟，不用控制边界替代；CSV继续保留毫秒小数、原始时间与含重力ACC自然设备坐标。共同窗口只是接收控制，不是硬件同步、精确曝光同步或逐帧／事件对齐，实际时钟关系需设备核查，不能补造边界样本。
+
+只有达到目标、PPG配对帧及ACC均非空、同轮 `ppg.csv / frame.csv / ACC CSV` 均正常定稿，且相机、补光和两个IMU监听全部释放，才能正常 `completed`；gyro只观测，不要求第四文件。文件成功与释放成功分别表达；单源错误封闭本轮整体成功路径并收尾组内资源，保留已经定稿的分源文件和真实错误，不删除成功文件，不用历史列表末项补全。各源仍有独立DataHub与writer，不引入跨源共享文件事务。独立传感器的公开控制、CSV与组外隔离见[传感器协议](android-sensors.md)。
+
 
 ## 会话、文件与停止完成
 
-每次正式采集使用独立会话标识和持久目录：`filesDir/acquisition/<sessionId>/`。`AcquisitionPaths` 集中维护 `ppg.csv.part`、`frame.csv.part` 与对应完成路径；`AcquisitionFileStore` 负责拒覆盖新输出及单文件提升。正常停止等待在途帧及关联完成、排空队列后，由 `PPGSessionOutput` 关闭两个 writer 并协调完成路径；停止收尾期间不允许开始下一次采集。
+每次正式采集使用独立会话标识和应用专属外部持久目录：`getExternalFilesDir(null)/acquisition/<sessionId>/`，当前包名对应 `Android/data/com.healthcvapp.mobile/files/acquisition/<sessionId>/`。`AcquisitionPaths` 集中维护 `ppg.csv.part`、`frame.csv.part` 与对应完成路径；`AcquisitionFileStore` 负责拒覆盖新输出及单文件提升。正常停止等待在途帧及关联完成、排空队列后，由 `PPGSessionOutput` 关闭两个 writer 并协调完成路径；停止收尾期间不允许开始下一次采集。
 
 像素处理、容量不足、消费者或文件写入失败会关闭该会话的记录入口并释放资源，不返回成功产物；未完成的 `.part` 不会伪装成 `ppg.csv`，也不承诺自动删除。关闭相机正常停止当前会话，已完成文件不会因此删除。产品指尖的覆盖丢失、用户停止及后台中断保留真实原因，可保留已正常定稿的原始文件，但不冒充采满目标；技术失败与资源释放失败分别反馈。
 
-`listArtifacts()` 返回当前进程中已完成的会话引用；每个引用含 `ppg.csv`、`frame.csv` 两个文件的类型、绝对路径和字节数，以及停止时冻结的请求／提交配置、调整原因、实际图像几何、观测 FPS 和分块布局摘要。文件位于应用私有持久目录，但当前没有实现进程重启后的目录扫描、恢复或清理策略。
+`listArtifacts()` 返回当前进程中已完成的会话引用；每个引用含 `ppg.csv`、`frame.csv` 两个文件的类型、绝对路径和字节数，以及停止时冻结的请求／提交配置、调整原因、实际图像几何、观测 FPS 和分块布局摘要。新文件位于应用专属外部持久目录，不新增存储权限；外部根目录不可用时明确失败，不回退内部目录。该目录适合通过 ADB 取文件，不等于普通应用可自由访问的公共目录，卸载应用仍会删除。已有内部文件不迁移、不删除；当前没有实现进程重启后的目录扫描、恢复或清理策略。
 
 ## CameraX 协商与资源释放
 
@@ -233,4 +291,4 @@ unsubscribeState()
 
 产品 Tab 离页守卫等待在途命令、关闭相机并完成文件收尾，相机释放后才允许导航。回页重新查询当前进程完成引用；已完成文件不因切页删除。
 
-操作与私有文件核查见 [Android 开发手册](../development/android-development.md)。模拟器输入不代表真实 PPG；实体设备兼容、目标 FPS、覆盖提示准确性、温控与持续性能仍需真机验证。
+操作与外部／已有内部文件核查见 [Android 开发手册](../development/android-development.md)。模拟器输入不代表真实 PPG；实体设备兼容、目标 FPS、覆盖提示准确性、温控与持续性能仍需真机验证。

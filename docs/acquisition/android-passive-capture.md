@@ -37,7 +37,7 @@ RPPG 文件路径、字段、时间精度、完整发布条件及全部合法终
 
 `PassiveCaptureClient` 提供服务快照、通知设置、启停和配置保存；`listArtifacts()` 只返回共用 `RPPGArtifact` 三件套，包含来源、终止原因、信号结论、样本计数及文件引用。被动来源为 `passive`，不另建波形类型。
 
-`listVideoArtifacts()` 独立查询升级前已完成且可读的 `PassiveVideoArtifact`，保留真实宽高、时长、大小和 `files/passive-capture/<sessionId>/video.mp4` 路径。旧视频仅供历史查询，不重编码、不删除、不转换为 RPPG，也不再生成新录像；两类产物均为应用私有文件，不自动上传或清理。
+`listVideoArtifacts()` 独立查询升级前已完成且可读的 `PassiveVideoArtifact`，保留真实宽高、时长、大小和内部 `files/passive-capture/<sessionId>/video.mp4` 路径。旧视频仅供历史查询，不重编码、不迁移、不删除、不转换为 RPPG，也不再生成新录像。新 RPPG 三件套保存在 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`，查询合并已有内部三件套；新旧文件均不自动上传或清理。外部目录不需要新增存储权限，但普通应用访问仍受限制，卸载应用仍会删除文件，不等于公共共享存储。
 
 公共路径和原子文件操作由 `AcquisitionPaths`／`AcquisitionFileStore` 维护；历史视频的媒体轨检查与扫描由 `PassiveVideoArtifactStore` 负责。新会话由共用 `RPPGSession`／`RPPGArtifactStore` 持有相机并发布三件套，不经过旧视频 `Finalize` 路径。
 
