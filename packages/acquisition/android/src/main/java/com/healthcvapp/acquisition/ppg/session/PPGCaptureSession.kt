@@ -60,6 +60,7 @@ internal class PPGCaptureSession(
   private var lastEntranceNanos = 0L
   private var maximumFrameGapNanos = Long.MAX_VALUE
   private var windowEstablished = false
+  private var groupActive: (() -> Boolean)? = null
   private var startedAtMillis = 0L
   private var nextFrameIndex = 0L
   private var inFlightFrames = 0
@@ -135,6 +136,12 @@ internal class PPGCaptureSession(
       phase = Phase.CAPTURING
     }
 
+  /** 双源窗口安装期间保持封闭；独立会话不安装组内门闩。 */
+  fun installGroupActivation(isActive: () -> Boolean) = synchronized(lock) {
+    check(phase == Phase.PREPARING && !windowEstablished)
+    groupActive = isActive
+  }
+
   /** 截止和停止意图先同步封闭入口，再异步等待配对及文件屏障。 */
   fun sealEntrance() = synchronized(lock) { acceptingFrames = false }
 
@@ -153,7 +160,7 @@ internal class PPGCaptureSession(
 
   /** 在进入帧处理作用域时登记正式帧；返回负值表示该帧不属于本次采集。 */
   fun beginFrame(processingElapsedNanos: Long): Long = synchronized(lock) {
-    if (!acceptingFrames || phase != Phase.CAPTURING ||
+    if (!acceptingFrames || phase != Phase.CAPTURING || groupActive?.invoke() == false ||
       processingElapsedNanos < startedAtElapsedNanos || processingElapsedNanos >= endAtElapsedNanos) {
       return@synchronized NO_FRAME
     }

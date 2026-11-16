@@ -19,6 +19,7 @@ import com.healthcvapp.acquisition.rppg.session.RPPGSessionFailure as ModelRPPGS
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionOperationResult
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionPhase as ModelRPPGSessionPhase
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionSnapshot as ModelRPPGSessionSnapshot
+import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.NullType
 import com.margelo.nitro.core.Promise
@@ -30,7 +31,9 @@ class HybridRPPG : HybridRPPGSpec(), LifecycleEventListener {
   private val reactContext = checkNotNull(NitroModules.applicationContext) {
     "Nitro ReactApplicationContext is unavailable"
   } as? ReactContext ?: throw IllegalStateException("主动 RPPG 需要 ReactContext。")
-  private val artifactStore = RPPGArtifactStore(reactContext.filesDir)
+  private val filesDirectory = reactContext.acquisitionFilesDirectory()
+  private val artifactStore = RPPGArtifactStore(filesDirectory)
+  private val internalArtifactStore = RPPGArtifactStore(reactContext.filesDir)
   private val listenerIds = AtomicLong(1L)
   private val snapshotListeners = ConcurrentHashMap<Double, (RPPGSnapshot) -> Unit>()
   private val realtimeSubscriptions = ConcurrentHashMap<Double, AutoCloseable>()
@@ -42,7 +45,7 @@ class HybridRPPG : HybridRPPGSpec(), LifecycleEventListener {
       context = reactContext,
       previewViewProvider = RPPGPreviewRegistry::current,
       lifecycleOwnerProvider = { reactContext.currentActivity as? LifecycleOwner },
-      filesDirectory = reactContext.filesDir,
+      filesDirectory = filesDirectory,
     ),
     onSnapshot = ::publishSnapshot,
   )
@@ -92,9 +95,13 @@ class HybridRPPG : HybridRPPGSpec(), LifecycleEventListener {
     result.toNitro()
   }
 
-  /** 查询应用私有目录中已经发布的主动 RPPG 三件套。 */
+  /** 查询外部新结果和内部已有的完整主动 RPPG 三件套。 */
   override fun listArtifacts(): Promise<Array<RPPGArtifact>> = Promise.async {
-    artifactStore.listArtifacts().map { it.toNitro() }.toTypedArray()
+    buildList {
+      addAll(artifactStore.listArtifacts())
+      addAll(internalArtifactStore.listArtifacts())
+      sortBy { it.sessionId }
+    }.map { it.toNitro() }.toTypedArray()
   }
 
   /** 注册低频状态订阅，并立即返回当前权威快照。 */

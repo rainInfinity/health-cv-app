@@ -1,6 +1,7 @@
 /** 定义采集控制、低频事实及指尖有界展示脉搏例外的 Nitro 契约。 */
 
 import type { HybridObject } from 'react-native-nitro-modules'
+import type { SensorArtifact } from './SensorCapture.nitro'
 
 /** Android 相机与采集会话的可观察阶段。 */
 export type AcquisitionState =
@@ -19,13 +20,13 @@ export type AcquisitionArtifactFileKind = 'ppg' | 'frame'
 export interface AcquisitionArtifactFile {
   /** 文件用途；PPG 样本或相机逐帧拍摄结果。 */
   kind: AcquisitionArtifactFileKind
-  /** 应用私有持久目录中的文件路径。 */
+  /** 应用专属外部持久目录中的文件绝对路径。 */
   path: string
   /** 已关闭文件的字节数。 */
   sizeBytes: number
 }
 
-/** 正常停止后可查询的应用私有会话文件引用。 */
+/** 正常停止后可查询的应用专属外部会话文件引用。 */
 export interface AcquisitionArtifact {
   /** 唯一采集会话标识。 */
   sessionId: string
@@ -464,6 +465,83 @@ export interface FingertipPulseBatch {
   values: number[]
 }
 
+/** 血压双阶段观测与联合采集阶段。 */
+export type BloodPressurePhase = 'observing_finger' | 'awaiting_chest' | 'starting' | 'capturing' | 'stopping' | 'completed' | 'interrupted' | 'failed'
+
+/** 血压正式窗口配置；观测和准备不扣除此时长。 */
+export interface BloodPressureCaptureConfig {
+  /** 目标正式时长，单位毫秒。 */
+  durationMillis: number
+}
+
+/** 血压同轮低频事实；绝对纳秒为十进制字符串，未知判定为空。 */
+export interface BloodPressureSnapshot {
+  /** 覆盖观测时建立的本轮标识。 */
+  captureId: string
+  /** 正式 PPG 会话，尚未开窗时为空。 */
+  sessionId: string | null
+  /** 本轮 ACC 会话身份。 */
+  accSessionId: string | null
+  /** 原生阶段，不由分页推进。 */
+  phase: BloodPressurePhase
+  /** 真实空间覆盖百分比，无有效输入时为空。 */
+  coveragePercent: number | null
+  /** 真实空间覆盖分类。 */
+  coverageState: FingertipCoverageState
+  /** 完整覆盖连续三秒且输入新鲜。 */
+  coverageReady: boolean
+  /** 屏幕相对水平面夹角，范围 0–90 度。 */
+  tiltDegrees: number | null
+  /** 当前持机稳定性，未评估或失鲜时为空。 */
+  stable: boolean | null
+  /** 持续观测的心震工程候选，未评估或带宽不足时为空。 */
+  scgCandidate: boolean | null
+  /** 正式目标时长，单位毫秒。 */
+  targetDurationMillis: number
+  /** 原生正式经过时长，单位毫秒。 */
+  elapsedMillis: number
+  /** 原生正式剩余时长，单位毫秒。 */
+  remainingMillis: number
+  /** 本轮真实结束原因。 */
+  endReason: string | null
+  /** 本轮技术或当前释放错误码。 */
+  errorCode: string | null
+  /** 本轮错误说明。 */
+  errorMessage: string | null
+  /** 本轮已定稿 PPG 双 CSV，与释放状态独立。 */
+  artifact: AcquisitionArtifact | null
+  /** 本轮已定稿原始 ACC 文件，不从历史列表补齐。 */
+  accArtifact: SensorArtifact | null
+  /** 共同接收窗口原生单调下界，单位纳秒。 */
+  windowStartElapsedNanos: string | null
+  /** 计划接收窗口上界，单位纳秒。 */
+  windowEndElapsedNanos: string | null
+  /** 实际封闭正式入口的时刻，单位纳秒。 */
+  stoppedAtElapsedNanos: string | null
+  /** 正式精确配对帧数。 */
+  receivedFrameCount: number
+  /** 正式 ACC 实际接收记录数。 */
+  receivedAccCount: number
+  /** 首帧原始相机采样时间，单位纳秒。 */
+  firstFrameTimestampNanos: string | null
+  /** 末帧原始相机采样时间，单位纳秒。 */
+  lastFrameTimestampNanos: string | null
+  /** 首条原始 ACC 事件时间，单位纳秒。 */
+  firstAccTimestampNanos: string | null
+  /** 末条原始 ACC 事件时间，单位纳秒。 */
+  lastAccTimestampNanos: string | null
+  /** 本轮冻结相机配置及实际几何。 */
+  cameraConfigSummary: CameraConfigSummary | null
+  /** 本轮相机、补光及两个 IMU 监听均已释放。 */
+  resourcesReleased: boolean
+}
+
+/** 血压观测轮次建立结果，不等待采满。 */
+export interface BloodPressureStartResult extends AcquisitionCommandResult {
+  /** 成功轮次标识；失败时为空。 */
+  captureId: string | null
+}
+
 /** 实现 Android 后摄生命周期、会话控制和低频通知的原生对象。 */
 export interface Acquisition extends HybridObject<{ android: 'kotlin' }> {
   getSnapshot(): AcquisitionSnapshot
@@ -485,6 +563,11 @@ export interface Acquisition extends HybridObject<{ android: 'kotlin' }> {
   removeFingertipListener(listenerId: number): void
   addFingertipPulseListener(listener: (batch: FingertipPulseBatch) => void): number
   removeFingertipPulseListener(listenerId: number): void
+  startBloodPressureCapture(config: BloodPressureCaptureConfig): Promise<BloodPressureStartResult>
+  getBloodPressureSnapshot(): BloodPressureSnapshot | null
+  stopBloodPressureCapture(captureId: string): Promise<AcquisitionCommandResult>
+  addBloodPressureListener(listener: (snapshot: BloodPressureSnapshot | null) => void): number
+  removeBloodPressureListener(listenerId: number): void
   listArtifacts(): Promise<AcquisitionArtifact[]>
   addListener(listener: (snapshot: AcquisitionSnapshot) => void): number
   removeListener(listenerId: number): void

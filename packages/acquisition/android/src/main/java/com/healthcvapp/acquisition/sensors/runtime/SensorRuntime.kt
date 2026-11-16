@@ -10,6 +10,7 @@ import com.facebook.react.bridge.LifecycleEventListener
 import com.healthcvapp.acquisition.sensors.model.SensorCaptureFailure
 import com.healthcvapp.acquisition.sensors.model.SensorKind
 import com.healthcvapp.acquisition.sensors.source.AndroidSensorSource
+import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
 import java.util.EnumMap
 
 /** 持有本进程各类型控制器与 React 宿主生命周期状态。 */
@@ -32,7 +33,7 @@ internal class SensorRuntime private constructor(
   fun controller(kind: SensorKind): SensorController = synchronized(lock) {
     controllers[kind] ?: SensorController(
       kind = kind,
-      filesDirectory = applicationContext.filesDir,
+      filesDirectory = applicationContext.acquisitionFilesDirectory(),
       source = AndroidSensorSource(applicationContext),
       isForeground = ::isForeground,
     ).also { controllers[kind] = it }

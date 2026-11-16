@@ -269,6 +269,95 @@ class SensorCaptureSessionTest {
     }
   }
 
+  @Test
+  fun `observation and discarded preparation produce no artifact and can prepare again`() = runTest {
+    withTemporaryDirectory { root ->
+      val adapter = FakeSessionSensorAdapter()
+      val clock = MutableSessionClock()
+      var observed = 0
+      val session = SensorCaptureSession(
+        filesDirectory = root,
+        config = SensorConfig.fromRequest("accelerometer", 5_000.0),
+        source = AndroidSensorSource(adapter),
+        sessionId = "observation",
+        clock = clock,
+        ioDispatcher = Dispatchers.Unconfined,
+        consumerDispatcher = Dispatchers.Unconfined,
+        onSample = { observed += 1 },
+      )
+      session.observe()
+      adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 9.8f))
+      val paths = AcquisitionPaths(root)
+      assertFalse(paths.sensorPartialFile(SensorKind.ACCELEROMETER, "observation").exists())
+      assertEquals(1, observed)
+      session.prepareOutput()
+      session.discardPreparedOutput()
+      assertTrue(adapter.hasListener)
+      assertFalse(paths.sensorPartialFile(SensorKind.ACCELEROMETER, "observation").exists())
+      session.prepareOutput()
+      adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(2f, 3f, 9.8f))
+      assertEquals(null, session.closeObservation())
+      assertEquals(0L, session.statistics().sampleCount)
+      assertTrue(session.resourcesReleased())
+      assertFalse(adapter.hasListener)
+      assertFalse(paths.sensorPartialFile(SensorKind.ACCELEROMETER, "observation").exists())
+      assertFalse(paths.sensorCompletedFile(SensorKind.ACCELEROMETER, "observation").exists())
+    }
+  }
+
+  @Test
+  fun `common window requires activation and both receive and raw event half open boundaries`() = runTest {
+    withTemporaryDirectory { root ->
+      val adapter = FakeSessionSensorAdapter()
+      val clock = MutableSessionClock()
+      val session = SensorCaptureSession(
+        filesDirectory = root,
+        config = SensorConfig.fromRequest("accelerometer", 5_000.0),
+        source = AndroidSensorSource(adapter),
+        sessionId = "common-window",
+        clock = clock,
+        ioDispatcher = Dispatchers.Unconfined,
+        consumerDispatcher = Dispatchers.Unconfined,
+        batchSize = 50,
+      )
+      session.observe()
+      adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(99f, 99f, 99f))
+      session.prepareOutput()
+      val start = clock.elapsedRealtimeNanos + 100
+      val end = start + 1_000
+      var active = false
+      session.openWindow(start, end) { active }
+      adapter.emit(start, floatArrayOf(99f, 99f, 99f))
+      active = true
+      adapter.emit(start, floatArrayOf(99f, 99f, 99f))
+      clock.advance(100)
+      adapter.emit(start - 1, floatArrayOf(99f, 99f, 99f))
+      adapter.emit(end, floatArrayOf(99f, 99f, 99f))
+      adapter.emit(start, floatArrayOf(1.25f, -2.5f, 9.8f))
+      clock.advance(999)
+      adapter.emit(end - 1, floatArrayOf(4f, 5f, 6f))
+      clock.advance(1)
+      adapter.emit(end - 1, floatArrayOf(99f, 99f, 99f))
+      session.sealEntrance()
+      adapter.emit(start, floatArrayOf(99f, 99f, 99f))
+      val artifact = checkNotNull(session.closeObservation())
+      val statistics = session.statistics()
+      assertEquals(2L, artifact.sampleCount)
+      assertEquals(2L, statistics.sampleCount)
+      assertEquals(start, statistics.firstReceivedAtElapsedNanos)
+      assertEquals(end - 1, statistics.lastReceivedAtElapsedNanos)
+      assertEquals(start, statistics.firstEventTimestampNanos)
+      assertEquals(end - 1, statistics.lastEventTimestampNanos)
+      assertEquals("m/s2", artifact.unit)
+      assertEquals("android-device", artifact.coordinateSystem)
+      val rows = File(artifact.path).readLines()
+      assertEquals("timestamp,timestampEvent,timestampSystem,accX,accY,accZ", rows[0])
+      assertTrue(rows[1].startsWith("10000.0001,10000.0001,"))
+      assertTrue(rows[1].endsWith(",1.25,-2.5,9.8"))
+      assertEquals(3, rows.size)
+    }
+  }
+
   private fun session(
     root: File,
     adapter: FakeSessionSensorAdapter,

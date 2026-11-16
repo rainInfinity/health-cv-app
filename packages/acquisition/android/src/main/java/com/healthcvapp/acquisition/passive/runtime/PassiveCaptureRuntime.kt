@@ -15,6 +15,7 @@ import com.healthcvapp.acquisition.rppg.model.RPPGConfig
 import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionSource
 import com.healthcvapp.acquisition.rppg.output.RPPGArtifactStore
+import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
 import com.margelo.nitro.acquisition.PassiveCaptureCommandResult
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureSnapshot
@@ -188,9 +189,12 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     }
   }
 
-  /** 从共用结果存储扫描已发布的被动 RPPG 三件套。 */
-  suspend fun listArtifacts(): List<RPPGArtifact> =
-    RPPGArtifactStore(applicationContext.filesDir).listArtifacts(RPPGSessionSource.PASSIVE)
+  /** 从外部新结果与内部已有结果中查询完整的被动 RPPG 三件套。 */
+  suspend fun listArtifacts(): List<RPPGArtifact> = buildList {
+    addAll(RPPGArtifactStore(applicationContext.acquisitionFilesDirectory()).listArtifacts(RPPGSessionSource.PASSIVE))
+    addAll(RPPGArtifactStore(applicationContext.filesDir).listArtifacts(RPPGSessionSource.PASSIVE))
+    sortBy(RPPGArtifact::sessionId)
+  }
 
   /** 从旧视频目录扫描完整且媒体可读的历史录像。 */
   suspend fun listVideoArtifacts(): Array<com.margelo.nitro.acquisition.PassiveVideoArtifact> =

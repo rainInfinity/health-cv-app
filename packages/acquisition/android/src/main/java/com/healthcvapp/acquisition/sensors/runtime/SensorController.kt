@@ -9,13 +9,13 @@ import com.healthcvapp.acquisition.sensors.model.SensorConfig
 import com.healthcvapp.acquisition.sensors.model.SensorKind
 import com.healthcvapp.acquisition.sensors.model.SensorPhase
 import com.healthcvapp.acquisition.sensors.model.SensorSnapshot
+import com.healthcvapp.acquisition.sensors.model.SensorSample
 import com.healthcvapp.acquisition.sensors.session.AndroidSensorCaptureClock
 import com.healthcvapp.acquisition.sensors.session.SensorCaptureClock
 import com.healthcvapp.acquisition.sensors.session.SensorCaptureSession
 import com.healthcvapp.acquisition.sensors.source.AndroidSensorSource
 import java.io.File
 import java.util.LinkedHashMap
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineDispatcher
@@ -47,6 +47,12 @@ internal class SensorController(
   private var phase = SensorPhase.IDLE
   private var activeSession: SensorCaptureSession? = null
   private var lastSession: SensorCaptureSession? = null
+  private data class OwnedSession(
+    val ownerId: String,
+    val session: SensorCaptureSession,
+    val onLifecycleInterrupt: ((SensorCaptureFailure) -> Unit)?,
+  )
+  private val sessions = LinkedHashMap<String, OwnedSession>()
   private var lastArtifact: SensorArtifact? = null
   private var requestedSamplingPeriodMicros: Int? = null
   private var registeredSamplingPeriodMicros: Int? = null
@@ -72,33 +78,42 @@ internal class SensorController(
     listeners.remove(listenerId)
   }
 
-  /** 校验配置和前台边界后创建本类型唯一活动会话。 */
-  suspend fun startCapture(samplingPeriodMicros: Double) {
-    val request = SensorConfig.fromRequest(kind.wireName, samplingPeriodMicros)
+  /** 独立采集也必须绑定客户端和确切会话，不存在按类型停止旁路。 */
+  suspend fun startCapture(ownerId: String, sessionId: String, samplingPeriodMicros: Double) {
+    acquire(ownerId, sessionId, SensorConfig.fromRequest(kind.wireName, samplingPeriodMicros), null, {}, true)
+  }
+
+  /** 同类型互斥取得观测，准备期不创建正式文件。 */
+  suspend fun reserve(
+    ownerId: String,
+    sessionId: String,
+    config: SensorConfig,
+    onSample: (SensorSample) -> Unit,
+    onFailure: (SensorCaptureFailure) -> Unit,
+  ): SensorCaptureSession = acquire(ownerId, sessionId, config, onSample, onFailure, false)
+
+  private suspend fun acquire(
+    ownerId: String,
+    sessionId: String,
+    request: SensorConfig,
+    onSample: ((SensorSample) -> Unit)?,
+    onFailure: (SensorCaptureFailure) -> Unit,
+    independent: Boolean,
+  ): SensorCaptureSession {
+    require(ownerId.isNotBlank() && sessionId.isNotBlank() && request.kind == kind)
     if (!isForeground()) throw SensorCaptureFailure("APP_NOT_FOREGROUND", "应用不在可采集的前台状态。")
-    if (synchronized(lock) {
-        activeSession != null || phase == SensorPhase.STARTING || phase == SensorPhase.CAPTURING || phase == SensorPhase.STOPPING
-      }
-    ) {
-      throw SensorCaptureFailure("SENSOR_BUSY", "${kind.wireName} 已有活动采集会话。")
+    if (synchronized(lock) { activeSession != null }) {
+      throw SensorCaptureFailure("SENSOR_BUSY", "${kind.wireName} 已有活动会话。")
     }
-
-    commands.withLock {
+    return commands.withLock {
       synchronized(lock) {
-        if (activeSession != null || phase == SensorPhase.STARTING || phase == SensorPhase.CAPTURING || phase == SensorPhase.STOPPING) {
-          throw SensorCaptureFailure("SENSOR_BUSY", "${kind.wireName} 已有活动采集会话。")
-        }
+        if (activeSession != null) throw SensorCaptureFailure("SENSOR_BUSY", "${kind.wireName} 已有活动会话。")
+        if (sessions.containsKey(sessionId)) throw SensorCaptureFailure("SENSOR_SESSION_MISMATCH", "不能重复使用传感器会话标识。")
       }
-
-      if (!isForeground()) {
-        throw SensorCaptureFailure("APP_NOT_FOREGROUND", "应用不在可采集的前台状态。")
-      }
+      if (!isForeground()) throw SensorCaptureFailure("APP_NOT_FOREGROUND", "应用不在可采集的前台状态。")
       val capability = getCapabilities()
-      if (!capability.available) {
-        throw SensorCaptureFailure("SENSOR_UNAVAILABLE", "设备不提供 ${kind.wireName} 默认传感器。")
-      }
+      if (!capability.available) throw SensorCaptureFailure("SENSOR_UNAVAILABLE", "设备不提供 ${kind.wireName} 默认传感器。")
       val config = request.withSensorMinDelay(capability.minSamplingPeriodMicros ?: 0)
-      val sessionId = UUID.randomUUID().toString()
       lateinit var session: SensorCaptureSession
       session = SensorCaptureSession(
         filesDirectory = applicationFilesDirectory,
@@ -108,9 +123,14 @@ internal class SensorController(
         clock = clock,
         ioDispatcher = ioDispatcher,
         consumerDispatcher = consumerDispatcher,
-        onFailure = { failure -> onSessionFailure(session, failure) },
+        onSample = onSample,
+        onFailure = { failure ->
+          onSessionFailure(session, failure)
+          onFailure(failure)
+        },
       )
       updateSnapshot {
+        sessions[sessionId] = OwnedSession(ownerId, session, if (independent) null else onFailure)
         activeSession = session
         lastSession = session
         phase = SensorPhase.STARTING
@@ -119,54 +139,70 @@ internal class SensorController(
         errorCode = null
         errorMessage = null
       }
-
       try {
-        session.start()
+        if (independent) session.start() else session.observe()
         session.terminalFailure()?.let { throw it }
-        synchronized(lock) {
+        updateSnapshot {
+          session.terminalFailure()?.let { throw it }
           if (activeSession !== session || phase != SensorPhase.STARTING) {
             throw SensorCaptureFailure("SENSOR_REGISTRATION_FAILED", "传感器在开始期间已中断。")
           }
+          phase = SensorPhase.CAPTURING
         }
-        updateSnapshot { phase = SensorPhase.CAPTURING }
+        session
       } catch (error: Throwable) {
         val failure = error.asSensorFailure("SENSOR_REGISTRATION_FAILED", "传感器无法开始采集。")
-        try {
-          session.stop()
-        } catch (_: Throwable) {
-          // 等待启动失败的监听和输出资源完成收尾；保留启动根因。
+        try { session.closeObservation() } catch (_: Throwable) {
+          // 保留启动根因；未释放资源继续占用本类型并允许确切会话重试关闭。
         }
         updateSnapshot {
-          if (activeSession === session) activeSession = null
-          lastSession = session
+          if (session.resourcesReleased() && activeSession === session) activeSession = null
           phase = SensorPhase.FAILED
           errorCode = failure.code
-          errorMessage = failure.message ?: "传感器无法开始采集。"
+          errorMessage = failure.message
         }
         throw failure
       }
     }
   }
 
-  /** 停止调用时绑定当前会话，等待关闭、尾批和文件提升完成。 */
-  suspend fun stopCapture(): SensorArtifact {
-    val target = synchronized(lock) {
-      activeSession ?: lastSession ?: throw SensorCaptureFailure("SENSOR_NOT_CAPTURING", "当前没有传感器采集会话。")
-    }
-    synchronized(lock) {
-      if (activeSession === target && phase != SensorPhase.FAILED) phase = SensorPhase.STOPPING
-      dispatchSnapshot(snapshotLocked())
-    }
+  suspend fun stopCapture(ownerId: String, sessionId: String): SensorArtifact {
+    val artifact = release(ownerId, sessionId)
+    synchronized(lock) { sessions[sessionId]?.session?.terminalFailure() }?.let { throw it }
+    return artifact ?: throw SensorCaptureFailure("SENSOR_NOT_CAPTURING", "当前会话没有正式采集窗口。")
+  }
 
+  /** reserve 抛出前已经登记的对象也可核查，不能把没有返回对象视为释放成功。 */
+  fun isReserved(ownerId: String, sessionId: String): Boolean = synchronized(lock) {
+    val owned = sessions[sessionId]
+    owned != null && owned.ownerId == ownerId && !owned.session.resourcesReleased()
+  }
+
+  /** 关闭确切轮次；历史停止只访问自己的对象，不读取当前类型占用者。 */
+  suspend fun release(ownerId: String, sessionId: String): SensorArtifact? {
+    val target = synchronized(lock) {
+      val owned = sessions[sessionId]
+        ?: throw SensorCaptureFailure("SENSOR_SESSION_MISMATCH", "不存在指定的传感器会话。")
+      if (owned.ownerId != ownerId) throw SensorCaptureFailure("SENSOR_NOT_OWNER", "不能停止其他调用方的传感器会话。")
+      owned.session
+    }
+    target.sealEntrance()
+    updateSnapshot {
+      if (activeSession === target && phase != SensorPhase.FAILED) phase = SensorPhase.STOPPING
+    }
     return commands.withLock {
+      if (target.resourcesReleased() && target.terminalFailure() != null) {
+        updateSnapshot { if (activeSession === target) activeSession = null }
+        return@withLock null
+      }
       try {
-        val artifact = target.stop()
+        val artifact = target.closeObservation()
         updateSnapshot {
-          completedArtifacts[target.sessionId] = artifact
+          if (artifact != null) completedArtifacts[target.sessionId] = artifact
           if (activeSession === target) {
             activeSession = null
             lastSession = target
-            lastArtifact = artifact
+            if (artifact != null) lastArtifact = artifact
             phase = SensorPhase.IDLE
             errorCode = null
             errorMessage = null
@@ -177,11 +213,11 @@ internal class SensorController(
         val failure = error.asSensorFailure("FILE_FINALIZATION_FAILED", "传感器采集未能正常完成。")
         updateSnapshot {
           if (activeSession === target) {
-            activeSession = null
+            if (target.resourcesReleased()) activeSession = null
             lastSession = target
             phase = SensorPhase.FAILED
             errorCode = failure.code
-            errorMessage = failure.message ?: "传感器采集未能正常完成。"
+            errorMessage = failure.message
           }
         }
         throw failure
@@ -192,10 +228,18 @@ internal class SensorController(
   /** 返回本进程内按会话顺序完成的本类型产物，不扫描磁盘。 */
   fun listArtifacts(): List<SensorArtifact> = synchronized(lock) { completedArtifacts.values.toList() }
 
-  /** 宿主暂停或销毁时失败收尾当前会话，不尝试自动恢复。 */
+  /** 独立源按失败收尾；显式组内源由协调器保留中断原因并定稿已接受数据。 */
   fun interrupt(cause: SensorCaptureFailure) {
-    val session = synchronized(lock) { activeSession } ?: return
-    session.fail(cause)
+    val owned = synchronized(lock) {
+      activeSession?.let { sessions[it.sessionId] }
+    } ?: return
+    val groupInterrupt = owned.onLifecycleInterrupt
+    if (groupInterrupt == null) {
+      owned.session.fail(cause)
+    } else {
+      owned.session.sealEntrance()
+      groupInterrupt(cause)
+    }
   }
 
   /** 在状态锁内更新字段并按同一顺序派发快照。 */
@@ -247,21 +291,12 @@ internal class SensorController(
         errorMessage = failure.message ?: "传感器采集失败。"
       }
     }
+    val owner = synchronized(lock) { sessions[session.sessionId]?.ownerId } ?: return
     controllerScope.launch {
-      commands.withLock {
-        if (synchronized(lock) { activeSession !== session }) return@withLock
-        try {
-          session.stop()
-        } catch (_: Throwable) {
-          // 会话已记录终态错误；等待源监听、回调和 writer 释放。
-        }
-        updateSnapshot {
-          if (activeSession === session) activeSession = null
-          lastSession = session
-          phase = SensorPhase.FAILED
-          errorCode = failure.code
-          errorMessage = failure.message ?: "传感器采集失败。"
-        }
+      try {
+        release(owner, session.sessionId)
+      } catch (_: Throwable) {
+        // 原始错误和未释放会话保留；后续关闭可以重试资源屏障。
       }
     }
   }

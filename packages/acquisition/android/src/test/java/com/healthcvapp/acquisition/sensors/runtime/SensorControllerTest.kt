@@ -3,6 +3,7 @@
 package com.healthcvapp.acquisition.sensors.runtime
 
 import com.healthcvapp.acquisition.sensors.model.SensorCaptureFailure
+import com.healthcvapp.acquisition.sensors.model.SensorConfig
 import com.healthcvapp.acquisition.sensors.model.SensorKind
 import com.healthcvapp.acquisition.sensors.model.SensorPhase
 import com.healthcvapp.acquisition.sensors.session.SensorCaptureClock
@@ -32,7 +33,7 @@ class SensorControllerTest {
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
       val controller = controller(root, SensorKind.ACCELEROMETER, adapter)
 
-      val error = captureFailure { controller.startCapture(Double.NaN) }
+      val error = captureFailure { controller.startCapture("test-owner", "invalid", Double.NaN) }
 
       assertEquals("INVALID_SENSOR_CONFIG", error.code)
       assertEquals(0, adapter.capabilityQueryCount)
@@ -47,7 +48,7 @@ class SensorControllerTest {
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
       val controller = controller(root, SensorKind.ACCELEROMETER, adapter, foreground = { false })
 
-      val error = captureFailure { controller.startCapture(20_000.0) }
+      val error = captureFailure { controller.startCapture("test-owner", "background", 20_000.0) }
 
       assertEquals("APP_NOT_FOREGROUND", error.code)
       assertEquals(0, adapter.capabilityQueryCount)
@@ -61,23 +62,23 @@ class SensorControllerTest {
     withTemporaryDirectory { root ->
       val missingAdapter = FakeSensorDeviceAdapter(SensorKind.GYROSCOPE, device = null)
       val missingController = controller(root, SensorKind.GYROSCOPE, missingAdapter)
-      val missingError = captureFailure { missingController.startCapture(20_000.0) }
+      val missingError = captureFailure { missingController.startCapture("test-owner", "missing", 20_000.0) }
       assertEquals("SENSOR_UNAVAILABLE", missingError.code)
       assertEquals(0, missingAdapter.registrationCount)
       assertFalse(root.listFiles()?.any { it.name == "acquisition" } == true)
 
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER, registrationResult = false)
       val activeController = controller(root, SensorKind.ACCELEROMETER, adapter)
-      val registrationError = captureFailure { activeController.startCapture(20_000.0) }
+      val registrationError = captureFailure { activeController.startCapture("test-owner", "rejected", 20_000.0) }
       assertEquals("SENSOR_REGISTRATION_FAILED", registrationError.code)
       assertEquals(SensorPhase.FAILED, activeController.getSnapshot().phase)
       assertEquals(0, adapter.unregisterCount)
       assertFalse(File(root, "acquisition/sensors/accelerometer/${activeController.getSnapshot().sessionId}/accelerometer.csv").exists())
 
       adapter.registrationResult = true
-      activeController.startCapture(20_000.0)
+      activeController.startCapture("test-owner", "retry", 20_000.0)
       adapter.emit(10_000_000_001L, floatArrayOf(1f, 2f, 3f))
-      val artifact = activeController.stopCapture()
+      val artifact = activeController.stopCapture("test-owner", "retry")
 
       assertEquals(1L, artifact.sampleCount)
       assertEquals(1, adapter.unregisterCount)
@@ -93,16 +94,16 @@ class SensorControllerTest {
       )
       val controller = controller(root, SensorKind.MAGNETOMETER, adapter)
 
-      val error = captureFailure { controller.startCapture(20_000.0) }
+      val error = captureFailure { controller.startCapture("test-owner", "exception", 20_000.0) }
 
       assertEquals("SENSOR_REGISTRATION_FAILED", error.code)
       assertEquals(1, adapter.registrationCount)
       assertEquals(0, adapter.unregisterCount)
       assertFalse(adapter.hasListener)
       adapter.registrationError = null
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "retry", 20_000.0)
       adapter.emit(10_000_000_001L, floatArrayOf(1f, 2f, 3f))
-      val artifact = controller.stopCapture()
+      val artifact = controller.stopCapture("test-owner", "retry")
 
       assertEquals(2, adapter.registrationCount)
       assertEquals(1, adapter.unregisterCount)
@@ -117,7 +118,7 @@ class SensorControllerTest {
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER, minDelayMicros = 10_000)
       val controller = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
 
-      controller.startCapture(5_000.0)
+      controller.startCapture("test-owner", "snapshot", 5_000.0)
       assertEquals(10_000, adapter.registeredSamplingPeriodMicros)
       adapter.emit(clock.elapsedRealtimeNanos - 1L, floatArrayOf(99f, 99f, 99f))
 
@@ -127,7 +128,7 @@ class SensorControllerTest {
       reusedValues[0] = 99f
       clock.advance(1_111L)
       adapter.emit(clock.elapsedRealtimeNanos, reusedValues)
-      val artifact = controller.stopCapture()
+      val artifact = controller.stopCapture("test-owner", "snapshot")
       val rows = File(artifact.path).readLines()
 
       assertEquals(2L, artifact.sampleCount)
@@ -145,17 +146,17 @@ class SensorControllerTest {
       val clock = MutableSensorClock()
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
       val controller = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "first", 20_000.0)
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
-      val completedArtifact = controller.stopCapture()
+      val completedArtifact = controller.stopCapture("test-owner", "first")
 
       val capabilityQueryEntered = CountDownLatch(1)
       val releaseCapabilityQuery = CountDownLatch(1)
       adapter.capabilityQueryEntered = capabilityQueryEntered
       adapter.releaseCapabilityQuery = releaseCapabilityQuery
-      val nextStart = async(Dispatchers.IO) { controller.startCapture(20_000.0) }
+      val nextStart = async(Dispatchers.IO) { controller.startCapture("test-owner", "next", 20_000.0) }
       assertTrue(capabilityQueryEntered.await(5, TimeUnit.SECONDS))
-      val staleStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture() }
+      val staleStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture("test-owner", "first") }
       assertFalse(staleStop.isCompleted)
 
       releaseCapabilityQuery.countDown()
@@ -165,7 +166,7 @@ class SensorControllerTest {
       assertTrue(adapter.hasListener)
       clock.advance(1_000L)
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(4f, 5f, 6f))
-      val nextArtifact = controller.stopCapture()
+      val nextArtifact = controller.stopCapture("test-owner", "next")
 
       assertTrue(completedArtifact.sessionId != nextArtifact.sessionId)
       assertEquals(1L, nextArtifact.sampleCount)
@@ -191,12 +192,12 @@ class SensorControllerTest {
         clock = clock,
         ioDispatcher = Dispatchers.IO,
       )
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "first", 20_000.0)
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
 
-      val firstStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture() }
+      val firstStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture("test-owner", "first") }
       assertTrue(unregisterEntered.await(5, TimeUnit.SECONDS))
-      val secondStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture() }
+      val secondStop = async(start = CoroutineStart.UNDISPATCHED) { controller.stopCapture("test-owner", "first") }
       assertFalse(secondStop.isCompleted)
       releaseUnregister.countDown()
       val firstArtifact = firstStop.await()
@@ -204,9 +205,9 @@ class SensorControllerTest {
 
       assertEquals(firstArtifact, secondArtifact)
       clock.advance(1_000L)
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "next", 20_000.0)
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(4f, 5f, 6f))
-      val nextArtifact = controller.stopCapture()
+      val nextArtifact = controller.stopCapture("test-owner", "next")
 
       assertTrue(firstArtifact.sessionId != nextArtifact.sessionId)
       assertEquals(1L, nextArtifact.sampleCount)
@@ -223,21 +224,21 @@ class SensorControllerTest {
       val acceleration = controller(root, SensorKind.ACCELEROMETER, accelerationAdapter, clock)
       val gyroscope = controller(root, SensorKind.GYROSCOPE, gyroscopeAdapter, clock)
 
-      acceleration.startCapture(20_000.0)
-      val repeatedStart = captureFailure { acceleration.startCapture(30_000.0) }
+      acceleration.startCapture("test-owner", "acc", 20_000.0)
+      val repeatedStart = captureFailure { acceleration.startCapture("other-owner", "repeated", 30_000.0) }
       assertEquals("SENSOR_BUSY", repeatedStart.code)
-      gyroscope.startCapture(35_000.0)
+      gyroscope.startCapture("test-owner", "gyro", 35_000.0)
       assertEquals(20_000, acceleration.getSnapshot().requestedSamplingPeriodMicros)
       assertEquals(35_000, gyroscope.getSnapshot().requestedSamplingPeriodMicros)
       clock.advance(1_000_000L)
       accelerationAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
       gyroscopeAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(4f, 5f, 6f))
-      val accelerationArtifact = acceleration.stopCapture()
+      val accelerationArtifact = acceleration.stopCapture("test-owner", "acc")
       assertEquals(SensorPhase.IDLE, acceleration.getSnapshot().phase)
       assertEquals(SensorPhase.CAPTURING, gyroscope.getSnapshot().phase)
       clock.advance(1_000_000L)
       gyroscopeAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(7f, 8f, 9f))
-      val gyroscopeArtifact = gyroscope.stopCapture()
+      val gyroscopeArtifact = gyroscope.stopCapture("test-owner", "gyro")
 
       assertEquals(1L, accelerationArtifact.sampleCount)
       assertEquals(2L, gyroscopeArtifact.sampleCount)
@@ -256,8 +257,8 @@ class SensorControllerTest {
       val gyroscopeAdapter = FakeSensorDeviceAdapter(SensorKind.GYROSCOPE)
       val acceleration = controller(root, SensorKind.ACCELEROMETER, accelerationAdapter, clock)
       val gyroscope = controller(root, SensorKind.GYROSCOPE, gyroscopeAdapter, clock)
-      acceleration.startCapture(20_000.0)
-      gyroscope.startCapture(45_000.0)
+      acceleration.startCapture("test-owner", "acc", 20_000.0)
+      gyroscope.startCapture("test-owner", "gyro", 45_000.0)
 
       accelerationAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f))
       assertEquals(SensorPhase.FAILED, acceleration.getSnapshot().phase)
@@ -267,7 +268,7 @@ class SensorControllerTest {
       assertTrue(gyroscopeAdapter.hasListener)
       clock.advance(1_000_000L)
       gyroscopeAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(4f, 5f, 6f))
-      val gyroscopeArtifact = gyroscope.stopCapture()
+      val gyroscopeArtifact = gyroscope.stopCapture("test-owner", "gyro")
 
       assertEquals(1L, gyroscopeArtifact.sampleCount)
       assertEquals(1, gyroscope.listArtifacts().size)
@@ -285,10 +286,10 @@ class SensorControllerTest {
         val clock = MutableSensorClock()
         val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
         val controller = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
-        controller.startCapture(20_000.0)
+        controller.startCapture("test-owner", "damaged", 20_000.0)
         adapter.emit(clock.elapsedRealtimeNanos, values)
 
-        val error = captureFailure { controller.stopCapture() }
+        val error = captureFailure { controller.stopCapture("test-owner", "damaged") }
         val sessionId = checkNotNull(controller.getSnapshot().sessionId)
         val partialFile = File(root, "acquisition/sensors/accelerometer/$sessionId/accelerometer.csv.part")
 
@@ -308,20 +309,142 @@ class SensorControllerTest {
       val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
       val controller = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
 
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "first", 20_000.0)
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
-      val firstArtifact = controller.stopCapture()
+      val firstArtifact = controller.stopCapture("test-owner", "first")
       clock.advance(1_000L)
-      controller.startCapture(20_000.0)
+      controller.startCapture("test-owner", "next", 20_000.0)
       adapter.emitFromSession(0, clock.elapsedRealtimeNanos, floatArrayOf(90f, 91f, 92f))
       adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(4f, 5f, 6f))
-      val secondArtifact = controller.stopCapture()
+      val secondArtifact = controller.stopCapture("test-owner", "next")
       val rows = File(secondArtifact.path).readLines()
 
       assertTrue(firstArtifact.sessionId != secondArtifact.sessionId)
       assertEquals(1L, secondArtifact.sampleCount)
       assertEquals(2, rows.size)
       assertTrue(rows[1].endsWith(",4.0,5.0,6.0"))
+    }
+  }
+
+  @Test
+  fun `reservation shares exclusivity and rejects foreign or stale release without stopping another type`() = runTest {
+    withTemporaryDirectory { root ->
+      val clock = MutableSensorClock()
+      val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
+      val acceleration = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
+      val magnetAdapter = FakeSensorDeviceAdapter(SensorKind.MAGNETOMETER)
+      val magnet = controller(root, SensorKind.MAGNETOMETER, magnetAdapter, clock)
+      magnet.startCapture("external", "magnet", 20_000.0)
+      acceleration.reserve("blood", "old", SensorConfig.fromRequest("accelerometer", 5_000.0), {}, {})
+      assertEquals("SENSOR_BUSY", captureFailure {
+        acceleration.startCapture("independent", "blocked", 20_000.0)
+      }.code)
+      assertEquals("SENSOR_NOT_OWNER", captureFailure {
+        acceleration.release("foreign", "old")
+      }.code)
+      assertTrue(adapter.hasListener)
+      assertEquals(null, acceleration.release("blood", "old"))
+      acceleration.reserve("blood", "new", SensorConfig.fromRequest("accelerometer", 5_000.0), {}, {})
+      assertEquals(null, acceleration.release("blood", "old"))
+      assertTrue(adapter.hasListener)
+      assertEquals("new", acceleration.getSnapshot().sessionId)
+      acceleration.release("blood", "new")
+      assertTrue(magnetAdapter.hasListener)
+      magnetAdapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
+      assertEquals(1L, magnet.stopCapture("external", "magnet").sampleCount)
+      assertTrue(acceleration.listArtifacts().isEmpty())
+      acceleration.startCapture("independent", "standalone", 20_000.0)
+      assertEquals("SENSOR_BUSY", captureFailure {
+        acceleration.reserve("blood", "blocked-reserve", SensorConfig.fromRequest("accelerometer", 5_000.0), {}, {})
+      }.code)
+      adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 3f))
+      assertEquals(1L, acceleration.stopCapture("independent", "standalone").sampleCount)
+    }
+  }
+
+  @Test
+  fun `observation only gyroscope closes without a fourth formal file`() = runTest {
+    withTemporaryDirectory { root ->
+      val adapter = FakeSensorDeviceAdapter(SensorKind.GYROSCOPE)
+      val controller = controller(root, SensorKind.GYROSCOPE, adapter)
+      var observed = 0
+      val session = controller.reserve(
+        "blood", "gyro", SensorConfig.fromRequest("gyroscope", 20_000.0),
+        { observed += 1 }, {},
+      )
+      adapter.emit(10_000_000_001L, floatArrayOf(0.01f, 0.02f, 0.03f))
+      assertEquals(1, observed)
+      assertEquals(null, controller.release("blood", "gyro"))
+      assertTrue(session.resourcesReleased())
+      assertFalse(adapter.hasListener)
+      assertTrue(controller.listArtifacts().isEmpty())
+      assertFalse(root.walkTopDown().any { it.isFile })
+    }
+  }
+
+  @Test
+  fun `failed unregister keeps exact reservation until resource retry and retains standalone failure`() = runTest {
+    withTemporaryDirectory { root ->
+      val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
+      val controller = controller(root, SensorKind.ACCELEROMETER, adapter)
+      controller.startCapture("owner", "failed-close", 20_000.0)
+      adapter.emit(10_000_000_001L, floatArrayOf(1f, 2f, 3f))
+      adapter.rejectUnregister = true
+      assertEquals("SENSOR_REGISTRATION_FAILED", captureFailure {
+        controller.stopCapture("owner", "failed-close")
+      }.code)
+      assertTrue(controller.isReserved("owner", "failed-close"))
+      assertEquals("SENSOR_BUSY", captureFailure {
+        controller.startCapture("next", "blocked", 20_000.0)
+      }.code)
+      adapter.rejectUnregister = false
+      captureFailure { controller.release("owner", "failed-close") }
+      assertFalse(controller.isReserved("owner", "failed-close"))
+      assertFalse(adapter.hasListener)
+      assertEquals(null, controller.release("owner", "failed-close"))
+      assertEquals("SENSOR_REGISTRATION_FAILED", captureFailure {
+        controller.stopCapture("owner", "failed-close")
+      }.code)
+      controller.startCapture("next", "ready", 20_000.0)
+      adapter.emit(10_000_000_002L, floatArrayOf(4f, 5f, 6f))
+      assertEquals(1L, controller.stopCapture("next", "ready").sampleCount)
+    }
+  }
+
+  @Test
+  fun `组内后台中断只通知协调器且保留正式文件独立入口仍失败`() = runTest {
+    for (code in listOf("APP_NOT_FOREGROUND", "RUNTIME_DESTROYED")) {
+      withTemporaryDirectory { root ->
+        val clock = MutableSensorClock()
+        val adapter = FakeSensorDeviceAdapter(SensorKind.ACCELEROMETER)
+        val controller = controller(root, SensorKind.ACCELEROMETER, adapter, clock)
+        var interrupted: SensorCaptureFailure? = null
+        val session = controller.reserve(
+          "blood", "group", SensorConfig.fromRequest("accelerometer", 5_000.0),
+          {}, { interrupted = it },
+        )
+        session.prepareOutput()
+        session.openWindow(clock.elapsedRealtimeNanos, clock.elapsedRealtimeNanos + 1_000_000L) { true }
+        adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 9.8f))
+        controller.interrupt(SensorCaptureFailure(code, "宿主已中断。"))
+        assertEquals(code, interrupted?.code)
+        assertEquals(null, session.terminalFailure())
+        adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(99f, 99f, 99f))
+        val artifact = checkNotNull(controller.release("blood", "group"))
+        assertEquals(1L, artifact.sampleCount)
+        assertFalse(adapter.hasListener)
+        assertTrue(session.resourcesReleased())
+        assertEquals(2, File(artifact.path).readLines().size)
+
+        controller.startCapture("independent", "standalone", 20_000.0)
+        adapter.emit(clock.elapsedRealtimeNanos, floatArrayOf(1f, 2f, 9.8f))
+        controller.interrupt(SensorCaptureFailure(code, "宿主已中断。"))
+        assertEquals(code, captureFailure {
+          controller.stopCapture("independent", "standalone")
+        }.code)
+        assertFalse(adapter.hasListener)
+        assertEquals(1, controller.listArtifacts().size)
+      }
     }
   }
 
@@ -405,6 +528,7 @@ private class FakeSensorDeviceAdapter(
   private var callback: SensorEventCallback? = null
   private val callbacks = mutableListOf<SensorEventCallback>()
   val hasListener: Boolean get() = callback != null
+  var rejectUnregister = false
 
   override fun getDefaultSensor(androidType: Int): SensorDevice? {
     capabilityQueryCount += 1
@@ -431,6 +555,7 @@ private class FakeSensorDeviceAdapter(
 
   override fun unregisterListener(device: SensorDevice, callback: SensorEventCallback) {
     unregisterCount += 1
+    if (rejectUnregister) throw IllegalStateException("unregister rejected")
     if (this.callback === callback) this.callback = null
     unregisterEntered?.countDown()
     releaseUnregister?.let {

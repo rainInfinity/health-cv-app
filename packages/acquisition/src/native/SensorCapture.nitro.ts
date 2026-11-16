@@ -32,7 +32,7 @@ export interface SensorArtifact {
   kind: SensorKind
   /** 唯一采集会话标识。 */
   sessionId: string
-  /** 应用私有持久目录中的已完成 CSV 路径。 */
+  /** 应用专属外部持久目录中的已完成 CSV 绝对路径。 */
   path: string
   /** 已关闭文件的字节数。 */
   sizeBytes: number
@@ -90,8 +90,8 @@ export interface SensorStopCaptureResult extends SensorCaptureCommandResult {
 export interface SensorCapture extends HybridObject<{ android: 'kotlin' }> {
   getCapabilities(kind: string): Promise<SensorCapabilities>
   getSnapshot(kind: string): SensorSnapshot
-  startCapture(kind: string, samplingPeriodMicros: number): Promise<SensorCaptureCommandResult>
-  stopCapture(kind: string): Promise<SensorStopCaptureResult>
+  startCapture(kind: string, samplingPeriodMicros: number, sessionId: string): Promise<SensorCaptureCommandResult>
+  stopCapture(kind: string, sessionId: string): Promise<SensorStopCaptureResult>
   listArtifacts(kind: string): Promise<SensorArtifact[]>
   addListener(kind: string, listener: (snapshot: SensorSnapshot) => void): number
   removeListener(kind: string, listenerId: number): void

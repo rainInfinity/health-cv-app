@@ -94,10 +94,10 @@ internal class AndroidSensorSource(private val adapter: SensorDeviceAdapter) {
   fun unregister() {
     val device = activeDevice ?: return
     val callback = activeCallback ?: return
-    activeDevice = null
-    activeCallback = null
     try {
       adapter.unregisterListener(device, callback)
+      activeDevice = null
+      activeCallback = null
     } catch (error: Throwable) {
       throw SensorCaptureFailure("SENSOR_REGISTRATION_FAILED", "注销 ${device.name} 监听失败。", error)
     }
@@ -154,7 +154,7 @@ private class AndroidSensorDeviceAdapter(context: Context) : SensorDeviceAdapter
 
   /** 注销后放置线程屏障，再关闭专属 Looper。 */
   override fun unregisterListener(device: SensorDevice, callback: SensorEventCallback) {
-    val registration = synchronized(registrations) { registrations.remove(callback) } ?: return
+    val registration = synchronized(registrations) { registrations[callback] } ?: return
     var failure: Throwable? = null
     try {
       sensorManager.unregisterListener(registration.listener, registration.sensor)
@@ -179,6 +179,7 @@ private class AndroidSensorDeviceAdapter(context: Context) : SensorDeviceAdapter
       if (interrupted) Thread.currentThread().interrupt()
     }
     failure?.let { throw it }
+    synchronized(registrations) { registrations.remove(callback) }
   }
 
   /** 退出 HandlerThread 并等待队列清空；等待期间保留调用线程中断标志。 */

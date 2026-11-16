@@ -67,11 +67,11 @@ internal class SensorSessionOutput(
   /** 关闭 writer；关闭失败会使本会话永远不能发布完成路径。 */
   suspend fun close() = withContext(ioDispatcher) {
     if (closed) return@withContext
-    closed = true
     val activeWriter = writer
-    writer = null
     try {
       activeWriter?.close()
+      writer = null
+      closed = true
     } catch (error: Throwable) {
       SensorCaptureFailure("FILE_FINALIZATION_FAILED", "传感器 CSV 文件关闭失败。", error)
         .also { closeFailure = it }
@@ -79,11 +79,24 @@ internal class SensorSessionOutput(
     }
   }
 
+  /** 撤销未开窗输出，释放 writer 后删除临时文件，允许同轮重新准备。 */
+  suspend fun discard() = withContext(ioDispatcher) {
+    check(!published && sampleCount == 0L) { "cannot discard recorded sensor output" }
+    close()
+    val partial = paths.sensorPartialFile(kind, sessionId)
+    if (partial.exists() && !partial.delete()) {
+      throw SensorCaptureFailure("FILE_FINALIZATION_FAILED", "无法撤销传感器准备文件。")
+    }
+    opened = false
+    closed = false
+    closeFailure = null
+  }
+
   /** 提升非空关闭文件并创建仅描述该类型的完成产物。 */
   fun publish(startedAtMillis: Long, finishedAtMillis: Long): SensorArtifact {
+    closeFailure?.let { throw it }
     check(closed) { "sensor session output must be closed before publication" }
     check(!published) { "sensor session output can only be published once" }
-    closeFailure?.let { throw it }
     if (sampleCount == 0L) {
       throw SensorCaptureFailure("SENSOR_NO_SAMPLES", "传感器会话没有收到有效样本。")
     }

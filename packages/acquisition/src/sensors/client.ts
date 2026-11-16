@@ -13,6 +13,8 @@ import type {
   SensorStopCaptureResult,
 } from '../native/SensorCapture.nitro'
 
+let nextSensorSessionId = 0
+
 /** 描述传感器命令失败时返回的稳定错误码。 */
 export class SensorCaptureError extends Error {
   /** 原生协议中的稳定错误码。 */
@@ -28,6 +30,8 @@ export class SensorCaptureError extends Error {
 
 /** 只暴露单一传感器的控制、低频状态和完成文件查询。 */
 export class SensorClient {
+  private sessionId: string | null = null
+  private pendingStart: Promise<void> | null = null
   /** 保存 Nitro 原生对象及其固定传感器类型。 */
   constructor(
     private readonly native: SensorCapture,
@@ -64,12 +68,40 @@ export class SensorClient {
       )
     }
 
-    this.unwrap(await this.native.startCapture(this.kind, config.samplingPeriodMicros))
+    if (this.pendingStart != null) {
+      throw new SensorCaptureError('SENSOR_BUSY', '本客户端已有正在启动的传感器会话。')
+    }
+    const previousSessionId = this.sessionId
+    const sessionId = `${Date.now()}-${++nextSensorSessionId}`
+    this.sessionId = sessionId
+    const pending = this.native.startCapture(this.kind, config.samplingPeriodMicros, sessionId).then((result) => {
+      this.unwrap(result)
+    })
+    this.pendingStart = pending
+    try {
+      await pending
+    } catch (error) {
+      if (error instanceof SensorCaptureError && error.code === 'SENSOR_BUSY') {
+        this.sessionId = previousSessionId
+      }
+      throw error
+    } finally {
+      this.pendingStart = null
+    }
   }
 
   /** 等待停止屏障和文件完成后返回本类型产物。 */
   async stopCapture(): Promise<SensorArtifact> {
-    const result = await this.native.stopCapture(this.kind)
+    const sessionId = this.sessionId
+    if (this.pendingStart != null) {
+      try { await this.pendingStart } catch {
+        // 启动失败仍允许确切会话再次关闭未释放资源。
+      }
+    }
+    if (sessionId == null) {
+      throw new SensorCaptureError('SENSOR_NOT_CAPTURING', '本客户端尚未启动传感器采集。')
+    }
+    const result = await this.native.stopCapture(this.kind, sessionId)
     this.unwrap(result)
     if (result.artifact == null) {
       throw new SensorCaptureError('MISSING_ARTIFACT', '停止操作未返回已完成的传感器文件。')

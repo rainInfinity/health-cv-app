@@ -35,7 +35,7 @@ export type RPPGArtifactFileKind = 'session' | 'pulse' | 'heart-rate'
 export interface RPPGArtifactFile {
   /** 文件用途。 */
   kind: RPPGArtifactFileKind
-  /** 应用私有目录中的绝对路径。 */
+  /** 新产物位于应用专属外部目录；已有内部产物保留原绝对路径。 */
   path: string
   /** 已发布文件大小，单位字节。 */
   sizeBytes: number
@@ -180,7 +180,7 @@ export interface RPPG extends HybridObject<{ android: 'kotlin' }> {
   stop(): Promise<RPPGCommandResult>
   /** 页面离开时收尾并关闭本 runtime。 */
   close(): Promise<RPPGCommandResult>
-  /** 查询应用私有目录中已发布的主动 RPPG 三件套。 */
+  /** 查询外部及已有内部目录中已发布的主动 RPPG 三件套。 */
   listArtifacts(): Promise<RPPGArtifact[]>
   /** 订阅低频状态快照并返回独立监听标识。 */
   addListener(listener: (snapshot: RPPGSnapshot) => void): number

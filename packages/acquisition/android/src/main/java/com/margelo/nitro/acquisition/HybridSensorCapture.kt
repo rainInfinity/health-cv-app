@@ -13,9 +13,11 @@ import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.NullType
 import com.margelo.nitro.core.Promise
 import java.util.concurrent.CancellationException
+import java.util.UUID
 
 /** 提供能力查询、逐类型控制、低频状态订阅和本进程完成文件引用。 */
 class HybridSensorCapture : HybridSensorCaptureSpec() {
+  private val ownerId = UUID.randomUUID().toString()
   private val runtime = SensorRuntime.get(
     checkNotNull(NitroModules.applicationContext) { "Nitro ReactApplicationContext is unavailable" },
   )
@@ -33,9 +35,10 @@ class HybridSensorCapture : HybridSensorCaptureSpec() {
   override fun startCapture(
     kind: String,
     samplingPeriodMicros: Double,
+    sessionId: String,
   ): Promise<SensorCaptureCommandResult> = Promise.async {
     try {
-      runtime.controller(kind).startCapture(samplingPeriodMicros)
+      runtime.controller(kind).startCapture(ownerId, sessionId, samplingPeriodMicros)
       commandResult()
     } catch (error: CancellationException) {
       throw error
@@ -46,9 +49,9 @@ class HybridSensorCapture : HybridSensorCaptureSpec() {
   }
 
   /** 停止调用时绑定的会话并等待文件关闭或结构化失败。 */
-  override fun stopCapture(kind: String): Promise<SensorStopCaptureResult> = Promise.async {
+  override fun stopCapture(kind: String, sessionId: String): Promise<SensorStopCaptureResult> = Promise.async {
     try {
-      stopResult(artifact = runtime.controller(kind).stopCapture())
+      stopResult(artifact = runtime.controller(kind).stopCapture(ownerId, sessionId))
     } catch (error: CancellationException) {
       throw error
     } catch (error: Throwable) {

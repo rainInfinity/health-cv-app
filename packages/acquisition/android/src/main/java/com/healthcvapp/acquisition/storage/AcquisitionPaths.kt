@@ -1,4 +1,4 @@
-/** 集中维护主动 PPG／RPPG 与被动视频的私有会话路径。 */
+/** 集中维护 PPG、RPPG、传感器与历史被动视频的会话路径。 */
 
 package com.healthcvapp.acquisition.storage
 
@@ -6,7 +6,7 @@ import java.io.File
 import java.util.UUID
 import com.healthcvapp.acquisition.sensors.model.SensorKind
 
-/** 从应用私有根目录解析现有采集目录与文件名。 */
+/** 从注入的持久根目录解析采集路径；新产物使用外部根目录，历史文件保留原位置。 */
 internal class AcquisitionPaths(private val filesDirectory: File) {
   /** 返回主动 PPG 会话目录，保留既有 sessionId 约束。 */
   fun ppgSessionDirectory(sessionId: String): File =

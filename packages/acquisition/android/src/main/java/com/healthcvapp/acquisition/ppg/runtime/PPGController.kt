@@ -53,6 +53,10 @@ import com.healthcvapp.acquisition.ppg.session.PPGCaptureFailure
 import com.healthcvapp.acquisition.ppg.session.PPGCaptureSession
 import com.margelo.nitro.core.NullType
 import com.healthcvapp.acquisition.ppg.fingertip.*
+import com.healthcvapp.acquisition.ppg.bloodpressure.BloodPressureController
+import com.healthcvapp.acquisition.ppg.bloodpressure.RuntimeBloodPressureSensors
+import com.healthcvapp.acquisition.sensors.runtime.SensorRuntime
+import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -81,8 +85,12 @@ internal class PPGController(context: ReactContext) {
   private val completedArtifacts = LinkedHashMap<String, PPGArtifact>()
   private val ownership = PPGCommandOwnership()
   private val fingertipCoverage = FingertipCoverageEstimator()
-  val fingertip = FingertipController(
+  val fingertip: FingertipController = FingertipController(
     controllerScope, commandMutex, createFingertipHost(), SystemClock::elapsedRealtimeNanos,
+  )
+  val bloodPressure: BloodPressureController = BloodPressureController(
+    controllerScope, commandMutex, createFingertipHost(bloodPressureMode = true),
+    RuntimeBloodPressureSensors(SensorRuntime.get(context)), SystemClock::elapsedRealtimeNanos,
   )
   private val previews = PPGPreviewRegistry<PreviewView>()
   private var state = AcquisitionState.CLOSED
@@ -123,6 +131,7 @@ internal class PPGController(context: ReactContext) {
     onFrameEvaluated = { frame ->
       val coverage = fingertipCoverage.estimate(frame)
       fingertip.onCoverage(coverage, frame.processingElapsedNanos)
+      bloodPressure.onCoverage(coverage, frame.processingElapsedNanos)
       coverage.usable
     },
   )
@@ -412,8 +421,9 @@ internal class PPGController(context: ReactContext) {
   /** 只有当前周期的锁状态经真实结果确认后才创建采集文件和正式窗口。 */
   suspend fun startCapture(ownerId: String): AcquisitionCommandResult = commandMutex.withLock {
     if (!ownership.owns(ownerId)) return@withLock commandResult("CAMERA_NOT_OWNER", "调用方不拥有当前相机。")
-    if (ownership.isClosing(ownerId) || fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
-      return@withLock commandResult("CAPTURE_STATE_INVALID", "相机正在指尖轮次或关闭中。")
+    if (ownership.isClosing(ownerId) || fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")
+      || bloodPressure.snapshot(ownerId)?.capture?.let { !it.resourcesReleased } == true) {
+      return@withLock commandResult("CAPTURE_STATE_INVALID", "相机正在产品轮次或关闭中。")
     }
     val captureConfiguration = synchronized(lock) {
       if (state != AcquisitionState.PREVIEW) {
@@ -470,7 +480,7 @@ internal class PPGController(context: ReactContext) {
 
     val newSessionId = UUID.randomUUID().toString()
     val newSession = PPGCaptureSession(
-      filesDirectory = applicationContext.filesDir,
+      filesDirectory = applicationContext.acquisitionFilesDirectory(),
       sessionId = newSessionId,
       blockLayout = config.blockLayout,
       onFailure = { failure -> onCaptureFailure(newSessionId, failure) },
@@ -523,6 +533,9 @@ internal class PPGController(context: ReactContext) {
     if (!ownership.owns(ownerId)) return@withLock stopResult(error = "CAMERA_NOT_OWNER", message = "调用方不拥有当前相机。")
     if (fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
       return@withLock stopResult(error = "FINGERTIP_CAPTURE_ACTIVE", message = "指尖轮次必须按 captureId 停止。")
+    }
+    if (bloodPressure.snapshot(ownerId)?.capture?.let { !it.resourcesReleased } == true) {
+      return@withLock stopResult(error = "BLOOD_PRESSURE_CAPTURE_ACTIVE", message = "血压轮次必须按 captureId 停止。")
     }
     val stopContext = synchronized(lock) {
       val session = activeSession
@@ -611,6 +624,12 @@ internal class PPGController(context: ReactContext) {
   /** 正常停止当前采集、解绑相机并保留所有已完成文件。 */
   suspend fun closeCamera(ownerId: String, reason: String = "user_stopped"): AcquisitionCommandResult {
     requestClose(ownerId, reason)
+    val blood = bloodPressure.snapshot(ownerId)
+    if (blood != null && !blood.capture.resourcesReleased) {
+      val result = bloodPressure.stop(ownerId, reason = reason)
+      val failure = result?.resourceFailure ?: result?.fileFailure?.takeIf { result.resourcesReleased != true }
+      return commandResult(failure?.code, failure?.message)
+    }
     val finger = fingertip.snapshot(ownerId)
     if (finger != null && !finger.resourcesReleased) {
       val result = fingertip.stop(ownerId, reason = reason)
@@ -626,6 +645,7 @@ internal class PPGController(context: ReactContext) {
   /** 先于命令互斥登记关闭意图，阻止尚未执行的自动开始。 */
   fun requestClose(ownerId: String, reason: String = "user_stopped") {
     fingertip.requestEnd(ownerId, reason = reason)
+    bloodPressure.requestEnd(ownerId, reason = reason)
     ownership.requestClose(ownerId)
   }
 
@@ -695,10 +715,12 @@ internal class PPGController(context: ReactContext) {
   }
 
 
-  private fun createFingertipHost() = object : FingertipHost {
+  private fun createFingertipHost(bloodPressureMode: Boolean = false) = object : FingertipHost {
     override fun configuration(ownerId: String): ModelPPGConfigSummary? = synchronized(lock) {
       cameraConfigSummary?.takeIf {
-        ownership.owns(ownerId) && !ownership.isClosing(ownerId) && state == AcquisitionState.PREVIEW
+        ownership.owns(ownerId) && !ownership.isClosing(ownerId) && state == AcquisitionState.PREVIEW &&
+          (if (bloodPressureMode) fingertip.snapshot(ownerId)?.let { !it.resourcesReleased } != true
+          else bloodPressure.snapshot(ownerId)?.capture?.let { !it.resourcesReleased } != true)
       }
     }
 
@@ -716,7 +738,7 @@ internal class PPGController(context: ReactContext) {
           ModelCameraLockPhase.LOCKED)
       }
       return PPGCaptureSession(
-        filesDirectory = applicationContext.filesDir, blockLayout = summary.blockLayout,
+        filesDirectory = applicationContext.acquisitionFilesDirectory(), blockLayout = summary.blockLayout,
         onFailure = onFailure, onAcceptedRecord = onRecord,
       ).also { it.prepare() }
     }
@@ -932,6 +954,18 @@ internal class PPGController(context: ReactContext) {
     if (shouldIgnore) return
 
     val ownerId = ownership.current()
+    if (ownerId != null && bloodPressure.snapshot(ownerId)?.capture?.let { !it.resourcesReleased } == true) {
+      val reason = when (code) {
+        "APP_BACKGROUND" -> "app_background"
+        "HOST_DESTROYED" -> "host_destroyed"
+        else -> "technical_failure"
+      }
+      if (reason == "technical_failure") bloodPressure.fail(code, message)
+      else bloodPressure.requestEnd(ownerId, reason = reason)
+      pendingBarrier?.fail(CameraSourceException(code, message))
+      controllerScope.launch { bloodPressure.stop(ownerId, reason = reason) }
+      return
+    }
     if (ownerId != null && fingertip.snapshot(ownerId)?.phase in setOf("observing", "starting", "capturing", "stopping")) {
       val reason = when (code) {
         "APP_BACKGROUND" -> "app_background"

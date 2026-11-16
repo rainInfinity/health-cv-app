@@ -24,6 +24,7 @@ import com.healthcvapp.acquisition.rppg.session.RPPGSession
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionOperationResult
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionPhase
 import com.healthcvapp.acquisition.rppg.session.RPPGSessionSnapshot
+import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureState
 import java.util.UUID
@@ -279,7 +280,7 @@ class PassiveCaptureService : LifecycleService() {
       AndroidRPPGPassiveSessionFactory(
         context = applicationContext,
         lifecycleOwner = this,
-        filesDirectory = applicationContext.filesDir,
+        filesDirectory = applicationContext.acquisitionFilesDirectory(),
         measurementDurationNanos = secondsToNanos(config.measurementDurationSeconds),
         scope = serviceScope,
       ).create(

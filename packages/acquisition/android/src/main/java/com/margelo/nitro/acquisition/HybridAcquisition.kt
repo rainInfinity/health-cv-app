@@ -31,6 +31,7 @@ class HybridAcquisition : HybridAcquisitionSpec() {
     checkNotNull(NitroModules.applicationContext) { "Nitro ReactApplicationContext is unavailable" },
   )
   private val fingertipBridge = FingertipAcquisitionBridge(ownerId, controller.fingertip, controller::toNitroArtifact)
+  private val bloodPressureBridge = BloodPressureAcquisitionBridge(ownerId, controller.bloodPressure, controller::toNitroArtifact)
 
   /** 返回当前相机和会话状态，不触发设备副作用。 */
   override fun getSnapshot(): AcquisitionSnapshot = controller.getSnapshot()
@@ -126,6 +127,27 @@ class HybridAcquisition : HybridAcquisitionSpec() {
 
   /** 删除波形订阅，不影响原始双 CSV 或原生截止。 */
   override fun removeFingertipPulseListener(listenerId: Double) = fingertipBridge.removePulseListener(listenerId)
+
+  /** 建立本实例血压轮次，覆盖与 IMU 只在原生联合准入后开窗。 */
+  override fun startBloodPressureCapture(config: BloodPressureCaptureConfig): Promise<BloodPressureStartResult> =
+    Promise.async { bloodPressureBridge.start(config.durationMillis) }
+
+  /** 读取本所有者血压低频事实，不触发设备副作用。 */
+  override fun getBloodPressureSnapshot(): Variant_NullType_BloodPressureSnapshot =
+    bloodPressureBridge.snapshot()
+
+  /** 先同步登记本轮停止意图，再等待两源与相机／IMU 完整屏障。 */
+  override fun stopBloodPressureCapture(captureId: String): Promise<AcquisitionCommandResult> {
+    bloodPressureBridge.requestStop(captureId)
+    return Promise.async { bloodPressureBridge.stop(captureId) }
+  }
+
+  /** 订阅低频事实，不开放血压波形或原始 IMU 批次。 */
+  override fun addBloodPressureListener(listener: (snapshot: Variant_NullType_BloodPressureSnapshot?) -> Unit): Double =
+    bloodPressureBridge.addListener(listener)
+
+  /** 解除订阅不停止本轮观测或正式窗口。 */
+  override fun removeBloodPressureListener(listenerId: Double) = bloodPressureBridge.removeListener(listenerId)
 
   /** 返回本进程已正常完成的采集文件引用。 */
   override fun listArtifacts(): Promise<Array<com.margelo.nitro.acquisition.AcquisitionArtifact>> = Promise.async {

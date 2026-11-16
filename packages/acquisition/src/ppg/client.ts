@@ -8,6 +8,8 @@ import type {
   AcquisitionArtifact,
   AcquisitionCommandResult,
   AcquisitionSnapshot,
+  BloodPressureCaptureConfig,
+  BloodPressureSnapshot,
   CameraCapabilities,
   CameraCaptureOptions,
   CameraCaptureOptionsRequest,
@@ -99,6 +101,29 @@ export class AcquisitionClient {
   /** 停止确切轮次，并等待数据及文件完整收尾。 */
   async stopFingertipCapture(captureId: string): Promise<void> {
     this.unwrap(await this.native.stopFingertipCapture(captureId))
+  }
+
+  /** 在本实例预览上建立血压观测；正式开窗由原生联合准入决定。 */
+  async startBloodPressureCapture(config: BloodPressureCaptureConfig): Promise<string> {
+    const result = this.unwrap(await this.native.startBloodPressureCapture(config))
+    if (result.captureId == null) throw new AcquisitionError('MISSING_CAPTURE_ID', '血压观测未返回本轮标识。')
+    return result.captureId
+  }
+
+  /** 无设备副作用地读取本轮低频血压事实。 */
+  getBloodPressureSnapshot(): BloodPressureSnapshot | null {
+    return this.native.getBloodPressureSnapshot()
+  }
+
+  /** 解除订阅不停止原生观测或三十秒窗口。 */
+  subscribeBloodPressure(listener: (snapshot: BloodPressureSnapshot | null) => void): () => void {
+    const id = this.native.addBloodPressureListener(listener)
+    return () => this.native.removeBloodPressureListener(id)
+  }
+
+  /** 只停止本调用方确切血压轮次并等待完整屏障。 */
+  async stopBloodPressureCapture(captureId: string): Promise<void> {
+    this.unwrap(await this.native.stopBloodPressureCapture(captureId))
   }
 
   /** 枚举当前 CameraX 可用于主动采集的逻辑相机，不申请权限或打开设备。 */
@@ -242,7 +267,7 @@ export class AcquisitionClient {
     this.unwrap(await this.native.closeCamera())
   }
 
-  /** 查询应用私有持久目录中已完成的采集文件。 */
+  /** 查询应用专属外部持久目录中已完成的采集文件。 */
   listArtifacts(): Promise<AcquisitionArtifact[]> {
     return this.native.listArtifacts()
   }
