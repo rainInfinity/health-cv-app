@@ -1,14 +1,14 @@
 // 验证异步准备和定位不能让已取消或被抢占的录音重新发声。
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
-const { createFingertipVoicePlayback } = require('../src/app/measurement/fingertipVoicePlayback.ts')
+const { createMeasurementVoicePlayback } = require('../src/app/measurement/measurementVoicePlayback.ts')
 
 /** 用命令边界控制迟到定位，不模拟检测成功。 */
 function harness(configure = async () => {}) {
   const events = []
   const seeks = []
   const listeners = []
-  const resources = { starting: { source: 1, durationMillis: 2808 }, countdown: { source: 2, durationMillis: 4032 } }
+  const resources = { starting: { source: 1, durationMillis: 2544 }, countdown: { source: 2, durationMillis: 4032 } }
   const driver = {
     pause() { events.push('pause') },
     replace(source) { events.push(['replace', source]) },
@@ -18,7 +18,7 @@ function harness(configure = async () => {}) {
     remove() { events.push('remove') },
     addListener(_, listener) { listeners.push(listener); return { remove() { events.push('unsubscribe') } } },
   }
-  const player = createFingertipVoicePlayback(() => driver, configure, resources)
+  const player = createMeasurementVoicePlayback(() => driver, configure, resources)
   return { player, driver, events, seeks, listeners }
 }
 

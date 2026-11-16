@@ -1,5 +1,5 @@
 /** 单播放器的异步定位与取消屏障；失效准备不能在停止后重新发声。 */
-import type { FingertipVoiceCue, FingertipVoicePlayer, FingertipVoiceResource } from './fingertipVoiceTypes'
+import type { MeasurementVoicePlayer, MeasurementVoiceResource } from './measurementVoiceTypes'
 
 /** 播放适配只依赖现有播放器的必要命令，便于验证迟到定位。 */
 interface VoiceDriver {
@@ -20,11 +20,11 @@ interface VoiceDriver {
 }
 
 /** 注入播放器边界，所有切换共用一个实例及单调递增令牌。 */
-export function createFingertipVoicePlayback(
+export function createMeasurementVoicePlayback<Cue extends string>(
   createDriver: () => VoiceDriver,
   configure: () => Promise<void>,
-  resources: Record<FingertipVoiceCue, FingertipVoiceResource>,
-): FingertipVoicePlayer {
+  resources: Record<Cue, MeasurementVoiceResource>,
+): MeasurementVoicePlayer<Cue> {
   let driver: VoiceDriver | null = null
   let ready: Promise<void> | null = null
   let token = 0

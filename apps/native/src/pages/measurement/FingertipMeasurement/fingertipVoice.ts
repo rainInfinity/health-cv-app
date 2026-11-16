@@ -1,6 +1,6 @@
 /** 只消费本轮原生事实与指导可见性，不建立检测时钟或推进页面状态。 */
 import type { FingertipSnapshot } from '@health-cv-app/acquisition'
-import type { FingertipVoicePlayer, FingertipVoiceCue } from '@/app/measurement/fingertipVoiceTypes'
+import type { FingertipVoiceCue, MeasurementVoicePlayer } from '@/app/measurement/measurementVoiceTypes'
 
 /** 指尖页面每轮持有的纯语音消费者，不提供任何采集控制命令。 */
 export interface FingertipVoice {
@@ -15,7 +15,7 @@ export interface FingertipVoice {
 }
 
 /** 每轮独立创建；取消后不能通过后续快照恢复播放资格。 */
-export function createFingertipVoice(player: FingertipVoicePlayer): FingertipVoice {
+export function createFingertipVoice(player: MeasurementVoicePlayer<FingertipVoiceCue>): FingertipVoice {
   let captureId: string | null = null
   let latest: FingertipSnapshot | null = null
   let cancelled = false

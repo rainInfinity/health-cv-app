@@ -3,7 +3,8 @@ import { useCallback, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { createAcquisitionClient } from '@health-cv-app/acquisition'
 import { FINGERTIP_DURATION_MILLIS, prepareFingertipCameraConfig } from '@/app/measurement/fingertipConfig'
-import { createFingertipVoicePlayer } from '@/app/measurement/fingertipVoicePlayer'
+import { fingertipVoiceResources } from '@/app/measurement/fingertipVoiceResources'
+import { createMeasurementVoicePlayer } from '@/app/measurement/measurementVoicePlayer'
 import { useContactMeasurementSession } from '../ContactMeasurement/useContactMeasurementSession'
 import { createFingertipCaptureController } from './fingertipCapture'
 import { createFingertipDisplay } from './fingertipPresentation'
@@ -26,7 +27,10 @@ export function useFingertipMeasurement() {
   }))
   const [waveform, setWaveform] = useState<FingertipWaveform | null>(null)
   const history = useRef<FingertipWaveform | null>(null)
-  const cancelRound = useCallback(() => { voice.current?.cancel() }, [])
+  const cancelRound = useCallback(() => {
+    // 永久取消需释放播放器，避免 Expo Audio 前台恢复已暂停的旧录音。
+    voice.current?.dispose()
+  }, [])
   const disposeRound = useCallback(() => {
     voice.current?.dispose()
     voice.current = null
@@ -43,7 +47,7 @@ export function useFingertipMeasurement() {
       prepareConfig: () => prepareFingertipCameraConfig(runtime), durationMillis: FINGERTIP_DURATION_MILLIS,
       onCapture(captureId) {
         if (!context.isCurrent()) return
-        if (context.isForeground()) voice.current = createFingertipVoice(createFingertipVoicePlayer())
+        if (context.isForeground()) voice.current = createFingertipVoice(createMeasurementVoicePlayer(fingertipVoiceResources))
         history.current = createFingertipWaveform(captureId, FINGERTIP_DURATION_MILLIS)
         setWaveform(history.current)
       },
