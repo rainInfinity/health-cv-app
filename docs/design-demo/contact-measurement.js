@@ -1,6 +1,8 @@
-/** 指尖与血压检测的本地覆盖、分页和计时演示；不产生健康指标。 */
+/** 指尖与血压的本地覆盖、分页和计时演示；指尖完成后展示独立样例结果。 */
 import { mountPulseWave } from './pulse-wave.js';
 import { chestInstructions, fingertipInstructions, rearCameraIllustration } from './contact-illustrations.js';
+import { fingertipSummary } from './fingertip-results.js';
+import { icon } from './ui.js';
 
 
 /** 共用预览与覆盖环；血压第二页展示贴胸动作，不挂载脉搏波。 */
@@ -28,6 +30,7 @@ function contactMeasurementPage(isBloodPressure) {
       </div>
     </section>
     <section class="finger-data" aria-label="操作提示与检测进度">
+      ${isBloodPressure ? '' : `<button type="button" class="result-reopen" data-result-open aria-haspopup="dialog" hidden>${icon('caret')}<span>查看本次结果</span></button>`}
       <div class="finger-session"><div class="finger-status-group"><div class="face-capture-status finger-state" role="status"><span class="face-status-indicator" aria-hidden="true"></span><span data-finger-status>准备检测</span></div><p class="finger-status-hint" data-finger-status-hint>指腹轻放，不要按压</p></div><div class="finger-countdown"><span>剩余时间</span><time data-finger-time>00:30</time></div></div>
       <div class="finger-carousel" role="region" aria-label="${isBloodPressure ? '指尖覆盖与贴靠胸口指引' : '流程说明与脉搏波'}">
         <div class="finger-panel-slot" tabindex="0" aria-label="左右滑动或使用方向键切换内容">
@@ -39,8 +42,10 @@ function contactMeasurementPage(isBloodPressure) {
           <button type="button" data-finger-page="1" aria-label="查看${isBloodPressure ? '贴胸指引' : '脉搏波'}" aria-controls="${isBloodPressure ? 'chest-guidance' : 'finger-wave-panel'}" title="${isBloodPressure ? '贴胸指引' : '脉搏波'}"></button>
         </div>
       </div>
+      ${isBloodPressure ? '' : fingertipSummary}
     </section>
   </main>
+  ${isBloodPressure ? '' : '<div class="finger-result-backdrop" hidden></div>'}
   <div class="gesture"></div>
 </div>`;
 }
@@ -57,7 +62,7 @@ function pulseAt(seconds) {
 }
 
 /** 共用覆盖确认与倒计时；血压覆盖丢失时退回指尖放置并复位本轮。 */
-export function mountContactMeasurement(root, showMissingFingerGuide) {
+export function mountContactMeasurement(root, showMissingFingerGuide, { completed = false, onComplete, onReset, onDetails } = {}) {
   const phone = root.querySelector('.contact-measurement');
   const isBloodPressure = phone.classList.contains('blood-pressure-measurement');
   const coverage = phone.querySelector('.finger-coverage');
@@ -87,6 +92,97 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
   let lastCoverage = -1;
   let chart;
   let selectedPage = 0;
+  const resultButton = root.ownerDocument.querySelector('[data-finger-result]');
+  const dataPanel = phone.querySelector('.finger-data');
+  const resultContent = phone.querySelector('.finger-result-content');
+  const resultBackdrop = phone.querySelector('.finger-result-backdrop');
+  const reopenButton = phone.querySelector('[data-result-open]');
+  const externalControls = root.ownerDocument.querySelector('.demo-controls');
+  let resultAnimation;
+
+  /** 展开原有底部卡片，而非另开居中弹窗；背景保留检测上下文。 */
+  function openResult() {
+    if (isBloodPressure || phase !== 'completed' || phone.hasAttribute('data-result-open')) return;
+    const before = dataPanel.getBoundingClientRect();
+    phone.dataset.resultOpen = 'true';
+    resultBackdrop.hidden = false;
+    resultContent.hidden = false;
+    dataPanel.setAttribute('role', 'dialog');
+    dataPanel.setAttribute('aria-modal', 'true');
+    dataPanel.setAttribute('aria-labelledby', 'finger-result-title');
+    phone.querySelector('.guide-topbar').inert = true;
+    phone.querySelector('.finger-viewfinder').inert = true;
+    externalControls.inert = true;
+    const after = dataPanel.getBoundingClientRect();
+    resultAnimation?.cancel();
+    resultAnimation = dataPanel.animate(
+      [{ transform: `translateY(${before.top - after.top}px)` }, { transform: 'translateY(0)' }],
+      { duration: 420, easing: 'cubic-bezier(.22, 1, .36, 1)' },
+    );
+    resultContent.querySelector('[data-result-close]').focus({ preventScroll: true });
+  }
+
+  /** 收起结果后仍可查看本轮实时波形，完成状态不变。 */
+  function closeResult() {
+    if (!resultContent || !phone.hasAttribute('data-result-open')) return;
+    resultAnimation?.cancel();
+    delete phone.dataset.resultOpen;
+    resultBackdrop.hidden = true;
+    resultContent.hidden = true;
+    dataPanel.removeAttribute('role');
+    dataPanel.removeAttribute('aria-modal');
+    dataPanel.removeAttribute('aria-labelledby');
+    phone.querySelector('.guide-topbar').inert = false;
+    phone.querySelector('.finger-viewfinder').inert = false;
+    externalControls.inert = false;
+    chart?.resize();
+    reopenButton.focus({ preventScroll: true });
+  }
+
+  /** 结果操作只影响本轮；详细结果使用独立路由。 */
+  function resultClick(event) {
+    if (event.target.closest('[data-result-close]') || event.target === resultBackdrop) closeResult();
+    else if (event.target.closest('button[data-result-open]')) openResult();
+    else if (event.target.closest('[data-result-details]')) onDetails?.();
+    else if (event.target.closest('[data-result-restart]')) {
+      closeResult();
+      toggleMeasurement();
+      phone.querySelector('h1').focus({ preventScroll: true });
+    }
+  }
+
+  /** 结果展开时焦点留在卡片内，Esc 仅收起结果。 */
+  function resultKeydown(event) {
+    if (!phone.hasAttribute('data-result-open')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeResult();
+    } else if (event.key === 'Tab') {
+      const controls = [...resultContent.querySelectorAll('button')];
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  /** 手机外的快捷预览与报告返回使用完整固定样例，不压缩正常检测计时。 */
+  function previewResult() {
+    if (isBloodPressure) return;
+    cancelAnimationFrame(frame);
+    elapsed = 30;
+    setCoverage(100);
+    time.textContent = '00:00';
+    missingButton.disabled = true;
+    ensureChart();
+    showPage(1);
+    completeMeasurement();
+  }
 
   /** 原生横向滚动同时支持触摸和触控板；减少动态效果时直接定位。 */
   function showPage(index) {
@@ -198,7 +294,7 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
     frame = requestAnimationFrame(tick);
   }
 
-  /** 完成后冻结本轮展示，不生成指标结果。 */
+  /** 完成后冻结本轮；指尖展示固定结果，血压仍不生成指标。 */
   function completeMeasurement() {
     phase = 'completed';
     phone.dataset.phase = phase;
@@ -208,6 +304,11 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
     button.disabled = false;
     uncoverButton.disabled = true;
     draw();
+    if (!isBloodPressure) {
+      reopenButton.hidden = false;
+      onComplete?.();
+      openResult();
+    }
   }
 
   /** 覆盖确认保留短暂停顿，血压随后等待贴胸，指尖直接开始计时。 */
@@ -276,6 +377,9 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
   /** 重测清空本轮展示；每次均需再次模拟覆盖确认。 */
   function toggleMeasurement() {
     if (phase === 'completed') {
+      closeResult();
+      if (reopenButton) reopenButton.hidden = true;
+      onReset?.();
       phase = 'ready';
       phone.dataset.phase = phase;
       setCoverage(0);
@@ -341,11 +445,24 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
   chestButton.hidden = !isBloodPressure;
   chestButton.disabled = true;
   chestButton.addEventListener('click', simulateChestContact);
+  resultButton.hidden = isBloodPressure;
+  resultButton.addEventListener('click', previewResult);
+  if (!isBloodPressure) {
+    phone.addEventListener('click', resultClick);
+    phone.addEventListener('keydown', resultKeydown);
+  }
   document.addEventListener('visibilitychange', visibilityChanged);
   motion.addEventListener('change', draw);
   phone.querySelector('h1').focus({ preventScroll: true });
+  if (completed && !isBloodPressure) previewResult();
   return () => {
     cancelAnimationFrame(frame);
+    resultAnimation?.cancel();
+    externalControls.inert = false;
+    resultButton.hidden = true;
+    resultButton.removeEventListener('click', previewResult);
+    phone.removeEventListener('click', resultClick);
+    phone.removeEventListener('keydown', resultKeydown);
     observer.disconnect();
     panelSlot.removeEventListener('scroll', syncPage);
     carousel.removeEventListener('click', selectPage);

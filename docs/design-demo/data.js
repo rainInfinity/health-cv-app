@@ -14,6 +14,7 @@ export const routes = {
   'measure-face': '面部特征检测', 'measure-fingertip': '指尖脉搏检测', 'measure-chest': '血压检测',
   'face-measurement': '面部心率检测',
   'fingertip-measurement': '指尖检测',
+  'fingertip-results': '指尖详细结果',
   'blood-pressure-measurement': '血压检测',
 };
 

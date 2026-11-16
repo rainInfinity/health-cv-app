@@ -6,6 +6,7 @@ import { escapeHtml, icon, measurementRecency } from './ui.js';
 import { initialProfile, profileFields, createProfilePatch, applyProfilePatch } from './profile.js';
 import { mountFaceMeasurement } from './face-measurement.js';
 import { mountContactMeasurement } from './contact-measurement.js';
+import { mountFingertipResults } from './fingertip-results.js';
 
 const app = document.querySelector('#app');
 const sheet = document.querySelector('#sheet');
@@ -41,6 +42,8 @@ const state = {
   functionView: 'method',
   /** 历史指标、周期与日期边界；切页保留，刷新清除。 */
   history: initialHistory(),
+  /** 仅在检测页与本轮详细结果间保留完成状态，离开该流程即清除。 */
+  fingertipCompleted: false,
 };
 
 /** 状态预览链接直接切换本地演示身份，两个业务页面仍共用同一登录状态。 */
@@ -189,16 +192,19 @@ function render() {
   const requested = location.hash.slice(1);
   const preview = Object.hasOwn(stateViews, requested) ? stateViews[requested] : null;
   if (preview) state.user = preview.loggedIn ? state.user || state.profile.name || '小安' : '';
-  if ((requested.startsWith('measure-') || requested.endsWith('-measurement')) && activeRoute && !activeRoute.startsWith('measure-') && !activeRoute.endsWith('-measurement')) {
+  if ((requested.startsWith('measure-') || requested.endsWith('-measurement')) && activeRoute && !activeRoute.startsWith('measure-') && !activeRoute.endsWith('-measurement') && activeRoute !== 'fingertip-results') {
     measurementReturnRoute = activeRoute;
   }
   activeRoute = preview?.route || (Object.hasOwn(pages, requested) ? requested : 'home');
+  if (activeRoute === 'fingertip-results') state.fingertipCompleted = true;
+  else if (activeRoute !== 'fingertip-measurement') state.fingertipCompleted = false;
   if (!activeRoute.startsWith('measure-')) measurementTarget = null;
   if (!preview && requested !== activeRoute) history.replaceState(null, '', `#${activeRoute}`);
   const hasStateView = activeRoute === 'home' || activeRoute === 'account';
   const viewRoute = hasStateView ? `${activeRoute}-${state.user ? 'logged-in' : 'guest'}` : activeRoute;
   document.title = `${routes[activeRoute]}${hasStateView ? ` · ${state.user ? '已登录' : '未登录'}` : ''} · 心沐设计演示`;
   app.innerHTML = pages[activeRoute];
+  if (activeRoute === 'fingertip-measurement' || activeRoute === 'fingertip-results') bindResultIcons();
   document.querySelectorAll('.demo-routes a').forEach((link) => {
     if (link.hash === `#${viewRoute}`) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
@@ -220,8 +226,14 @@ function render() {
   if (activeRoute === 'onboarding') bindOnboarding();
   if (activeRoute === 'face-measurement') disposeMeasurement = mountFaceMeasurement(app);
   if (activeRoute === 'fingertip-measurement' || activeRoute === 'blood-pressure-measurement') {
-    disposeMeasurement = mountContactMeasurement(app, (title, html) => openSheet(title, html, { confirmOnly: true }));
+    disposeMeasurement = mountContactMeasurement(app, (title, html) => openSheet(title, html, { confirmOnly: true }), {
+      completed: state.fingertipCompleted,
+      onComplete: () => { state.fingertipCompleted = true; },
+      onReset: () => { state.fingertipCompleted = false; },
+      onDetails: () => navigate('fingertip-results'),
+    });
   }
+  if (activeRoute === 'fingertip-results') disposeMeasurement = mountFingertipResults(app);
   if (activeRoute.startsWith('measure-')) {
     if (measurementTarget?.route === activeRoute) {
       app.querySelector('.guide-topbar > span').textContent = measurementTarget.label;
@@ -350,6 +362,29 @@ function bindOnboarding() {
     const illustration = template.content.querySelector(`[data-illustration="${slot.dataset.featureArt}"]`);
     slot.append(illustration.cloneNode(true));
   });
+}
+
+/** 结果同源复用首页指标图形及 Toast 成功图形；看板保留完整血氧仪表。 */
+function bindResultIcons() {
+  const template = document.createElement('template');
+  template.innerHTML = pages.home;
+  const selectors = {
+    heart: '.heart-halo .icon',
+    breath: '.breathing-art .icon',
+    oxygen: '.oxygen-dial',
+    risk: '.risk-emblem .icon',
+  };
+  app.querySelectorAll('[data-result-icon], [data-result-dial]').forEach((slot) => {
+    const key = slot.hasAttribute('data-result-dial') ? 'oxygen' : slot.dataset.resultIcon;
+    const graphic = template.content.querySelector(selectors[key]).cloneNode(true);
+    graphic.classList.add('icon');
+    graphic.setAttribute('aria-hidden', 'true');
+    graphic.removeAttribute('role');
+    graphic.removeAttribute('aria-label');
+    slot.append(graphic);
+  });
+  const success = app.querySelector('[data-result-success]');
+  if (success) success.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${toastStates.success.path}</svg>`;
 }
 
 /** 固定样例详情，来源与记录时间有明确说明。 */
@@ -581,7 +616,7 @@ const functionPreviewRoutes = [
   { route: 'measure-chest', label: '血压检测引导', measurement: 'blood-pressure-measurement' },
 ];
 document.querySelector('.demo-routes').innerHTML = `<div class="demo-nav-root">页面</div><div class="demo-nav-branches">${navigationGroups.map((group, index) =>
-  `<section class="demo-nav-group" aria-labelledby="demo-group-${index}"><h2 id="demo-group-${index}">${group.label}</h2><ul>${group.children.map((route) => `<li><a href="#${route}">${routes[route]}</a>${route === 'home' || route === 'account' ? `<ul class="demo-state-views"><li><a href="#${route}-guest" aria-label="${routes[route]}，未登录">未登录</a></li><li><a href="#${route}-logged-in" aria-label="${routes[route]}，已登录">已登录</a></li></ul>` : ''}${route === 'functions' ? `<ul class="demo-function-views">${functionPreviewRoutes.map(({ route: preview, label, measurement }) => `<li><a href="#${preview}">${label}</a>${measurement ? `<ul class="demo-measure-views"><li><a href="#${measurement}">${routes[measurement]}</a></li></ul>` : ''}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul></section>`,
+  `<section class="demo-nav-group" aria-labelledby="demo-group-${index}"><h2 id="demo-group-${index}">${group.label}</h2><ul>${group.children.map((route) => `<li><a href="#${route}">${routes[route]}</a>${route === 'home' || route === 'account' ? `<ul class="demo-state-views"><li><a href="#${route}-guest" aria-label="${routes[route]}，未登录">未登录</a></li><li><a href="#${route}-logged-in" aria-label="${routes[route]}，已登录">已登录</a></li></ul>` : ''}${route === 'functions' ? `<ul class="demo-function-views">${functionPreviewRoutes.map(({ route: preview, label, measurement }) => `<li><a href="#${preview}">${label}</a>${measurement ? `<ul class="demo-measure-views"><li><a href="#${measurement}">${routes[measurement]}</a>${measurement === 'fingertip-measurement' ? '<ul class="demo-measure-views"><li><a href="#fingertip-results">详细结果</a></li></ul>' : ''}</li></ul>` : ''}</li>`).join('')}</ul>` : ''}</li>`).join('')}</ul></section>`,
 ).join('')}</div>`;
 document.addEventListener('click', onClick);
 document.addEventListener('submit', onSubmit);

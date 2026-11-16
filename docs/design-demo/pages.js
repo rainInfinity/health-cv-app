@@ -2,6 +2,7 @@
 import { measurementPages } from './measurement-pages.js';
 import { faceMeasurementPage } from './face-measurement.js';
 import { bloodPressureMeasurementPage, fingertipMeasurementPage } from './contact-measurement.js';
+import { fingertipResultsPage } from './fingertip-results.js';
 
 /** 登录和注册共享品牌组合，避免标志、名称或 Slogan 出现差异。 */
 const authBrand = `
@@ -17,6 +18,7 @@ export const pages = {
   ...measurementPages,
   'face-measurement': faceMeasurementPage,
   'fingertip-measurement': fingertipMeasurementPage,
+  'fingertip-results': fingertipResultsPage,
   'blood-pressure-measurement': bloodPressureMeasurementPage,
   desktop: `
 <div class="phone brand-desktop">

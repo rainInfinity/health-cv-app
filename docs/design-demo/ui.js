@@ -8,6 +8,7 @@ export function icon(name) {
   const paths = {
     arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
     chevron: '<path d="m9 6 6 6-6 6"/>',
+    caret: '<path d="M6 9l4.6 4.6q1.4 1.4 2.8 0L18 9"/>',
     heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
   };
