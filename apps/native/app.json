@@ -12,6 +12,15 @@
       "./plugins/with-aliyun-gradle-repositories",
       "expo-localization",
       [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-bridge.png",

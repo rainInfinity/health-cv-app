@@ -20,6 +20,8 @@ interface ContactSessionOptions {
   /** 清空或释放方案自己的局部历史。 */
   resetRound?(): void
   disposeRound?(): void
+  /** 立即撤销方式专属副作用，不等待相机关闭屏障；未提供时不创建额外能力。 */
+  cancelRound?(): void
 }
 
 /** 页面只用稳定错误码选择安全中文反馈，不回显原生诊断文本。 */
@@ -28,7 +30,7 @@ function getErrorCode(error: unknown): string {
 }
 
 /** 一个明确导航入口自动准备；后台与重新聚焦都不能自动创建第二轮。 */
-export function useContactMeasurementSession({ display, placementReminder, createController, resetRound, disposeRound }: ContactSessionOptions) {
+export function useContactMeasurementSession({ display, placementReminder, createController, resetRound, disposeRound, cancelRound }: ContactSessionOptions) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const [previewMounted, setPreviewMounted] = useState(false)
   const [previewKey, setPreviewKey] = useState(0)
@@ -89,6 +91,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   const requestLeave = useCallback((action: NavigationAction | (() => void)) => {
     failedNavigation.current = action
     leaveRequested.current = true
+    cancelRound?.()
     display.cancelPendingHints()
     setLeaving(true)
     setLocalError(null)
@@ -98,7 +101,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       void closeBarrier.current.catch(() => undefined)
     }
     void guard.request(action)
-  }, [display, guard])
+  }, [cancelRound, display, guard])
 
   usePreventRemove(!allowRemoval, ({ data }) => requestLeave(data.action))
   useEffect(() => {
@@ -112,6 +115,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   /** 重试总是先完成旧轮关闭，再构造新客户端和本轮展示，没有暂停续采分支。 */
   const start = useCallback(async () => {
     if (preparing.current || !mounted.current || !focused.current || leaveRequested.current) return
+    cancelRound?.()
     display.cancelPendingHints()
     placementReminder.reset()
     preparing.current = true
@@ -137,6 +141,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
         mountPreview: () => { if (valid()) setPreviewMounted(true) },
         onPreparationInterrupted: () => {
           if (!valid()) return
+          cancelRound?.()
           display.cancelPendingHints()
           placementReminder.reset()
           setLocalError('APP_BACKGROUND')
@@ -146,6 +151,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       await next.prepare()
     } catch (error) {
       if (mounted.current && focused.current && !leaveRequested.current) {
+        cancelRound?.()
         display.cancelPendingHints()
         placementReminder.reset()
         setLocalError(getErrorCode(error))
@@ -154,7 +160,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       preparing.current = false
       if (mounted.current) setBusy(false)
     }
-  }, [closeCurrent, createController, display, placementReminder, resetRound])
+  }, [cancelRound, closeCurrent, createController, display, placementReminder, resetRound])
 
   useFocusEffect(useCallback(() => {
     focused.current = true
@@ -166,6 +172,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
     }
     return () => {
       focused.current = false
+      cancelRound?.()
       if (mounted.current) setVisible(false)
       display.cancelPendingHints()
       placementReminder.reset()
@@ -174,19 +181,21 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       disposeRound?.()
       void closeCurrent().catch(() => undefined)
     }
-  }, [closeCurrent, display, disposeRound, placementReminder, requestLeave, start]))
+  }, [cancelRound, closeCurrent, display, disposeRound, placementReminder, requestLeave, start]))
 
   useEffect(() => {
     mounted.current = true
     const subscription = AppState.addEventListener('change', (state) => {
       const active = state === 'active'
       setVisible(active && focused.current)
+      if (!active) cancelRound?.()
       if (!active) placementReminder.reset()
       if (state === 'background' || active) controller.current?.setForeground(active)
     })
     return () => {
       mounted.current = false
       generation.current += 1
+      cancelRound?.()
       display.dispose()
       placementReminder.dispose()
       subscription.remove()
@@ -196,7 +205,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       current?.dispose()
       disposeRound?.()
     }
-  }, [display, disposeRound, guard, placementReminder])
+  }, [cancelRound, display, disposeRound, guard, placementReminder])
 
   /** 关闭失败重试原导航；其他失败在旧轮资源安全后重新建立一次明确入口。 */
   const retry = useCallback(() => {
