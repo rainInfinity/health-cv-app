@@ -262,8 +262,7 @@ button:active:not(:disabled) { opacity: .78; }
 .functions .header .title { flex-shrink: 0; font-size: clamp(20px, 6.4vw, 24px); }
 .functions .header-disclaimer { max-width: none; white-space: nowrap; }
 .history .content { padding-top: 12px; }
-.history .header { margin-bottom: 20px; }
-.history .header > .chip { max-width: 180px; border: 0; padding: 0; background: transparent; font-size: 12px; line-height: 18px; text-align: right; }
+.hist-disclaimer { margin: 20px 0 4px; color: var(--muted); font-size: var(--font-caption); line-height: var(--line-caption); text-align: center; }
 .hist-metric-picker { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 12px; align-items: center; margin-bottom: 16px; }
 .hist-metric-picker > button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-card); color: var(--action); }
 .hist-metric-picker > button:disabled { opacity: .3; }

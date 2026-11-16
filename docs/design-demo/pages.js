@@ -464,12 +464,6 @@ ${[
 </span>
 </div>
 <main class="content">
-<header class="header">
-<div>
-<h2 class="title">健康历史</h2>
-</div>
-<span class="chip" style="margin-left:0">仅供健康管理参考，<br>非医学诊断依据。</span>
-</header>
 <div class="hist-metric-picker" aria-label="历史指标">
 <button type="button" data-action="history-metric-step" data-offset="-1" aria-label="上一个指标"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
 <div class="hist-metric-select">
@@ -499,6 +493,7 @@ ${[
 </section>
 <div id="history-panel" role="region" aria-label="当前指标趋势与记录">
 </div>
+<p class="hist-disclaimer">仅供健康管理参考，非医学诊断依据。</p>
 </main>
 <nav aria-label="主导航">
 <div class="navitem ">
