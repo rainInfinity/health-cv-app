@@ -106,7 +106,7 @@
     "previewWaiting": "后摄预览，等待稳定指尖覆盖",
     "previewCovered": "后摄预览，指尖覆盖已稳定",
     "coverage": "指尖取景区域覆盖估计",
-    "hintReady": "请将指腹轻覆后置摄像头",
+    "hintReady": "手指未完全覆盖镜头，请调整位置",
     "hintPartial": "手指未完全覆盖镜头，请调整位置",
     "hintCovered": "已完整覆盖，请保持轻覆稳定",
     "hintRunning": "正在检测，请勿移动手指",

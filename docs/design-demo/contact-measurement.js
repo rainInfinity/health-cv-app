@@ -17,7 +17,7 @@ function contactMeasurementPage(isBloodPressure) {
         <div class="finger-camera">
           <div class="finger-camera-covered" aria-hidden="true"></div>
           <div class="finger-camera-description" role="img" aria-label="模拟后摄预览，等待指尖覆盖"></div>
-          <p class="finger-camera-notice"><span data-finger-camera-hint>请将指腹轻覆后置摄像头</span></p>
+          <p class="finger-camera-notice"><span data-finger-camera-hint>手指未完全覆盖镜头，请调整位置</span></p>
         </div>
         <svg class="finger-coverage-ring" viewBox="0 0 300 300" aria-hidden="true">
           <defs><linearGradient id="finger-coverage-gradient" x1="0" y1=".37" x2="1" y2=".63" gradientTransform="rotate(90 .5 .5)"><stop stop-color="var(--primary)"/><stop offset="1" stop-color="var(--mint)"/></linearGradient></defs>
@@ -280,7 +280,7 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
       phone.dataset.phase = phase;
       setCoverage(0);
       camera.setAttribute('aria-label', '模拟后摄预览，等待指尖覆盖');
-      cameraHint.textContent = '请将指腹轻覆后置摄像头';
+      cameraHint.textContent = '手指未完全覆盖镜头，请调整位置';
       status.textContent = '准备检测';
       time.textContent = '00:30';
       showPage(0);
@@ -293,7 +293,7 @@ export function mountContactMeasurement(root, showMissingFingerGuide) {
     if (phase !== 'ready') return;
     phase = 'covering';
     phone.dataset.phase = phase;
-    cameraHint.textContent = '请将指腹轻覆后置摄像头';
+    cameraHint.textContent = '手指未完全覆盖镜头，请调整位置';
     missingButton.disabled = true;
     status.textContent = '准备检测';
     statusHint.textContent = '指腹轻放，不要按压';
