@@ -13,6 +13,9 @@ const sheet = document.querySelector('#sheet');
 const sheetOverlay = document.querySelector('#sheet-overlay');
 const sheetContent = document.querySelector('#sheet-content');
 const toastElement = document.querySelector('#toast');
+const toastOverlay = document.querySelector('#toast-overlay');
+/** Toast 关闭后恢复被蒙版隔离前的焦点，不抢占预览侧栏中的新焦点。 */
+let toastReturnFocus;
 let toastTimer;
 let activeRoute = '';
 let lastFocus;
@@ -38,6 +41,8 @@ const state = {
   feedback: '',
   /** 按测量方式记录说明页跳过偏好；仅当前标签页有效。 */
   skippedMeasurementGuides: new Set(),
+  /** 血压贴胸指导独立跳过偏好；仅当前标签页有效，确认后保存。 */
+  skippedChestPlacementGuide: false,
   /** 功能分类在返回页面时保留，刷新恢复按检测部位。 */
   functionView: 'method',
   /** 历史指标、周期与日期边界；切页保留，刷新清除。 */
@@ -75,7 +80,7 @@ function asButton(element, action, metric) {
 const toastStates = {
   success: { label: '成功', message: '示例：演示资料已保存', path: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m7.5 12 3 3 6-6" stroke="white" stroke-width="2"/>' },
   error: { label: '错误', message: '示例：操作未完成，请重试', path: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m8.5 8.5 7 7m0-7-7 7" stroke="white" stroke-width="2"/>' },
-  loading: { label: '加载中', message: '示例：正在处理中，请稍候…', path: '<path d="M12 2a10 10 0 1 1-10 10h4a6 6 0 1 0 6-6Z" fill="currentColor" stroke="none"/>' },
+  loading: { label: '加载中', message: '示例：正在处理中，请稍候…', path: '<path d="M12 3a9 9 0 1 1-9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
   information: { label: '信息', message: '示例：测量读数仅供健康管理参考', path: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1.2" fill="white" stroke="none"/><path d="M12 11v6" stroke="white" stroke-width="2"/>' },
 };
 
@@ -83,8 +88,8 @@ document.querySelector('.demo-toast-states').innerHTML = Object.entries(toastSta
   .map(([status, item]) => `<button type="button" data-action="preview-toast-state" data-status="${status}" aria-label="${status} · ${item.label}" title="${status}">${item.label}</button>`)
   .join('');
 
-/** 显示主题提示；加载状态持续到结果替换或手动关闭，不伪造业务成功。 */
-function toast(message, status = 'information') {
+/** 显示带蒙版的主题提示；加载默认不可点外部关闭，其他状态默认可关闭。 */
+function toast(message, status = 'information', { showLabel = true, dismissOnBackdrop = status !== 'loading' } = {}) {
   clearTimeout(toastTimer);
   const presentation = toastStates[status];
   toastElement.dataset.status = status;
@@ -92,15 +97,23 @@ function toast(message, status = 'information') {
   const text = toastElement.querySelector('.toast-message');
   text.setAttribute('role', status === 'error' ? 'alert' : 'status');
   text.setAttribute('aria-live', status === 'error' ? 'assertive' : 'polite');
-  text.textContent = `${presentation.label}：${message}`;
-  toastElement.hidden = false;
+  text.textContent = showLabel ? `${presentation.label}：${message}` : message;
+  if (toastOverlay.hidden) toastReturnFocus = document.activeElement;
+  toastOverlay.dataset.dismissOnBackdrop = String(dismissOnBackdrop);
+  app.inert = true;
+  sheet.inert = true;
+  toastOverlay.hidden = false;
   if (status !== 'loading') toastTimer = setTimeout(closeToast, 3500);
 }
 
-/** 关闭提示时清除旧计时，避免影响下一条提示。 */
+/** 关闭提示、清除旧计时，并恢复页面或已有弹层的交互。 */
 function closeToast() {
   clearTimeout(toastTimer);
-  toastElement.hidden = true;
+  toastOverlay.hidden = true;
+  sheet.inert = false;
+  app.inert = sheet.open;
+  if (toastReturnFocus?.isConnected && document.activeElement === document.body) toastReturnFocus.focus();
+  toastReturnFocus = undefined;
 }
 
 /** 恢复操作按钮；切页时取消尚未完成的演示，避免旧计时修改新页面。 */
@@ -168,9 +181,9 @@ function closeSheet() {
     sheetAnimation.cancel();
     sheetAnimation = undefined;
     sheetClosing = false;
-    app.inert = false;
+    app.inert = !toastOverlay.hidden;
     document.querySelector('.demo-controls').inert = false;
-    if (lastFocus?.isConnected) lastFocus.focus();
+    if (toastOverlay.hidden && lastFocus?.isConnected) lastFocus.focus();
   };
 }
 
@@ -231,6 +244,11 @@ function render() {
       onComplete: () => { state.fingertipCompleted = true; },
       onReset: () => { state.fingertipCompleted = false; },
       onDetails: () => navigate('fingertip-results'),
+      shouldShowChestGuide: () => !state.skippedChestPlacementGuide,
+      onProcessingChange: (processing) => {
+        if (processing) toast('等待检测结果，请稍候…', 'loading', { showLabel: false });
+        else closeToast();
+      },
     });
   }
   if (activeRoute === 'fingertip-results') disposeMeasurement = mountFingertipResults(app);
@@ -464,6 +482,10 @@ function onClick(event) {
     const kind = control.dataset.measurement;
     return navigate(kind === 'chest' ? 'blood-pressure-measurement' : `${kind}-measurement`);
   }
+  if (action === 'chest-guide-confirm') {
+    state.skippedChestPlacementGuide = sheetContent.querySelector('[data-skip-chest-guide]').checked;
+    return closeSheet();
+  }
   if (action === 'close-sheet') return closeSheet();
   if (action === 'preview-sheet') return openSheet('弹窗预览', '<p>这是手机区域内的示例弹窗，仅用于预览样式，不会修改演示数据。</p><p>可点击关闭按钮、遮罩或按 Esc 关闭。</p><button type="button" class="cta" data-action="close-sheet">知道了</button>');
   if (action === 'preview-toast-state') {
@@ -471,7 +493,6 @@ function onClick(event) {
     closeSheet();
     return toast(toastStates[status].message, status);
   }
-  if (action === 'close-toast') return closeToast();
   if (action === 'metric-detail') return metricDetail(metric);
   if (action === 'measurement') return measurement(metric);
   if (action === 'camera-measurement') return cameraMeasurement(control.dataset.measurement, control.dataset.target);
@@ -530,6 +551,7 @@ function onClick(event) {
     state.user = ''; state.pendingUsername = ''; state.profile = initialProfile();
     state.notifications = false; state.passivePreference = false; state.feedback = '';
     state.skippedMeasurementGuides.clear();
+    state.skippedChestPlacementGuide = false;
     state.functionView = 'method';
     measurementTarget = null;
     state.history = initialHistory();
@@ -647,6 +669,9 @@ document.addEventListener('keydown', (event) => {
 document.querySelector('.sheet-close').addEventListener('click', closeSheet);
 sheetOverlay.addEventListener('click', (event) => {
   if (event.target === sheetOverlay && sheet.dataset.confirmOnly !== 'true') closeSheet();
+});
+toastOverlay.addEventListener('click', (event) => {
+  if (event.target === toastOverlay && toastOverlay.dataset.dismissOnBackdrop === 'true') closeToast();
 });
 sheet.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {

@@ -58,14 +58,21 @@ export const fingertipInstructions = `<div class="finger-guidance" id="finger-gu
   </figure>
 </div>`;
 
+/** 两处贴胸指导复用同一组图解，弹窗实例使用独立 SVG 标识，避免引用背景中的帧。 */
+export function chestInstructionExamples(idPrefix = '') {
+  const side = idPrefix ? chestSideReference.replaceAll('chest-side-reference', `${idPrefix}chest-side-reference`) : chestSideReference;
+  const front = idPrefix ? chestFrontReference.replaceAll('chest-front-reference', `${idPrefix}chest-front-reference`) : chestFrontReference;
+  return `<figure class="finger-step">
+    ${side}
+    <figcaption><h2>持机轻贴胸口</h2><p>保持覆盖，缓缓移近</p></figcaption>
+  </figure>
+  <figure class="finger-step">
+    ${front}
+    <figcaption><h2>贴靠左侧胸口</h2><p>手指不离镜头，保持稳定</p></figcaption>
+  </figure>`;
+}
+
 /** 直接使用参考动图提取的逐帧轮廓，不另行拼画手部或改变持机角度。 */
 export const chestInstructions = `<div class="finger-guidance chest-guidance" id="chest-guidance" role="group" aria-label="第 2 页，共 2 页：手机贴靠胸口" inert>
-  <figure class="finger-step">
-    ${chestSideReference}
-    <figcaption><h2>正手持机，轻贴胸口</h2><p>保持覆盖，缓缓移近</p></figcaption>
-  </figure>
-  <figure class="finger-step">
-    ${chestFrontReference}
-    <figcaption><h2>贴靠左侧胸口</h2><p>手指不离镜头，保持稳定</p></figcaption>
-  </figure>
+  ${chestInstructionExamples()}
 </div>`;

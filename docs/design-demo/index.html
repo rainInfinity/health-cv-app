@@ -33,10 +33,11 @@
       <div id="sheet-overlay" hidden>
         <dialog id="sheet" aria-labelledby="sheet-title"><div class="sheet-header"><h2 id="sheet-title"></h2><button type="button" class="sheet-close" aria-label="关闭弹层">×</button></div><div id="sheet-content"></div></dialog>
       </div>
-      <div id="toast" class="toast" hidden>
-        <span class="toast-icon" aria-hidden="true"></span>
-        <span class="toast-message" role="status" aria-live="polite" aria-atomic="true"></span>
-        <button type="button" class="toast-close" data-action="close-toast" aria-label="关闭提示">×</button>
+      <div id="toast-overlay" class="toast-overlay" hidden>
+        <div id="toast" class="toast">
+          <span class="toast-icon" aria-hidden="true"></span>
+          <span class="toast-message" role="status" aria-live="polite" aria-atomic="true"></span>
+        </div>
       </div>
     </div>
     <div class="demo-controls" role="group" aria-label="演示操作">

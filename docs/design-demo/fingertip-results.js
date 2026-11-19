@@ -50,9 +50,8 @@ export const fingertipSummary = `<div class="finger-result-content" hidden>
   <button type="button" class="result-close" data-result-close aria-label="收起检测结果">${icon('caret')}</button>
   <div class="result-body">
   <header class="result-completion"><div class="result-completion-title"><span class="result-complete-mark" data-result-success aria-hidden="true"></span><h2 id="finger-result-title">检测完成</h2></div><p>可以移开手指，查看本次结果</p><time>${result.time}</time></header>
-  <p class="result-disclaimer">检测结果仅供健康管理参考，不能替代医学诊断。如有持续不适，请及时就医。</p>
   ${metricDashboard()}
-  <p class="result-summary-note">指标右上角信号质量评分，满分100，分数越高，代表本次检测结果相对较准确。</p>
+  <p class="result-disclaimer">检测结果仅供健康管理参考，不能替代医学诊断。</p>
   <div class="result-actions"><button type="button" class="cta" data-result-details>查看详细结果 ${icon('arrow')}</button><button type="button" class="result-text-button" data-result-restart>重新检测</button></div>
   </div>
 </div>`;
