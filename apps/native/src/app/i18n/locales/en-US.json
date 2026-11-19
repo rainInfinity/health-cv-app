@@ -654,5 +654,12 @@
     "pageLifecycleNote": "This page subscribes to low-frequency state and queries devices; it does not sample. Switching pages or removing the subscription does not stop a running sensor.",
     "labelSeparator": ": ",
     "separator": "; "
+  },
+  "shared/feedback": {
+    "dismiss": "Dismiss",
+    "success": "Success",
+    "error": "Error",
+    "loading": "Loading",
+    "information": "Information"
   }
 }

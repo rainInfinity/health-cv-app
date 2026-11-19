@@ -11,7 +11,7 @@ import { useFeedback } from '@/shared/components/FeedbackHost'
 
 import { PreviewActions } from './styles'
 
-/** 在开发页面实际触发可滚动弹窗、替换 Toast 与加载手动关闭。 */
+/** 在开发页面实际触发弹窗、四态 Toast 和不可取消的加载过程。 */
 export function FeedbackPreviewScreen() {
   const messages = useStore(devMessages)
   const sharedMessages = useStore(feedbackMessages)
@@ -26,18 +26,18 @@ export function FeedbackPreviewScreen() {
       actions: [{ label: sharedMessages.dismiss, primary: true }],
     })
   }
-  /** 模拟不可关闭的认证过程与结果，不发起真实请求。 */
-  function showAuthFlowPreview(): void {
+  /** 模拟处理结束后替换加载提示，避免不可取消的预览永久遮挡页面。 */
+  function showLoadingPreview(locked = false): void {
     const toastId = showToast({
       tone: 'loading',
-      message: messages.authFlowLoading,
+      message: locked ? messages.authFlowLoading : messages.previewMessage,
       dismissible: false,
     })
     setTimeout(() => {
       replaceToast(toastId, {
         tone: 'success',
-        message: messages.authFlowResult,
-        dismissible: false,
+        message: locked ? messages.authFlowResult : messages.previewMessage,
+        dismissible: !locked,
       })
     }, 1200)
   }
@@ -60,12 +60,12 @@ export function FeedbackPreviewScreen() {
         <ActionButton
           label={messages.toastLoading}
           secondary
-          onPress={() => showToast({ tone: 'loading', message: messages.previewMessage })}
+          onPress={() => showLoadingPreview()}
         />
         <ActionButton
           label={messages.authFlowPreview}
           secondary
-          onPress={showAuthFlowPreview}
+          onPress={() => showLoadingPreview(true)}
         />
         <ActionButton
           label={messages.toastInformation}

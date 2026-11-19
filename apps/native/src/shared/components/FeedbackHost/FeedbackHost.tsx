@@ -1,18 +1,16 @@
 /** 提供全局单弹窗、单 Toast 队列及其可访问原生呈现。 */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Modal, Pressable, View } from 'react-native'
-import { CircleAlert, CircleCheck, Info, X } from '@/shared/graphics'
+import { Modal, Pressable, StyleSheet } from 'react-native'
+import Svg, { Circle, Path } from 'react-native-svg'
 import { useStore } from '@nanostores/react'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from 'styled-components/native'
 
 import { FeedbackDialog } from '@/shared/components/FeedbackDialog'
 import type { FeedbackModalOptions } from '@/shared/components/FeedbackDialog'
 import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
-import { AppText } from '@/shared/components/AppText'
 import { feedbackMessages } from '@/app/i18n/feedbackMessages'
-import { ToastCopy, ToastSurface } from './styles'
+import { ToastCopy, ToastOverlay, ToastSurface } from './styles'
 
 import { SingleToastLifecycle } from './toastLifecycle'
 import type { FeedbackTone } from './toastLifecycle'
@@ -26,8 +24,10 @@ export interface FeedbackToastOptions {
   message: string
   /** 自动关闭时间，默认 3500 毫秒；加载态始终等待显式结束。 */
   durationMs?: number
-  /** 是否允许用户关闭；默认允许，认证操作反馈显式设为 false。 */
+  /** 是否允许点击蒙版或系统返回关闭；默认普通提示允许、加载提示不允许。 */
   dismissible?: boolean
+  /** 是否添加中文状态名前缀；默认显示，检测结果等待仅显示业务正文。 */
+  showLabel?: boolean
 }
 
 /** 定义供页面使用的单一弹窗和 Toast 操作契约。 */
@@ -36,8 +36,8 @@ interface FeedbackContextValue {
   showToast: (options: FeedbackToastOptions) => number
   /** 仅在预期 Toast 仍显示时替换它，避免迟到结果覆盖新反馈。 */
   replaceToast: (expectedId: number, options: FeedbackToastOptions) => number | null
-  /** 关闭当前 Toast；加载操作结束时应显式调用。 */
-  dismissToast: () => void
+  /** 关闭提示；指定序号时仅关闭本操作仍持有的 Toast。 */
+  dismissToast: (expectedId?: number) => void
   /** 显示单一弹窗，并替换当前弹窗。 */
   showModal: (options: FeedbackModalOptions) => void
   /** 关闭弹窗。 */
@@ -56,7 +56,6 @@ interface ActiveToast extends FeedbackToastOptions {
 /** 将弹窗和 Toast 主机置于应用根下，供所有页面共享。 */
 export function FeedbackHost({ children }: { children: ReactNode }) {
   const theme = useTheme()
-  const insets = useSafeAreaInsets()
   const sharedMessages = useStore(feedbackMessages)
   const toastLifecycleRef = useRef<SingleToastLifecycle | null>(null)
   if (toastLifecycleRef.current == null) toastLifecycleRef.current = new SingleToastLifecycle()
@@ -88,12 +87,18 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     return showToast(options)
   }, [showToast])
 
-  /** 显式结束 Toast 并使已排队的旧回调失效。 */
-  const dismissToast = useCallback(() => {
+  /** 显式结束持有的提示；旧操作清理不得关闭后来替换的反馈。 */
+  const dismissToast = useCallback((expectedId?: number) => {
+    if (expectedId != null && activeToastId.current !== expectedId) return
     activeToastId.current = null
     toastLifecycle.dismiss()
     setToast(null)
   }, [toastLifecycle])
+
+  /** 用户取消只关闭允许取消的当前提示，不结束或取消业务操作。 */
+  const cancelToast = useCallback(() => {
+    if (toast != null && (toast.dismissible ?? toast.tone !== 'loading')) dismissToast(toast.id)
+  }, [dismissToast, toast])
 
   /** 替换当前弹窗并保留调用方提供的明确操作。 */
   const showModal = useCallback((options: FeedbackModalOptions) => {
@@ -119,11 +124,6 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     () => ({ showToast, replaceToast, dismissToast, showModal, dismissModal }),
     [dismissModal, dismissToast, replaceToast, showModal, showToast],
   )
-  const iconByTone = {
-    success: CircleCheck,
-    error: CircleAlert,
-    information: Info,
-  } as const
   const iconColorByTone = {
     success: theme.colors.feedback.success,
     error: theme.colors.feedback.error,
@@ -147,51 +147,46 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
           }} />
         </Modal>
       )}
-      {toast != null && (() => {
-        const Icon = toast.tone === 'loading' ? null : iconByTone[toast.tone]
-        return (
-          <View
-            pointerEvents="box-none"
-            style={{ position: 'absolute', top: insets.top + theme.spacing.md, left: theme.spacing.md, right: theme.spacing.md }}
-          >
+      {toast != null && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={cancelToast}
+        >
+          <ToastOverlay>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={cancelToast}
+              accessible={toast.dismissible ?? toast.tone !== 'loading'}
+              accessibilityRole="button"
+              accessibilityLabel={sharedMessages.dismiss}
+            />
             <ToastSurface
+              accessibilityViewIsModal
               accessibilityRole={toast.tone === 'error' ? 'alert' : undefined}
               accessibilityState={{ busy: toast.tone === 'loading' }}
               style={theme.surfaceElevation.overlay}
               accessibilityLiveRegion={toast.tone === 'error' ? 'assertive' : 'polite'}
+              onStartShouldSetResponder={() => true}
             >
-              {toast.tone === 'loading'
-                ? (
-                    <LoadingIndicator
-                      color={iconColorByTone.loading}
-                      size={theme.icon.default}
-                    />
-                  )
-                : Icon != null && (
-                    <Icon
-                      size={theme.icon.default}
-                      color={iconColorByTone[toast.tone]}
-                      accessible={false}
-                    />
-                  )}
-              <ToastCopy>
-                <AppText>{toast.message}</AppText>
-              </ToastCopy>
-              {toast.dismissible !== false && (
-                <Pressable
-                  onPress={dismissToast}
-                  accessibilityRole="button"
-                  accessibilityLabel={sharedMessages.dismiss}
-                  hitSlop={8}
-                  style={{ minWidth: theme.icon.touchTarget, minHeight: theme.icon.touchTarget, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <X size={theme.icon.compact} color={theme.colors.text.secondary} />
-                </Pressable>
+              {toast.tone === 'loading' ? (
+                <LoadingIndicator color={iconColorByTone.loading} size={64} />
+              ) : (
+                <Svg width={64} height={64} viewBox="0 0 24 24" fill="none" stroke={theme.colors.surface.default} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" accessible={false}>
+                  <Circle cx={12} cy={12} r={10} fill={iconColorByTone[toast.tone]} stroke="none" />
+                  {toast.tone === 'success' ? <Path d="m7.5 12 3 3 6-6" />
+                    : toast.tone === 'error' ? <Path d="m8.5 8.5 7 7m0-7-7 7" />
+                      : <><Circle cx={12} cy={7.5} r={1.2} fill={theme.colors.surface.default} stroke="none" /><Path d="M12 11v6" /></>}
+                </Svg>
               )}
+              <ToastCopy>{toast.showLabel === false ? toast.message : `${sharedMessages[toast.tone]}：${toast.message}`}</ToastCopy>
             </ToastSurface>
-          </View>
-        )
-      })()}
+          </ToastOverlay>
+        </Modal>
+      )}
     </FeedbackContext.Provider>
   )
 }
