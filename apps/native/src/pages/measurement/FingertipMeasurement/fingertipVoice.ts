@@ -6,7 +6,7 @@ import type { FingertipVoiceCue, MeasurementVoicePlayer } from '@/app/measuremen
 export interface FingertipVoice {
   /** 接收同轮未经展示防抖的原生事实。 */
   update(snapshot: FingertipSnapshot): void
-  /** 使用既有十五秒指导的实际可见性，不创建额外计时。 */
+  /** 使用既有十秒指导的实际可见性，不创建额外计时。 */
   setHelpVisible(visible: boolean): void
   /** 永久撤销本轮语音，返回前台不恢复。 */
   cancel(): void
@@ -26,7 +26,7 @@ export function createFingertipVoice(player: MeasurementVoicePlayer<FingertipVoi
   let captureNode = 0
   let helpVisible = false
   let helpConsumed = false
-  // 只阻止同一提示时机的纠正与帮助串播，不屏蔽后来新显示的十五秒指导。
+  // 只阻止同一提示时机的纠正与帮助串播，不屏蔽后来新显示的十秒指导。
   let helpBlockedByCorrection = false
   let deficitActive = false
   let deficitEpisode = 0

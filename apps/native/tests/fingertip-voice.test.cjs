@@ -185,7 +185,7 @@ test('帮助与纠正同时适用时纠正优先，不自动串播；恢复覆�
   assert.equal(f.heard.filter(cue => cue === 'placementHelp').length, 1)
 })
 
-test('早期纠正已结束后，持续部分覆盖到十五秒弹窗显示时仍播放帮助', (context) => {
+test('早期纠正已结束后，持续部分覆盖到十秒弹窗显示时仍播放帮助', (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] })
   const f = fixture()
   const reminder = createFingertipPlacementReminder((visible) => f.voice.setHelpVisible(visible))
@@ -199,7 +199,7 @@ test('早期纠正已结束后，持续部分覆盖到十五秒弹窗显示时�
   context.mock.timers.tick(3_168)
   f.last().complete()
   publish()
-  context.mock.timers.tick(6_479)
+  context.mock.timers.tick(1_479)
   assert.deepEqual(f.heard, ['placementGuide', 'coverCamera'])
   context.mock.timers.tick(1)
   assert.deepEqual(f.heard, ['placementGuide', 'coverCamera', 'placementHelp'])

@@ -1,6 +1,7 @@
 /** 血压放置指导仅适用于第一阶段；贴胸准备立刻撤销旧定时器。 */
 import type { BloodPressureSnapshot } from '@health-cv-app/acquisition'
 
+/** 从本轮第一阶段真实覆盖观测起等待十秒，每轮最多显示一次。 */
 export function createBloodPressurePlacementReminder(onVisibilityChange: (visible: boolean) => void) {
   let captureId: string | null = null
   let shown = false
@@ -34,7 +35,7 @@ export function createBloodPressurePlacementReminder(onVisibilityChange: (visibl
         if (disposed || captureId !== expected || phase !== 'observing_finger') return
         shown = true
         setVisible(true)
-      }, 15_000)
+      }, 10_000)
     },
     dismiss() { clearTimer(); shown = true; setVisible(false) },
     reset,

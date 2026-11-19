@@ -2,6 +2,13 @@
 
 import styled from 'styled-components/native'
 
+import { AppText } from '@/shared/components/AppText'
+
+/** 标题在弹窗可用内容宽度内居中，不影响其他反馈弹窗。 */
+export const GuideTitle = styled(AppText)`
+  text-align: center;
+`
+
 export const GuideContent = styled.View`
   flex-shrink: 0;
 `

@@ -2,7 +2,7 @@
 
 import type { FingertipSnapshot } from '@health-cv-app/acquisition'
 
-/** 以原生轮次和阶段控制十五秒提醒，调用方负责页面与前台资格。 */
+/** 以原生轮次和阶段控制十秒提醒，调用方负责页面与前台资格。 */
 export function createFingertipPlacementReminder(onVisibilityChange: (visible: boolean) => void) {
   let captureId: string | null = null
   let shown = false
@@ -52,7 +52,7 @@ export function createFingertipPlacementReminder(onVisibilityChange: (visible: b
         if (disposed || captureId !== expectedId) return
         shown = true
         setVisible(true)
-      }, 15_000)
+      }, 10_000)
     },
     /** 确认只收起指导，同一轮不再重复弹出。 */
     dismiss() {

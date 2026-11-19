@@ -28,3 +28,12 @@ export function createMeasurementGuidePreferences() {
     chest: createPreference('chest'),
   }
 }
+
+/** 贴胸动作指导独立于检测准备页，确认后保存，重启与退出账号均保留。 */
+export function createChestPlacementGuidePreference() {
+  return persistentAtom<boolean>(
+    'app.measurement-guide.chest-placement.skipped',
+    false,
+    { listen: false, decode: decodeGuideSkipped, encode: (value: boolean) => String(value) },
+  )
+}

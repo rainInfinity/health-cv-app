@@ -6,7 +6,7 @@ import type { BloodPressureVoiceCue, MeasurementVoicePlayer } from '@/app/measur
 export interface BloodPressureVoice {
   /** 接收未经展示防抖的同轮原生事实。 */
   update(snapshot: BloodPressureSnapshot): void
-  /** 仅消费既有十五秒指导的实际可见性。 */
+  /** 仅消费既有十秒指导的实际可见性。 */
   setHelpVisible(visible: boolean): void
   /** 立即撤销本轮所有加载与播放资格。 */
   cancel(): void

@@ -12,7 +12,7 @@ import { DialogActions, DialogMessageScroll, DialogSurface, Overlay } from '@/sh
 import { FingertipRearCameraArtwork } from '../FingertipRearCameraArtwork'
 import { fingertipMessages } from '../../FingertipMeasurement/fingertipMessages'
 
-import { Caption, Example, Examples, GuideContent } from './styles'
+import { Caption, Example, Examples, GuideContent, GuideTitle } from './styles'
 
 interface FingertipPlacementGuideProps {
   /** 宿主控制本轮指导是否展示。 */
@@ -106,7 +106,7 @@ export function FingertipPlacementGuide({ visible, onConfirm, reducedMotion }: F
     <Modal transparent visible={visible} animationType={reducedMotion ? 'none' : 'fade'} statusBarTranslucent onRequestClose={() => undefined}>
       <Overlay style={{ paddingTop: insets.top + theme.spacing.xl, paddingBottom: insets.bottom + theme.spacing.xl }}>
         <DialogSurface accessibilityViewIsModal style={[theme.surfaceElevation.overlay, { maxHeight: availableHeight }]}>
-          <AppText variant="section" accessibilityRole="header">{messages.placementGuideTitle}</AppText>
+          <GuideTitle variant="section" accessibilityRole="header">{messages.placementGuideTitle}</GuideTitle>
           <DialogMessageScroll showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <GuideContent>
               <AppText tone="secondary">{messages.placementGuideMessage}</AppText>

@@ -18,6 +18,7 @@ import { XinmuLogo } from '@/shared/graphics'
 import { FingertipInstructionArtwork } from '@/pages/measurement/ContactMeasurement/FingertipInstructionArtwork'
 import { FingertipPreview } from '@/pages/measurement/ContactMeasurement/FingertipPreview'
 import { ChestInstructionArtwork } from './ChestInstructionArtwork'
+import { ChestPlacementGuide } from './ChestPlacementGuide'
 import { FingertipPlacementGuide } from '@/pages/measurement/ContactMeasurement/FingertipPlacementGuide'
 
 import { useBloodPressureMeasurement } from './useBloodPressureMeasurement'
@@ -222,6 +223,8 @@ export function BloodPressureMeasurementScreen() {
             key={measurement.previewKey}
             diameter={diameter}
             display={measurement.display}
+            highlightNotice
+            noticeRequiresAction={waitingChest}
             notice={measurement.localError != null || measurement.leaving ? undefined : waitingChest ? messages.hintAwaitingChest : running ? messages.hintRunning : undefined}
             overridePresentation={measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : null}
             previewMounted={measurement.previewMounted}
@@ -283,7 +286,7 @@ export function BloodPressureMeasurementScreen() {
                 ))}
               </Instructions>
               <ChestInstructionArtwork
-                active={visible && page === 1 && !measurement.leaving}
+                active={visible && page === 1 && !measurement.leaving && !measurement.chestGuideVisible}
                 visible={page === 1}
                 reducedMotion={reducedMotion}
                 height={artHeight}
@@ -306,6 +309,12 @@ export function BloodPressureMeasurementScreen() {
       <FingertipPlacementGuide
         visible={measurement.placementGuideVisible && visible && error == null && !measurement.leaving}
         onConfirm={measurement.dismissPlacementGuide}
+        reducedMotion={reducedMotion}
+      />
+      <ChestPlacementGuide
+        visible={measurement.chestGuideVisible && visible && error == null && !measurement.leaving}
+        onConfirm={measurement.confirmChestGuide}
+        storageError={measurement.chestGuideStorageError}
         reducedMotion={reducedMotion}
       />
     </Screen>

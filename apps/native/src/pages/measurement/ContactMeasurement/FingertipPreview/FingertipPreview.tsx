@@ -30,6 +30,10 @@ interface FingertipPreviewProps {
   display: Pick<FingertipDisplay, 'getSnapshot' | 'subscribe'>
   /** 调用方提供具体方式的阶段指引，不改变覆盖事实。 */
   notice?: string
+  /** 按操作、开始和结束阶段着色，未启用时保持正文色。 */
+  highlightNotice?: boolean
+  /** 方式专属动作尚未完成时，覆盖就绪也继续显示操作提示色。 */
+  noticeRequiresAction?: boolean
   /** 本地错误与取消必须立即覆盖普通操作提示。 */
   overridePresentation: FingertipPresentation | null
   /** 授权后挂载真实预览，不隐含打开命令。 */
@@ -156,9 +160,10 @@ const PreviewScene = memo(function PreviewScene({ diameter, coverageProgress, pr
 })
 
 /** 覆盖数值／文字的局部订阅边界，不让 250ms 更新重建相机或波纹。 */
-function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, overridePresentation, notice: customNotice, blurTarget }: Pick<FingertipPreviewProps, 'display' | 'coverageProgress' | 'reducedMotion' | 'animating' | 'overridePresentation' | 'notice'> & { /** 只取相机与装饰背景，不包含提示文字。 */ blurTarget: RefObject<View | null> }) {
+function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, overridePresentation, notice: customNotice, highlightNotice, noticeRequiresAction, blurTarget }: Pick<FingertipPreviewProps, 'display' | 'coverageProgress' | 'reducedMotion' | 'animating' | 'overridePresentation' | 'notice' | 'highlightNotice' | 'noticeRequiresAction'> & { /** 只取相机与装饰背景，不包含提示文字。 */ blurTarget: RefObject<View | null> }) {
   const snapshot = useSyncExternalStore(display.subscribe, display.getSnapshot)
   const messages = useStore(fingertipMessages)
+  const theme = useTheme()
   const presentation = overridePresentation ?? snapshot.presentation
   const notice = customNotice ?? (presentation === 'ready' ? messages.hintReady
     : presentation === 'partial' ? messages.hintPartial
@@ -166,6 +171,11 @@ function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, 
         : presentation === 'running' ? messages.hintRunning
           : presentation === 'stopping' ? messages.hintStopping
             : presentation === 'completed' ? messages.hintCompleted : messages.hintInterrupted)
+  const noticeColor = !highlightNotice || presentation === 'stopping' || presentation === 'completed'
+    ? theme.colors.text.primary
+    : !noticeRequiresAction && (presentation === 'covered' || presentation === 'running')
+      ? mix(theme.colors.brand.gradient.end, theme.colors.text.primary, 0.7)
+      : mix(theme.colors.accent.rose, theme.colors.text.primary, 0.7)
 
   useEffect(() => {
     const value = snapshot.coveragePercent ?? 0
@@ -185,7 +195,7 @@ function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, 
         <Notice>
           {/* Android 的模糊半径为 96 / 8 = 12，chrome 白色叠层约为 96% × 75% = 72%。 */}
           <BlurView blurTarget={blurTarget} blurMethod="dimezisBlurViewSdk31Plus" intensity={96} blurReductionFactor={8} tint="systemChromeMaterial" style={StyleSheet.absoluteFill} pointerEvents="none" accessible={false} />
-          <AppText variant="caption" numberOfLines={2} ellipsizeMode="tail" style={localStyles.previewNoticeText}>{notice}</AppText>
+          <AppText variant="caption" numberOfLines={2} ellipsizeMode="tail" style={[localStyles.previewNoticeText, { color: noticeColor }]}>{notice}</AppText>
         </Notice>
       </NoticeCenter>
       <CoverageReadout coveragePercent={snapshot.coveragePercent} coverageReady={snapshot.coverageReady} coverageLabel={messages.coverage} waitingDescription={messages.previewWaiting} coveredDescription={messages.previewCovered} />
@@ -194,14 +204,14 @@ function CoverageOverlay({ display, coverageProgress, reducedMotion, animating, 
 }
 
 /** 保留圆形布局与同一个 Animated.Value；覆盖反馈和稳定预览互不重绘。 */
-export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion, display, overridePresentation, notice }: FingertipPreviewProps) {
+export const FingertipPreview = memo(function FingertipPreview({ diameter, coverageProgress, previewMounted, onPreviewLayout, animating, reducedMotion, display, overridePresentation, notice, highlightNotice, noticeRequiresAction }: FingertipPreviewProps) {
   const blurTarget = useRef<View | null>(null)
   return (
     <PreviewFrame style={{ width: diameter, height: diameter }}>
       <BlurTargetView ref={blurTarget} style={[StyleSheet.absoluteFill, localStyles.circle]} accessible={false} importantForAccessibility="no-hide-descendants">
         <PreviewScene diameter={diameter} coverageProgress={coverageProgress} previewMounted={previewMounted} onPreviewLayout={onPreviewLayout} animating={animating} reducedMotion={reducedMotion} />
       </BlurTargetView>
-      <CoverageOverlay display={display} coverageProgress={coverageProgress} animating={animating} reducedMotion={reducedMotion} overridePresentation={overridePresentation} notice={notice} blurTarget={blurTarget} />
+      <CoverageOverlay display={display} coverageProgress={coverageProgress} animating={animating} reducedMotion={reducedMotion} overridePresentation={overridePresentation} notice={notice} highlightNotice={highlightNotice} noticeRequiresAction={noticeRequiresAction} blurTarget={blurTarget} />
     </PreviewFrame>
   )
 })

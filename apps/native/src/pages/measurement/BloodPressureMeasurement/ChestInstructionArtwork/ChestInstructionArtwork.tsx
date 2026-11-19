@@ -14,10 +14,10 @@ interface Props {
   reducedMotion: boolean
   /** 单幅等比画布高度，单位 dp。 */
   height: number
-  /** 指引整页宽度，单位 dp。 */
-  width: number
-  /** 分页内容可用高度，单位 dp。 */
-  pageHeight: number
+  /** 分页显式指定宽度，弹窗省略时沿用内容区宽度，单位 dp。 */
+  width?: number
+  /** 分页显式指定高度，弹窗省略时按图文自然排布，单位 dp。 */
+  pageHeight?: number
   /** 侧面及正面动作标题。 */
   titles: readonly [string, string]
   /** 两幅图对应的放置说明。 */

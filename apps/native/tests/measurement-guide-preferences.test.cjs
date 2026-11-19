@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { afterEach, beforeEach, test } = require('node:test');
 const { createPersistentStorageEngine } = require('../node_modules/.cache/native-test/app/storage/persistentEngine.js');
-const { createMeasurementGuidePreferences } = require('../node_modules/.cache/native-test/app/preferences/measurementGuide.js');
+const { createChestPlacementGuidePreference, createMeasurementGuidePreferences } = require('../node_modules/.cache/native-test/app/preferences/measurementGuide.js');
 const { FEATURE_ENTRIES, METHOD_ENTRIES, resolveMeasurementEntry } = require('../node_modules/.cache/native-test/app/measurement/entry.js');
 const { clearHarnessQueryClients, createHarness } = require('./helpers.cjs');
 
@@ -100,6 +100,7 @@ test('真实认证退出不清除设备准备偏好，也不改变语言和首�
   preference.face.set(true);
   preference.fingertip.set(true);
 
+  createChestPlacementGuidePreference().set(true);
   const harness = createHarness();
   await harness.auth.restore();
   await harness.auth.signIn({ username: 'test-user', password: 'private-password' });
@@ -111,6 +112,28 @@ test('真实认证退出不清除设备准备偏好，也不改变语言和首�
   assert.equal(restored.face.get(), true);
   assert.equal(restored.fingertip.get(), true);
   assert.equal(restored.chest.get(), false);
+  assert.equal(createChestPlacementGuidePreference().get(), true);
   assert.equal(language.get(), 'en-US');
   assert.equal(onboarding.get(), 'true');
+});
+
+test('贴胸操作提示独立于检测准备，确认保存后重建仍不再提示', () => {
+  const preparation = createMeasurementGuidePreferences();
+  const guide = createChestPlacementGuidePreference();
+  assert.equal(guide.get(), false);
+  preparation.chest.set(true);
+  assert.equal(guide.get(), false);
+  guide.set(true);
+  assert.equal(createChestPlacementGuidePreference().get(), true);
+  preparation.chest.set(false);
+  assert.equal(createChestPlacementGuidePreference().get(), true);
+  assert.equal(preparation.face.get(), false);
+  assert.equal(preparation.fingertip.get(), false);
+});
+
+test('贴胸提示偏好缺失或非法时仍展示，不影响原有准备偏好', () => {
+  values.set('app.measurement-guide.chest.skipped', 'true');
+  values.set('app.measurement-guide.chest-placement.skipped', 'invalid');
+  assert.equal(createChestPlacementGuidePreference().get(), false);
+  assert.equal(createMeasurementGuidePreferences().chest.get(), true);
 });
