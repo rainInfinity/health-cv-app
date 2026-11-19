@@ -19,13 +19,8 @@ import { feedbackMessages } from '@/app/i18n/feedbackMessages'
 import { PulseWaveHistory } from '@/shared/components/PulseWaveHistory'
 import { faceMeasurementMessages, localizeFaceMeasurementError } from './messages'
 import { useFaceMeasurement } from './useFaceMeasurement'
+import { formatFaceMeasurementElapsed } from './faceMeasurementTime'
 import { CameraFrame, Footer, Header, Panel, Placeholder, PreviewLabel, Readout, Screen, Viewfinder, WavePanel } from './styles'
-
-/** 格式化页面单调经过时间，不承担原生截止判断。 */
-function formatElapsed(milliseconds: number): string {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1_000))
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
 
 /** 面部产品页在用户开始前不创建 runtime、不挂载预览、不申请权限。 */
 export function FaceMeasurementScreen() {
@@ -38,6 +33,7 @@ export function FaceMeasurementScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const measurement = useFaceMeasurement()
   const { snapshot, summary, waveformHistory, busy, localError, closeFailed } = measurement
+  const elapsedTime = formatFaceMeasurementElapsed(snapshot, measurement.elapsedMillis)
   const gradientId = useId()
   const cameraGradientId = useId()
   const cornerGradientId = useId()
@@ -166,7 +162,7 @@ export function FaceMeasurementScreen() {
             </View>
             <View style={{ alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <AppText tone="muted" style={mutedStyle}>{messages.timer}</AppText>
-              <AppText accessibilityLabel={`${messages.timer} ${formatElapsed(measurement.elapsedMillis)}`} style={{ color: running ? theme.colors.brand.action : theme.colors.text.secondary, fontSize: width < 360 ? 24 : 28, lineHeight: 36 * fontScale, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{formatElapsed(measurement.elapsedMillis)}</AppText>
+              <AppText accessibilityLabel={`${messages.timer} ${elapsedTime}`} style={{ color: running ? theme.colors.brand.action : theme.colors.text.secondary, fontSize: width < 360 ? 24 : 28, lineHeight: 36 * fontScale, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{elapsedTime}</AppText>
             </View>
             <View style={{ width: expandedText ? undefined : width < 360 ? 78 : 92, alignItems: 'center', flexShrink: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: width < 360 ? 6 : 10, borderRadius: theme.radius.pill, backgroundColor: running ? theme.colors.brand.subtle : theme.colors.surface.subtle }}>
