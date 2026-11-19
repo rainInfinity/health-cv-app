@@ -24,6 +24,23 @@ export type FingertipDisplay = ContactDisplay<FingertipSnapshot['phase']>
 
 /** 指尖保留自己的阶段映射，不掺入血压准入。 */
 export function createFingertipDisplay(onStatus: (status: FingertipDisplayStatus | null) => void): FingertipDisplay {
-  return createContactDisplay(onStatus, getFingertipPresentation, 'observing')
+  const display = createContactDisplay<FingertipSnapshot['phase']>(onStatus, getFingertipPresentation, 'observing')
+  let lastObservation: Parameters<FingertipDisplay['update']>[0] | null = null
+  return {
+    ...display,
+    /** 收尾后原生不再评估覆盖，保留同轮最后真实值，不将释放后的未知覆盖当成新观测。 */
+    update(snapshot) {
+      if (lastObservation?.captureId !== snapshot.captureId) lastObservation = null
+      const ending = snapshot.phase === 'stopping' || snapshot.phase === 'completed'
+      if (!ending || snapshot.coverageState !== 'unknown') lastObservation = snapshot
+      display.update(ending && snapshot.coverageState === 'unknown' && lastObservation != null
+        ? { ...snapshot, coveragePercent: lastObservation.coveragePercent, coverageState: lastObservation.coverageState, coverageReady: lastObservation.coverageReady }
+        : snapshot)
+    },
+    /** 明确新轮不继承旧轮覆盖。 */
+    reset() { lastObservation = null; display.reset() },
+    /** 释放展示订阅和本轮末值。 */
+    dispose() { lastObservation = null; display.dispose() },
+  }
 }
 

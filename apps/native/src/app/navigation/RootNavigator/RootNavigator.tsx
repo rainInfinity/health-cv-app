@@ -16,6 +16,7 @@ import { StartupScreen } from '@/pages/home/StartupScreen'
 import { MeasurementGuideScreen } from '@/pages/measurement/MeasurementGuide'
 import { FaceMeasurementScreen } from '@/pages/measurement/FaceMeasurement'
 import { FingertipMeasurementScreen } from '@/pages/measurement/FingertipMeasurement'
+import { FingertipResultsScreen } from '@/pages/measurement/FingertipResults'
 import { BloodPressureMeasurementScreen } from '@/pages/measurement/BloodPressureMeasurement'
 import { AuthScreen } from '@/pages/user/AuthScreen'
 import { LanguageInfoScreen } from '@/pages/user/LanguageInfoScreen'
@@ -88,6 +89,11 @@ export function RootNavigator() {
         <Stack.Screen
           name="FingertipMeasurement"
           component={FingertipMeasurementScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FingertipResults"
+          component={FingertipResultsScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

@@ -10,6 +10,20 @@ import { registerAcquisitionLeaveRequest } from '@/app/navigation/acquisitionNav
 import type { RootStackParamList } from '@/app/navigation/types'
 import type { FingertipCaptureController } from '../FingertipMeasurement/fingertipCapture'
 
+/** 指尖可显式保留已释放资源的同轮详情展示；其他方式不提供此能力。 */
+interface ContactPresentationLifecycle {
+  /** 真正离开、失败或重测时同步撤销展示资格和迟到回调。 */
+  cancel(): void
+  /** 页面卸载时永久释放展示生命周期，不再通知页面。 */
+  dispose(): void
+  /** 用前台与导航焦点的共同可见性暂停或继续展示等待。 */
+  setVisible(visible: boolean): void
+  /** 消费一次明确同轮详情交接；未匹配目标必须沿用普通失焦清理。 */
+  retainOnBlur(route: { name: string; params?: unknown } | undefined): boolean
+  /** 保留路径重新聚焦时恢复同轮结果，不重新准备设备。 */
+  resume(): void
+}
+
 interface ContactSessionOptions {
   /** 只管理展示投影，不持有设备。 */
   display: { reset(): void; cancelPendingHints(): void; dispose(): void }
@@ -22,6 +36,8 @@ interface ContactSessionOptions {
   disposeRound?(): void
   /** 立即撤销方式专属副作用，不等待相机关闭屏障；未提供时不创建额外能力。 */
   cancelRound?(): void
+  /** 仅指尖结果显式启用同轮详情保留；未提供时沿用既有离页清理。 */
+  presentationLifecycle?: ContactPresentationLifecycle
 }
 
 /** 页面只用稳定错误码选择安全中文反馈，不回显原生诊断文本。 */
@@ -30,7 +46,7 @@ function getErrorCode(error: unknown): string {
 }
 
 /** 一个明确导航入口自动准备；后台与重新聚焦都不能自动创建第二轮。 */
-export function useContactMeasurementSession({ display, placementReminder, createController, resetRound, disposeRound, cancelRound }: ContactSessionOptions) {
+export function useContactMeasurementSession({ display, placementReminder, createController, resetRound, disposeRound, cancelRound, presentationLifecycle }: ContactSessionOptions) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const [previewMounted, setPreviewMounted] = useState(false)
   const [previewKey, setPreviewKey] = useState(0)
@@ -43,6 +59,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   const mounted = useRef(true)
   const focused = useRef(false)
   const started = useRef(false)
+  const retainedPresentation = useRef(false)
   const generation = useRef(0)
   const controller = useRef<FingertipCaptureController | null>(null)
   const preparing = useRef(false)
@@ -91,6 +108,8 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   const requestLeave = useCallback((action: NavigationAction | (() => void)) => {
     failedNavigation.current = action
     leaveRequested.current = true
+    presentationLifecycle?.cancel()
+    retainedPresentation.current = false
     cancelRound?.()
     display.cancelPendingHints()
     setLeaving(true)
@@ -101,7 +120,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       void closeBarrier.current.catch(() => undefined)
     }
     void guard.request(action)
-  }, [cancelRound, display, guard])
+  }, [cancelRound, display, guard, presentationLifecycle])
 
   usePreventRemove(!allowRemoval, ({ data }) => requestLeave(data.action))
   useEffect(() => {
@@ -115,6 +134,8 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   /** 重试总是先完成旧轮关闭，再构造新客户端和本轮展示，没有暂停续采分支。 */
   const start = useCallback(async () => {
     if (preparing.current || !mounted.current || !focused.current || leaveRequested.current) return
+    presentationLifecycle?.cancel()
+    retainedPresentation.current = false
     cancelRound?.()
     display.cancelPendingHints()
     placementReminder.reset()
@@ -141,6 +162,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
         mountPreview: () => { if (valid()) setPreviewMounted(true) },
         onPreparationInterrupted: () => {
           if (!valid()) return
+          presentationLifecycle?.cancel()
           cancelRound?.()
           display.cancelPendingHints()
           placementReminder.reset()
@@ -151,6 +173,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       await next.prepare()
     } catch (error) {
       if (mounted.current && focused.current && !leaveRequested.current) {
+        presentationLifecycle?.cancel()
         cancelRound?.()
         display.cancelPendingHints()
         placementReminder.reset()
@@ -160,11 +183,16 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       preparing.current = false
       if (mounted.current) setBusy(false)
     }
-  }, [cancelRound, closeCurrent, createController, display, placementReminder, resetRound])
+  }, [cancelRound, closeCurrent, createController, display, placementReminder, presentationLifecycle, resetRound])
 
   useFocusEffect(useCallback(() => {
     focused.current = true
     setVisible(AppState.currentState === 'active')
+    presentationLifecycle?.setVisible(AppState.currentState === 'active')
+    if (retainedPresentation.current) {
+      retainedPresentation.current = false
+      presentationLifecycle?.resume()
+    }
     const unregister = registerAcquisitionLeaveRequest(requestLeave)
     if (!started.current) {
       started.current = true
@@ -173,21 +201,31 @@ export function useContactMeasurementSession({ display, placementReminder, creat
     return () => {
       focused.current = false
       cancelRound?.()
+      presentationLifecycle?.setVisible(false)
       if (mounted.current) setVisible(false)
       display.cancelPendingHints()
       placementReminder.reset()
       unregister()
+      const state = navigation.getState()
+      if (!leaveRequested.current && presentationLifecycle?.retainOnBlur(state.routes[state.index])) {
+        retainedPresentation.current = true
+        // 设备已由正常完成屏障释放；仅注销旧轮订阅，不销毁本轮真实历史。
+        controller.current?.dispose()
+        return
+      }
+      presentationLifecycle?.cancel()
       // 正常离页已经过 guard；强制失焦仍只收尾本页实例，不再自动准备。
       disposeRound?.()
       void closeCurrent().catch(() => undefined)
     }
-  }, [cancelRound, closeCurrent, display, disposeRound, placementReminder, requestLeave, start]))
+  }, [cancelRound, closeCurrent, display, disposeRound, navigation, placementReminder, presentationLifecycle, requestLeave, start]))
 
   useEffect(() => {
     mounted.current = true
     const subscription = AppState.addEventListener('change', (state) => {
       const active = state === 'active'
       setVisible(active && focused.current)
+      presentationLifecycle?.setVisible(active && focused.current)
       if (!active) cancelRound?.()
       if (!active) placementReminder.reset()
       if (state === 'background' || active) controller.current?.setForeground(active)
@@ -195,6 +233,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
     return () => {
       mounted.current = false
       generation.current += 1
+      presentationLifecycle?.dispose()
       cancelRound?.()
       display.dispose()
       placementReminder.dispose()
@@ -205,7 +244,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       current?.dispose()
       disposeRound?.()
     }
-  }, [cancelRound, display, disposeRound, guard, placementReminder])
+  }, [cancelRound, display, disposeRound, guard, placementReminder, presentationLifecycle])
 
   /** 关闭失败重试原导航；其他失败在旧轮资源安全后重新建立一次明确入口。 */
   const retry = useCallback(() => {

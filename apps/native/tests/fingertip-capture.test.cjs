@@ -325,6 +325,20 @@ test('开窗、收尾、完成和错误不等提示防抖，并立即冻结该�
   display.dispose()
 })
 
+test('正常收尾停止覆盖评估后仍显示最后真实覆盖，新轮不会继承', () => {
+  const display = createFingertipDisplay(() => {})
+  display.update(snapshot({ phase: 'capturing', coverageState: 'complete', coveragePercent: 98, coverageReady: true }))
+  display.update(snapshot({ phase: 'stopping', endReason: 'duration_reached', remainingMillis: 0 }))
+  display.update(snapshot({ phase: 'completed', endReason: 'duration_reached', remainingMillis: 0, resourcesReleased: true }))
+  assert.equal(display.getSnapshot().coveragePercent, 98)
+  assert.equal(display.getSnapshot().presentation, 'completed')
+  assert.equal(display.getSnapshot().resourcesReleased, true)
+  display.reset()
+  display.update(snapshot({ captureId: 'round-2' }))
+  assert.equal(display.getSnapshot().coveragePercent, null)
+  display.dispose()
+})
+
 test('取消、新轮和卸载撤销迟到提示，不把上一轮稳定等待带入未知覆盖', (context) => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
   const display = createFingertipDisplay(() => {})

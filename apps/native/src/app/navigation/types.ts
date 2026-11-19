@@ -73,6 +73,8 @@ export type RootStackParamList = {
   FaceMeasurement: { target?: MeasurementTarget } | undefined
   /** 明确入口后准备真实后摄的指尖检测页。 */
   FingertipMeasurement: { target?: MeasurementTarget } | undefined
+  /** 已释放资源的指尖本轮详情；只传轮次身份，不携带采样。 */
+  FingertipResults: { captureId: string }
   /** 覆盖及 IMU 联合准入驱动的血压本地采集页。 */
   BloodPressureMeasurement: { target?: MeasurementTarget } | undefined
   /** 真实登录表单；可仅回填用户名。 */

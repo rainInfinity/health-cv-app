@@ -19,6 +19,8 @@ import { FingertipInstructionArtwork } from '@/pages/measurement/ContactMeasurem
 import { FingertipPreview } from '@/pages/measurement/ContactMeasurement/FingertipPreview'
 import { FingertipPulseWave } from '@/pages/measurement/FingertipMeasurement/FingertipPulseWave'
 import { FingertipPlacementGuide } from '@/pages/measurement/ContactMeasurement/FingertipPlacementGuide'
+import { FingertipResultSheet, FingertipResultEntry } from '@/pages/measurement/FingertipResultSheet'
+import { fingertipResultsMessages } from '@/pages/measurement/FingertipResults'
 
 import { useFingertipMeasurement } from './useFingertipMeasurement'
 import { fingertipMessages } from './fingertipMessages'
@@ -32,6 +34,7 @@ import {
 /** 明确入口自动授权准备，正式开始与三十秒截止均消费原生事实。 */
 export function FingertipMeasurementScreen() {
   const messages = useStore(fingertipMessages)
+  const resultMessages = useStore(fingertipResultsMessages)
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'FingertipMeasurement'>>()
   const theme = useTheme()
   const insets = useSafeAreaInsets()
@@ -46,10 +49,11 @@ export function FingertipMeasurementScreen() {
   const diameter = Math.min(332, width - 40, originalDiameter + (compact ? 32 : 36))
   const measurement = useFingertipMeasurement()
   const { snapshot, waveform: waveController, visible } = measurement
-  const { showModal } = useFeedback()
+  const { showModal, showToast, dismissToast } = useFeedback()
   const [page, setPage] = useState(0)
   const [pageWidth, setPageWidth] = useState(Math.max(1, width - panelPadding * 2))
   const [viewfinderHeight, setViewfinderHeight] = useState(viewfinderSlotHeight)
+  const [panelTop, setPanelTop] = useState(48 + viewfinderSlotHeight)
   const [sessionHeight, setSessionHeight] = useState(64 * fontScale)
   const [captionHeights, setCaptionHeights] = useState({ back: 50 * fontScale, front: 50 * fontScale })
   const captionHeight = Math.max(captionHeights.back, captionHeights.front)
@@ -173,10 +177,17 @@ export function FingertipMeasurementScreen() {
   const phase = snapshot?.phase ?? 'preparing'
   const running = phase === 'capturing'
   const presentation = measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : snapshot?.presentation ?? 'ready'
-  const active = measurement.busy || phase === 'observing' || phase === 'starting' || running || phase === 'stopping'
+  const waitingForResults = measurement.result.phase === 'waiting'
+  useEffect(() => {
+    if (!waitingForResults || !visible || measurement.leaving || error != null) return
+    const toastId = showToast({ tone: 'loading', message: resultMessages.waitingToast, showLabel: false })
+    return () => dismissToast(toastId)
+  }, [waitingForResults, visible, measurement.leaving, measurement.result.captureId, error, resultMessages.waitingToast, showToast, dismissToast])
+
+  const active = waitingForResults || measurement.busy || phase === 'observing' || phase === 'starting' || running || phase === 'stopping'
   const statusColor = presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
-  const status = messages[presentation]
-  const statusHint = presentation === 'ready' ? messages.statusReady
+  const status = waitingForResults ? resultMessages.waitingTitle : messages[presentation]
+  const statusHint = waitingForResults ? resultMessages.waitingHint : presentation === 'ready' ? messages.statusReady
     : presentation === 'partial' ? messages.statusPartial
       : presentation === 'covered' ? messages.statusCovered
         : presentation === 'running' ? messages.statusRunning
@@ -187,6 +198,12 @@ export function FingertipMeasurementScreen() {
   const pageHeight = Math.max(minimumPageHeight, availableHeight - 48 - viewfinderHeight - panelPadding * 2 - sessionHeight - (compact ? 8 : 20) - 52)
   const artHeight = Math.max(64, Math.min(156, Math.max(96, height * 0.16), pageHeight - captionHeight - 8))
   const plotHeight = Math.max(64, pageHeight - 30 * fontScale)
+
+  /** 先登记已释放资源的同轮交接，再压入详情，避免普通失焦清空历史。 */
+  function showDetails() {
+    const captureId = measurement.enterDetails()
+    if (captureId != null) navigation.navigate('FingertipResults', { captureId })
+  }
 
   return (
     <Screen style={{ paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
@@ -201,7 +218,7 @@ export function FingertipMeasurementScreen() {
           <Rect width={width} height={height} fill={`url(#${id}-background)`} />
         </Svg>
       </View>
-      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={[localStyles.scrollContent, { minHeight: availableHeight }]}>
+      <ScrollView pointerEvents={measurement.result.expanded ? 'none' : 'auto'} accessibilityElementsHidden={measurement.result.expanded} importantForAccessibility={measurement.result.expanded ? 'no-hide-descendants' : 'auto'} nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={[localStyles.scrollContent, { minHeight: availableHeight }]}>
         <Toolbar>
           <HeaderAction
             accessibilityRole="button"
@@ -223,6 +240,7 @@ export function FingertipMeasurementScreen() {
             key={measurement.previewKey}
             diameter={diameter}
             display={measurement.display}
+            highlightNotice
             overridePresentation={measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : null}
             previewMounted={measurement.previewMounted}
             onPreviewLayout={measurement.onPreviewLayout}
@@ -231,7 +249,10 @@ export function FingertipMeasurementScreen() {
             reducedMotion={reducedMotion}
           />
         </Viewfinder>
-        <DataPanel $compact={compact} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
+        <DataPanel $compact={compact} onLayout={(event) => setPanelTop(event.nativeEvent.layout.y)} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
+          {measurement.result.phase !== 'idle' && !measurement.leaving && error == null && (
+            <FingertipResultEntry waiting={waitingForResults} onPress={measurement.openResults} />
+          )}
           <Session onLayout={(event) => setSessionHeight(event.nativeEvent.layout.height)}>
             <StatusGroup>
               <StatusBadge $started={snapshot != null} accessible accessibilityRole="text" accessibilityLabel={status} accessibilityLiveRegion="polite">
@@ -313,6 +334,16 @@ export function FingertipMeasurementScreen() {
         visible={measurement.placementGuideVisible && visible && error == null && !measurement.leaving}
         onConfirm={measurement.dismissPlacementGuide}
         reducedMotion={reducedMotion}
+      />
+      <FingertipResultSheet
+        key={measurement.result.captureId ?? measurement.previewKey}
+        expanded={measurement.result.expanded && error == null && !measurement.leaving}
+        active={visible}
+        panelTop={panelTop}
+        reducedMotion={reducedMotion}
+        onClose={measurement.closeResults}
+        onDetails={showDetails}
+        onRetest={measurement.retry}
       />
     </Screen>
   )
