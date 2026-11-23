@@ -1,5 +1,7 @@
 /** 集中定义普通渠道 API 的请求 DTO。 */
 
+import type { Rsp } from './response';
+
 export namespace Req {
   /** 注册、登录与令牌续期请求。 */
   export namespace Auth {
@@ -58,6 +60,23 @@ export namespace Req {
     }
   }
 
+  /** 当前账号健康记录查询。 */
+  export namespace Measurements {
+    /** 按北京时间日期查询单页指标记录；包含首尾日。 */
+    export interface MeasurementListParams {
+      /** 要查询的健康指标。 */
+      metric: Rsp.Measurements.Metric;
+      /** 起始日期原字符串，格式为 YYYY-MM-DD。 */
+      from: string;
+      /** 截止日期原字符串，格式为 YYYY-MM-DD。 */
+      to: string;
+      /** 本页起始偏移；缺席时由服务端使用默认值。 */
+      offset?: number;
+      /** 本页条数上限，服务端允许 1–100；缺席时使用默认值。 */
+      limit?: number;
+    }
+  }
+
   /** 当前渠道任务请求。 */
   export namespace Tasks {
     /** 普通渠道任务列表分页参数。 */
@@ -74,8 +93,20 @@ export namespace Req {
       modelId: number;
     }
 
+    /** 随最终提交冻结的完整采集属性；不由 SDK 补默认值。 */
+    export interface Measurement {
+      /** 客户端自报的采集方式。 */
+      captureMethod: 'fingertip' | 'fingertip_chest';
+      /** 客户端自报的主动采集来源。 */
+      captureMode: 'active';
+      /** 原生正式窗口的实际整数毫秒时长。 */
+      durationMs: number;
+    }
+
     /** 草稿最终提交请求；后端兼容不传请求体。 */
     export interface SubmitTaskRequest {
+      /** 可选完整采集属性；null 或缺席表示未知。 */
+      measurement?: Measurement | null;
       /** 客户端自报的任务留档元数据；null 或缺席表示未提供。 */
       clientMetadata?: Record<string, unknown> | null;
     }

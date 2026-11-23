@@ -246,6 +246,7 @@ test('资料与失败任务保留原始值、时间、状态和示例标识', as
     failureCode: 'PROCESSING_FAILED',
     failureMessage: '安全失败摘要',
     qualityFailure: null,
+    measurement: null,
   };
   const { server, baseUrl } = await startServer((request, response) => {
     request.resume();
@@ -282,6 +283,7 @@ test('资料与失败任务保留原始值、时间、状态和示例标识', as
   assert.equal(returnedTask.isExample, true);
   assert.equal(returnedTask.createdAt, '2026-10-19 08:12:13');
   assert.equal(Object.hasOwn(returnedTask, 'result'), false);
+  assert.equal(returnedTask.measurement, null);
 });
 
 test('任务详情支持后端质量拒绝判别联合', async (t) => {
@@ -341,7 +343,7 @@ test('任务详情支持后端质量拒绝判别联合', async (t) => {
   assert.equal(ordinaryFailure.qualityFailure, null);
 });
 
-test('任务提交可发送客户端元数据并保留无请求体兼容', async (t) => {
+test('任务提交独立发送采集属性与元数据并保留无请求体兼容', async (t) => {
   const requests = [];
   const taskSummary = {
     taskId: 42,
@@ -362,6 +364,7 @@ test('任务提交可发送客户端元数据并保留无请求体兼容', async
       method: request.method,
       url: request.url,
       body: await readRequestBody(request),
+      authorization: request.headers.authorization,
     });
     sendJson(response, 200, { code: 'OK', data: taskSummary });
   });
@@ -376,24 +379,238 @@ test('任务提交可发送客户端元数据并保留无请求体兼容', async
     deviceModel: 'Pixel 9',
     custom: { appBuild: 42 },
   };
+  const measurement = {
+    captureMethod: 'fingertip',
+    captureMode: 'active',
+    durationMs: 30001,
+  };
 
-  const submitted = await client.tasks.submit(42, { clientMetadata: metadata });
+  const submitted = await client.tasks.submit(42, { measurement, clientMetadata: metadata });
   const legacySubmitted = await client.tasks.submit(42);
+  const metadataSubmitted = await client.tasks.submit(42, { clientMetadata: metadata });
+  const unknownSubmitted = await client.tasks.submit(42, { measurement: null, clientMetadata: null });
 
   assert.deepEqual(submitted, taskSummary);
   assert.deepEqual(legacySubmitted, taskSummary);
+  assert.deepEqual(metadataSubmitted, taskSummary);
+  assert.deepEqual(unknownSubmitted, taskSummary);
+  assert.equal(Object.hasOwn(submitted, 'measurement'), false);
   assert.deepEqual(requests, [
     {
       method: 'POST',
       url: '/api/v1/ios-cn/tasks/42/submit',
-      body: JSON.stringify({ clientMetadata: metadata }),
+      authorization: 'Bearer access-token',
+      body: JSON.stringify({ measurement, clientMetadata: metadata }),
     },
     {
       method: 'POST',
       url: '/api/v1/ios-cn/tasks/42/submit',
       body: '',
+      authorization: 'Bearer access-token',
+    },
+    {
+      method: 'POST',
+      url: '/api/v1/ios-cn/tasks/42/submit',
+      authorization: 'Bearer access-token',
+      body: JSON.stringify({ clientMetadata: metadata }),
+    },
+    {
+      method: 'POST',
+      url: '/api/v1/ios-cn/tasks/42/submit',
+      authorization: 'Bearer access-token',
+      body: JSON.stringify({ measurement: null, clientMetadata: null }),
     },
   ]);
+});
+
+test('任务详情保留实际采集属性和原始场景结果', async (t) => {
+  const measurement = { captureMethod: 'fingertip_chest', captureMode: 'active', durationMs: 29987 };
+  const sceneResult = {
+    outcome: 'PARTIAL_SUCCEEDED',
+    members: {
+      bp: { status: 'SUCCEEDED', result: { sbp: 123.456, dbp: 78.9 } },
+      unknown_member: { status: 'FAILED', failureCode: 'FUTURE_FAILURE' },
+    },
+    output_files: { bp_processed_ppg: 'opaque-file-id' },
+  };
+  const detail = {
+    taskId: 101, modelId: 8, modelCode: 'ppg_acc.active.offline.all', modelName: '联合场景',
+    versionId: 12, version: '1.0.0-rc.2', status: 'SUCCEEDED', isExample: false,
+    createdAt: '2026-11-22 08:29:00', submittedAt: '2026-11-22 08:30:00',
+    startedAt: '2026-11-22 08:30:01', finishedAt: '2026-11-22 08:30:05',
+    measurement, result: sceneResult, qualityFailure: null,
+    failureCode: null, failureMessage: null,
+  };
+  const { server, baseUrl } = await startServer((request, response) => {
+    request.resume();
+    assert.equal(request.method, 'GET');
+    assert.equal(request.url, '/api/v1/android-cn/tasks/101');
+    assert.equal(request.headers.authorization, 'Bearer access-token');
+    sendJson(response, 200, { code: 'OK', data: detail });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'access-token' });
+
+  const returned = await client.tasks.getById(101);
+  assert.deepEqual(returned, detail);
+  assert.deepEqual(returned.measurement, measurement);
+  assert.deepEqual(returned.result, sceneResult);
+  assert.equal(Object.hasOwn(returned.measurement, 'capturedAt'), false);
+});
+
+test('最新健康结果保留五键 null 并读取当前渠道的实时 Bearer', async (t) => {
+  const latest = {
+    bloodPressure: null, heartRate: null, respirationRate: null,
+    oxygenSaturation: null, diabetesRisk: null,
+  };
+  const tokens = [];
+  let accessToken = 'first-token';
+  const { server, baseUrl } = await startServer((request, response) => {
+    request.resume();
+    assert.equal(request.method, 'GET');
+    assert.equal(request.url, '/api/v1/android-cn/measurements/latest');
+    tokens.push(request.headers.authorization);
+    sendJson(response, 200, { code: 'OK', data: latest });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => accessToken });
+
+  assert.deepEqual(await client.measurements.latest(), latest);
+  accessToken = 'second-token';
+  assert.deepEqual(await client.measurements.latest(), latest);
+  assert.deepEqual(tokens, ['Bearer first-token', 'Bearer second-token']);
+});
+
+test('健康查询保留原时间、未知来源、读数、质量、风险及固定场景版本且只取一页', async (t) => {
+  const heartRate = {
+    recordId: '101:heartRate', taskId: 101, metric: 'heartRate',
+    submittedAt: '2026-11-22 08:30:00', captureMethod: 'fingertip', captureMode: 'active',
+    durationMs: 30001, readings: [{ code: 'hr', value: 79.123456, unit: 'beats_per_minute' }],
+    quality: { score: 88.65866718458382, threshold: 70 }, riskLevel: null,
+    modelId: 7, versionId: 12, version: '1.0.0-rc.2', algorithmKey: 'ppg.active.offline.hr_br.v1',
+  };
+  const oldHeartRate = {
+    ...heartRate, recordId: '99:heartRate', taskId: 99, submittedAt: '2026-11-01 00:00:00',
+    captureMethod: null, captureMode: null, durationMs: null, quality: null,
+    versionId: 3, version: '0.09.0+legacy',
+  };
+  const diabetesRisk = {
+    ...heartRate, recordId: '101:diabetesRisk', metric: 'diabetesRisk',
+    readings: [{ code: 'diabetes_probability', value: 0.123456789, unit: 'ratio' }],
+    riskLevel: 2, algorithmKey: 'ppg.active.offline.diabetes.v1',
+  };
+  const bloodPressure = {
+    ...heartRate, recordId: '102:bloodPressure', taskId: 102, metric: 'bloodPressure',
+    captureMethod: 'fingertip_chest',
+    readings: [{ code: 'sbp', value: 123.456, unit: 'mmHg' }, { code: 'dbp', value: 78.9, unit: 'mmHg' }],
+    algorithmKey: 'ppg_acc.active.offline.bp.v1',
+  };
+  const latest = { bloodPressure, heartRate, respirationRate: null, oxygenSaturation: null, diabetesRisk };
+  const page = { items: [heartRate, oldHeartRate], total: 9, offset: 2, limit: 2 };
+  const emptyPage = { items: [], total: 9, offset: 99, limit: 20 };
+  const requests = [];
+  const { server, baseUrl } = await startServer((request, response) => {
+    request.resume();
+    assert.equal(request.method, 'GET');
+    assert.equal(request.headers.authorization, 'Bearer access-token');
+    const url = new URL(request.url, 'http://localhost');
+    requests.push({ path: url.pathname, params: Object.fromEntries(url.searchParams) });
+    const data = url.pathname.endsWith('/latest')
+      ? latest
+      : url.searchParams.get('offset') === '99' ? emptyPage : page;
+    sendJson(response, 200, { code: 'OK', data });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'access-token' });
+  const query = { metric: 'heartRate', from: '2026-11-01', to: '2026-11-22', offset: 2, limit: 2 };
+
+  assert.deepEqual(await client.measurements.latest(), latest);
+  const returnedPage = await client.measurements.list(query);
+  assert.deepEqual(returnedPage, page);
+  assert.equal(Object.hasOwn(returnedPage.items[1], 'capturedAt'), false);
+  assert.deepEqual(await client.measurements.list({ ...query, offset: 99, limit: undefined }), emptyPage);
+  assert.deepEqual(requests, [
+    { path: '/api/v1/android-cn/measurements/latest', params: {} },
+    { path: '/api/v1/android-cn/measurements', params: {
+      metric: 'heartRate', from: '2026-11-01', to: '2026-11-22', offset: '2', limit: '2',
+    } },
+    { path: '/api/v1/android-cn/measurements', params: {
+      metric: 'heartRate', from: '2026-11-01', to: '2026-11-22', offset: '99',
+    } },
+  ]);
+});
+
+test('非法健康筛选的 422 保留结构化错误，不修正参数或返回空列表', async (t) => {
+  const queries = [
+    { metric: 'heartRate', from: '2026-11-23', to: '2026-11-01', offset: 0, limit: 100 },
+    { metric: 'unknown', from: '2026-11-01', to: '2026-11-22', offset: 0, limit: 20 },
+    { metric: 'heartRate', from: '2026-02-30', to: '2026-11-22', offset: -1, limit: 0 },
+  ];
+  const requests = [];
+  const { server, baseUrl } = await startServer((request, response) => {
+    request.resume();
+    assert.equal(request.method, 'GET');
+    assert.equal(request.headers.authorization, 'Bearer access-token');
+    const url = new URL(request.url, 'http://localhost');
+    assert.equal(url.pathname, '/api/v1/android-cn/measurements');
+    requests.push(Object.fromEntries(url.searchParams));
+    sendJson(response, 422, {
+      code: 'INVALID_INPUT', message: '筛选参数无效', data: null, requestId: 'invalid-measurements',
+    });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'access-token' });
+
+  for (const query of queries) {
+    await assert.rejects(client.measurements.list(query), (error) => {
+      assert.ok(error instanceof CloudClientError);
+      assert.equal(error.kind, 'api');
+      assert.equal(error.status, 422);
+      assert.equal(error.code, 'INVALID_INPUT');
+      assert.equal(error.requestId, 'invalid-measurements');
+      return true;
+    });
+  }
+  assert.deepEqual(requests, queries.map((query) =>
+    Object.fromEntries(Object.entries(query).map(([key, value]) => [key, String(value)])),
+  ));
+});
+
+test('健康查询鉴权失败不刷新或重发，采集属性提交错误不吞掉', async (t) => {
+  const requests = [];
+  const { server, baseUrl } = await startServer(async (request, response) => {
+    const body = await readRequestBody(request);
+    requests.push({ url: request.url, body, authorization: request.headers.authorization });
+    const isSubmit = request.method === 'POST';
+    sendJson(response, isSubmit ? 422 : 401, {
+      code: isSubmit ? 'INVALID_INPUT' : 'INVALID_TOKEN', message: '请求被拒绝', data: null,
+    });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'expired-token' });
+
+  for (const invoke of [
+    () => client.measurements.latest(),
+    () => client.measurements.list({ metric: 'heartRate', from: '2026-11-01', to: '2026-11-22' }),
+  ]) {
+    await assert.rejects(invoke, (error) => {
+      assert.ok(error instanceof CloudClientError);
+      assert.equal(error.status, 401);
+      assert.equal(error.code, 'INVALID_TOKEN');
+      return true;
+    });
+  }
+  const measurement = { captureMethod: 'fingertip', captureMode: 'active', durationMs: 1.5 };
+  await assert.rejects(client.tasks.submit(101, { measurement }), (error) => {
+    assert.ok(error instanceof CloudClientError);
+    assert.equal(error.kind, 'api');
+    assert.equal(error.status, 422);
+    assert.equal(error.code, 'INVALID_INPUT');
+    return true;
+  });
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(({ authorization }) => authorization === 'Bearer expired-token'));
+  assert.equal(requests[2].body, JSON.stringify({ measurement }));
 });
 
 

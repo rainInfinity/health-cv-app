@@ -84,6 +84,83 @@ export namespace Rsp {
     }
   }
 
+  /** 当前账号的最新健康结果与指标历史响应。 */
+  export namespace Measurements {
+    /** 后端公开的五种健康指标。 */
+    export type Metric = 'bloodPressure' | 'heartRate' | 'respirationRate' | 'oxygenSaturation' | 'diabetesRisk';
+
+    /** 单项原始读数；代码、数值及单位不作转换。 */
+    export interface Reading {
+      /** 算法读数代码，例如 hr、sbp 或 diabetes_probability。 */
+      code: string;
+      /** 未舍入或重新分级的原始数值。 */
+      value: number;
+      /** 后端原始单位代码。 */
+      unit: string;
+    }
+
+    /** 本次算法实际采用的质量分数和阈值。 */
+    export interface Quality {
+      /** 实际质量分数。 */
+      score: number;
+      /** 实际接受阈值。 */
+      threshold: number;
+    }
+
+    /** 服务端权威健康记录；旧采集来源及质量保持 null。 */
+    export interface MeasurementRecord {
+      /** 稳定记录身份，同任务不同指标分别标识。 */
+      recordId: string;
+      /** 可读取完整报告的关联任务主键。 */
+      taskId: number;
+      /** 本条记录的健康指标。 */
+      metric: Metric;
+      /** 冻结提交时间原字符串（Asia/Shanghai），不解析为 Date。 */
+      submittedAt: string;
+      /** 客户端自报采集方式；旧任务未知时为 null。 */
+      captureMethod: 'fingertip' | 'fingertip_chest' | null;
+      /** 客户端自报采集来源；旧任务未知时为 null。 */
+      captureMode: 'active' | null;
+      /** 原始实际毫秒时长；旧任务未知时为 null。 */
+      durationMs: number | null;
+      /** 原始读数；血压两项来自同一任务。 */
+      readings: Reading[];
+      /** 实际合法质量信息；缺失时为 null。 */
+      quality: Quality | null;
+      /** 风险原始 0/1/2 编码；其他指标为 null。 */
+      riskLevel: 0 | 1 | 2 | null;
+      /** 任务固定模型主键，场景记录保留场景模型。 */
+      modelId: number;
+      /** 任务固定版本主键，不跟随当前渠道版本。 */
+      versionId: number;
+      /** 任务固定版本原字符串。 */
+      version: string;
+      /** 实际成功成员或独立算法标识。 */
+      algorithmKey: string;
+    }
+
+    /** 固定五键，每个指标独立取最新有效记录。 */
+    export interface LatestMeasurements {
+      bloodPressure: MeasurementRecord | null;
+      heartRate: MeasurementRecord | null;
+      respirationRate: MeasurementRecord | null;
+      oxygenSaturation: MeasurementRecord | null;
+      diabetesRisk: MeasurementRecord | null;
+    }
+
+    /** 单页健康记录，不表示区间已完整加载或固定快照。 */
+    export interface MeasurementPage {
+      /** 当前页记录。 */
+      items: MeasurementRecord[];
+      /** 整个筛选区间的有效记录总数。 */
+      total: number;
+      /** 本页起始偏移。 */
+      offset: number;
+      /** 本页条数上限。 */
+      limit: number;
+    }
+  }
+
   /** 当前渠道任务响应。 */
   export namespace Tasks {
     /** 任务状态原样使用服务端字符串，不推断状态枚举。 */
@@ -153,8 +230,20 @@ export namespace Rsp {
     /** 任务详情的质量拒绝信息；非拒绝任务及无有效历史明细时为 null。 */
     export type QualityFailure = LowScoreQualityFailure | NoValidSignalQualityFailure;
 
+    /** 服务端随提交冻结的采集属性。 */
+    export interface Measurement {
+      /** 客户端自报的采集方式。 */
+      captureMethod: 'fingertip' | 'fingertip_chest';
+      /** 客户端自报的主动采集来源。 */
+      captureMode: 'active';
+      /** 原生正式窗口的实际整数毫秒时长。 */
+      durationMs: number;
+    }
+
     /** 任务详情；算法结果仅作为后端原始对象保留。 */
     export interface TaskDetail extends TaskSummary {
+      /** 冻结采集属性；草稿及缺少属性的旧任务为 null。 */
+      measurement: Measurement | null;
       /** 质量拒绝详情；成功、普通失败或无有效历史明细时为 null。 */
       qualityFailure: QualityFailure | null;
       /** 成功任务的权威完整结果；任务处理中或失败时可能缺席或为 null。 */

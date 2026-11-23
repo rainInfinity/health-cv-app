@@ -5,6 +5,8 @@ import type { AuthApi } from './apis/auth';
 import { createHttpClient } from './http/client';
 import { createModelsApi } from './apis/model';
 import type { ModelsApi } from './apis/model';
+import { createMeasurementsApi } from './apis/measurement';
+import type { MeasurementsApi } from './apis/measurement';
 import { createTasksApi } from './apis/task';
 import type { TasksApi } from './apis/task';
 import { createUsersApi } from './apis/user';
@@ -53,6 +55,8 @@ export interface CloudClient {
   models: ModelsApi;
   /** 当前账号任务接口。 */
   tasks: TasksApi;
+  /** 当前账号最新健康结果与单页指标历史。 */
+  measurements: MeasurementsApi;
 }
 
 /** 创建服务地址和渠道显式隔离的云端客户端。 */
@@ -64,6 +68,7 @@ export function createCloudClient(options: CloudClientOptions): CloudClient {
     users: createUsersApi(http),
     models: createModelsApi(http),
     tasks: createTasksApi(http),
+    measurements: createMeasurementsApi(http),
   };
 }
 
@@ -71,6 +76,7 @@ export { CloudClientError } from './errors';
 export type { CloudClientErrorKind, CloudClientErrorOptions } from './errors';
 export type { AuthApi } from './apis/auth';
 export type { ModelsApi } from './apis/model';
+export type { MeasurementsApi } from './apis/measurement';
 export type { TasksApi } from './apis/task';
 export type { UsersApi } from './apis/user';
 export type { Req, Rsp } from './types';

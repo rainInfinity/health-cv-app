@@ -44,7 +44,7 @@ export interface TasksApi {
   list(query?: Req.Tasks.TaskListParams, options?: CloudRequestOptions): Promise<Rsp.Tasks.TaskPage>;
   /** 按任务主键读取摘要和详情。 */
   getById(taskId: number, options?: CloudRequestOptions): Promise<Rsp.Tasks.TaskDetail>;
-  /** 提交草稿；可选附带客户端元数据，不传请求体也受支持。 */
+  /** 提交草稿；可选附带采集属性和客户端元数据，不传请求体也受支持。 */
   submit(
     taskId: number,
     request?: Req.Tasks.SubmitTaskRequest,
