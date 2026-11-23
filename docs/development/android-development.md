@@ -102,7 +102,7 @@ Dev 共享按钮暴露文字名称与禁用／忙碌状态，进度有 `progress
 
 ### 被动 RPPG
 
-进入页面只读快照和本地结果，离页不停止服务。`intervalSeconds` 默认 7,200 秒，`measurementDurationSeconds` 默认 30 秒，观察上限默认 5 秒；完整频谱首窗理想连续输入约需 15.5 秒，短时长不保证有结果。
+进入页面只读快照和本地结果，离页不停止服务。`intervalSeconds` 在Debug默认30秒，Release默认600秒；`measurementDurationSeconds` 默认12秒，观察上限默认5秒；主动仍30秒，两种方式共用3秒频谱窗与1秒步长，SNR门槛保持3 dB。完整频谱首窗理想连续输入约需6.5秒，短时长或输入断段不保证有结果。
 
 明确点击“授权并启用无扰采集”，按系统界面处理 `CAMERA`、`POST_NOTIFICATIONS` 与“无扰式采集状态”渠道。厂商后台设置不能自动授予；Honor 等机型按页面引导手动设置，不把该设置当作通用 Android 权限。
 
@@ -114,7 +114,7 @@ adb -s <device-serial> shell input keyevent 224
 adb -s <device-serial> shell input keyevent 82
 ```
 
-若 keyguard 未解除，需在模拟器窗口手动上滑／解锁。短周期可用于操作检查，但不能替代 7,200 秒实际等待。通知“关闭无扰采集”停止服务；系统停止或进程重启后需重新启用。新会话只生成 RPPG 三件套，旧视频仅供历史查询。触发、互斥、中断和发布规则见 [被动采集协议](../acquisition/android-passive-capture.md)。
+若keyguard未解除，需在模拟器窗口手动上滑／解锁。短周期只用于操作检查，不能替代600秒发布周期。通知“关闭无扰采集”停止服务；系统停止或进程重启后需重新启用。开发页“被动RPPG心率历史”按最新会话在前展示最近20条：本轮有效频谱窗口均值、有效／总窗口数、冻结配置和时长；可展开逐搏序列，读取相对首帧时间、bpm及RR。旧记录无逐搏历史会明确说明；无有效窗口显示 `--`。新v2结果包含 `session.json/pulse.csv/hr.csv/beat.csv`，旧三件套与视频仍可查询，不重算或删除；文件schema见[被动采集协议](../acquisition/android-passive-capture.md)。
 
 ### 传感器与模拟器输入
 
@@ -142,6 +142,7 @@ adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/fi
 adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/ppg/<sessionId>/frame.csv'
 adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/session.json'
 adb -s <device-serial> shell wc -l '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/pulse.csv' '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/hr.csv'
+adb -s <device-serial> shell cat '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/rppg/<sessionId>/beat.csv'
 adb -s <device-serial> shell find '/sdcard/Android/data/com.healthcvapp.mobile/files/acquisition/<kind>' -type f -print
 adb -s <device-serial> pull /sdcard/Android/data/com.healthcvapp.mobile/files/acquisition ./acquisition
 ```
@@ -253,7 +254,7 @@ emulator -avd <AVD名称> \
 
 - 记录机型／厂商、Android／API、应用版本／target SDK、权限与通知渠道、后台设置，分别检查主动相机、被动前台服务和传感器的生命周期。
 - 在不同肤色／照明下检查当前 `BT601_LIMITED_V1` 颜色假设、曝光、覆盖提示与对焦；记录实际 FPS、模型延迟、流畅度、温升、耗电和持续运行表现。
-- 被动服务需实际检查默认两小时等待、周期内解锁抑制、通知关闭、锁屏／系统停止及重启后不自动恢复；旧录像阶段行为不能代替当前 RPPG 验证。
+- 被动服务需实际检查发布默认10分钟等待、周期内解锁抑制、通知关闭、锁屏／系统停止及重启后不自动恢复；Debug默认30秒只用于本地测试，旧录像阶段行为不能代替当前RPPG验证。
 - 用独立参考心率仪器同步采样并建立时间对齐，分别评估逐搏值、频谱有效窗与拒绝原因；6–10 秒不是保证，缺值不等于准确、有效读数也不等于医学有效。
 - 检查有值／缺值布局、预览重开、窄屏与 TalkBack；产品面部真实路径、Dev 调试页和指尖真实采集分别检查，不能相互替代。
 

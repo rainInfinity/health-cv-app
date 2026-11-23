@@ -20,7 +20,7 @@ const client = createCloudClient({
 
 下表路径相对于客户端内部构造的 `/api/v1/{channel}` 前缀。JSON 成功响应必须包含 `code: "OK"` 和 `data`；SDK 只返回 `data`，合法的 `data: null` 保持为 `null`。SDK 校验 HTTP 状态、JSON 语法和响应封套，不校验或改写业务 DTO 字段。
 
-请求/响应 DTO 集中定义在包内 `types/dto/request.ts` 和 `types/dto/response.ts`，由包根的 `Req`、`Rsp` 命名空间导出，例如 `Req.Users.ProfilePatchRequest`、`Req.Tasks.SubmitTaskRequest` 与 `Rsp.Tasks.TaskDetail`。DTO 提供 TypeScript 编译期类型，不执行业务字段运行时校验。
+请求/响应 DTO 集中定义在包内 `types/dto/request.ts` 和 `types/dto/response.ts`，由包根的 `Req`、`Rsp` 命名空间导出，例如 `Req.Tasks.SubmitTaskRequest`、`Req.Measurements.MeasurementListParams` 与 `Rsp.Measurements.MeasurementRecord`。包根同时公开 `CloudClient`、`MeasurementsApi` 等接口类型。DTO 提供 TypeScript 编译期类型，不执行业务字段运行时校验。
 
 | SDK 方法 | 请求 | 认证 | 请求与返回语义 |
 | --- | --- | --- | --- |
@@ -34,13 +34,20 @@ const client = createCloudClient({
 | `models.list` | `GET /models` | Bearer | 返回当前普通渠道可用模型分页。 |
 | `tasks.create` | `POST /tasks` | Bearer | 请求体只含 `{ modelId }`；返回固定模型版本的草稿摘要。 |
 | `tasks.list` | `GET /tasks` | Bearer | 返回当前账号任务摘要分页。 |
-| `tasks.getById` | `GET /tasks/{task_id}` | Bearer | 返回任务详情；`FAILED` 是成功取得的业务状态，不是请求异常。 |
-| `tasks.submit` | `POST /tasks/{task_id}/submit` | Bearer | 可不传请求体；也可传 `Req.Tasks.SubmitTaskRequest`；返回提交后的任务摘要。 |
+| `tasks.getById` | `GET /tasks/{task_id}` | Bearer | 返回任务详情及可空 `measurement`；`FAILED` 是成功取得的业务状态，不是请求异常。 |
+| `tasks.submit` | `POST /tasks/{task_id}/submit` | Bearer | 可不传请求体；也可独立提供采集属性、客户端元数据；返回不含 `measurement` 的任务摘要。 |
+| `measurements.latest` | `GET /measurements/latest` | Bearer | 返回固定五键，各为最新有效记录或 `null`，不填默认读数。 |
+| `measurements.list` | `GET /measurements` | Bearer | 必填 `metric/from/to`，可选 `offset/limit`；只返回一页 `items/total/offset/limit`。 |
 
 提交请求示例：
 
 ```json
 {
+  "measurement": {
+    "captureMethod": "fingertip",
+    "captureMode": "active",
+    "durationMs": 30001
+  },
   "clientMetadata": {
     "deviceModel": "Pixel 9",
     "brand": "Google",
@@ -54,7 +61,54 @@ const client = createCloudClient({
 
 提交接口兼容不传请求体。省略整个请求体、发送 `{}` 或将 `clientMetadata` 设为 `null`，均表示未提供元数据；`clientMetadata: {}` 是有效的空对象。`clientMetadata` 必须是 JSON 对象或 `null`，其他类型会被拒绝。服务端将其作为独立任务快照保存，不返回给普通用户查询；它是客户端自报信息，不证明设备身份。不要提交密码、令牌或其他敏感信息。SDK 调用形式为 `tasks.submit(taskId, request?, options?)`。
 
+`measurement` 与 `clientMetadata` 独立，可以省略或传 `null`，表示未知；非空对象必须同时提供 `captureMethod`（`fingertip | fingertip_chest`）、`captureMode`（`active`）和实际正式窗口 `durationMs`。后端要求时长为 `1–9223372036854775807` 的严格整数毫秒，拒绝空对象、缺项、额外字段及非法值，并返回 `422 / INVALID_INPUT`。应用使用原生实际时长，不以目标三十秒代替；SDK 不添加默认值、不转换数值，也不新增 `capturedAt`、`submittedAt` 或身份／版本覆盖字段。JS `number` 的精确整数范围小于后端整数上限，调用方应提供可精确表达的实际毫秒值。
+
+详情的 `measurement` 为已冻结三项或 `null`；草稿和缺少采集属性的旧任务保留 `null`。任务摘要、列表和提交响应不含该字段，不从模型或算法补造采集属性。`result` 仍为原始 `Record<string, unknown>` 或 `null`，不在 SDK 内解析场景成员、推断指标或改写键名。
+
 任务详情的 `qualityFailure` 仅表示算法质量拒绝：`LOW_SCORE` 携带 `{ score, threshold }`，`NO_VALID_SIGNAL` 的 `details` 为 `null`。成功任务、普通失败，以及没有有效历史质量明细的任务均为 `null`；任务摘要和列表项不包含 `qualityFailure`。`FAILED` 仍是正常取得的业务状态，不代表 HTTP 或请求失败。
+
+## 最新健康结果与指标历史
+
+```ts
+import type { Req, Rsp } from '@health-cv-app/cloud-client';
+
+const latest: Rsp.Measurements.LatestMeasurements =
+  await client.measurements.latest({ signal });
+const query: Req.Measurements.MeasurementListParams = {
+  metric: 'heartRate',
+  from: '2026-11-01',
+  to: '2026-11-22',
+  offset: 0,
+  limit: 100,
+};
+const page: Rsp.Measurements.MeasurementPage =
+  await client.measurements.list(query, { signal, timeoutMs: 10000 });
+```
+
+`Rsp.Measurements.Metric` 为 `bloodPressure | heartRate | respirationRate | oxygenSaturation | diabetesRisk`；最新接口始终返回同名五键，每项独立取当前账号、当前渠道的最新有效记录或 `null`。失败任务、失败成员、`ALL_FAILED`、示例和未知算法不生成记录；某指标无新有效值时，服务端可保留此前有效值。完整报告通过记录的 `taskId` 继续查询任务与下载输出。
+
+每条 `Rsp.Measurements.MeasurementRecord` 保留以下后端字段，不转换时间、补默认来源或解释医学等级：
+
+| 字段 | 类型与语义 |
+| --- | --- |
+| `recordId` | 稳定字符串 `<taskId>:<metric>`；同任务不同指标分别标识。 |
+| `taskId`、`metric` | 关联任务主键与上述五种指标之一。 |
+| `submittedAt` | 服务端冻结提交时刻的北京时间原字符串，如 `2026-11-22 08:30:00`；不是采集开始、创建或完成时刻，不新增 `capturedAt`。 |
+| `captureMethod` | `fingertip`、`fingertip_chest` 或 `null`，旧任务来源未知时保留 `null`。 |
+| `captureMode` | `active` 或 `null`。 |
+| `durationMs` | 实际毫秒数或 `null`；不补目标时长。 |
+| `readings` | `{ code: string, value: number, unit: string }[]`；不舍入、限幅、换单位或改名。 |
+| `quality` | `{ score: number, threshold: number }` 或 `null`，只保留实际合法质量。 |
+| `riskLevel` | 风险原始 `0`、`1`、`2` 编码，其余指标为 `null`，不重算档位。 |
+| `modelId`、`versionId`、`version` | 任务固定模型、版本主键及原版本字符串；场景记录保留场景版本，不跟随当前渠道选择变化。 |
+| `algorithmKey` | 实际成功成员或独立算法标识，不等于场景模型版本。 |
+
+血压读数为同任务的 `sbp/dbp`（`mmHg`）；心率为 `hr`（`beats_per_minute`），呼吸率为 `br`（`breaths_per_minute`），血氧为 `spo2`（`percent`），风险为 `diabetes_probability`（`ratio`）。风险概率保留原值，不转换成血糖或临床患病概率。
+
+历史的 `from/to` 是严格北京时间 `YYYY-MM-DD`，包含首尾日，按 `submittedAt` 筛选。分页缺省交由服务端使用 `offset=0/limit=20`，`limit` 为 1–100；SDK 原样发送显式筛选，不纠正日期或分页。非法日期、反向区间、未知指标及越界分页的 `422 / INVALID_INPUT` 按现有 `CloudClientError` reject，不伪装空列表。真正无结果或偏移超过范围时保留成功返回的空 `items` 及完整区间 `total`。
+
+这是普通 offset 分页，不是固定快照；一次 `list` 只读取一页，不自动取完整区间、去重、计算统计或轮询。上层应完整加载后再展示最终趋势与统计；任一页失败不能当空页，发现总数变化、重复 `recordId` 或已知新有效结果时应整段刷新，不混用旧页。可比性分组及 UTC+8 展示属于应用层职责，SDK 不改 DTO。
+
 
 ## 文件传输
 

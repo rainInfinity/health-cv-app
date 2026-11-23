@@ -12,9 +12,9 @@
 
 真实 `USER_PRESENT` 只提供启动候选：服务已启用、权限和通知条件有效、周期满足、没有正在处理的机会且相机可用时才启动。仅唤醒屏幕、周期自然到期、观察超时或相机忙都不会启动、排队或重试。
 
-`intervalSeconds` 是两次机会首帧之间的最短周期，默认 7,200 秒。每次机会首帧回调时记录 `SystemClock.elapsedRealtimeNanos()` 作为周期锚点；首帧前失败不占周期，交付首帧后即使无人脸或随后中断仍占周期。墙上时钟变化不影响周期。
+`intervalSeconds` 是两次机会首帧之间的最短周期，Release默认600秒（10分钟），Debug本地测试默认30秒。周期满足后仍须新的真实解锁，不是定时自动开相机。每次机会首帧回调时记录 `SystemClock.elapsedRealtimeNanos()` 作为周期锚点；首帧前失败不占周期，交付首帧后即使无人脸或随后中断仍占周期。墙上时钟变化不影响周期。
 
-`PassiveCaptureConfig.measurementDurationSeconds` 是人脸就绪后的正式测量时长，默认 30 秒。旧 `duration_millis` 偏好中的合法值原样换算为秒；读取旧设置不启用服务或打开相机。非法周期／时长由原生返回稳定错误码和说明，保存值不被静默修改。完整频谱首窗的理想连续输入条件约需 15.5 秒，页面通过 `minimumHeartRateMeasurementSeconds` 提示不足时长；较短会话可能得到逐搏初步值，也可能始终无合格结果。6–10 秒仅为首结果体验目标，不是保证。
+`PassiveCaptureConfig.measurementDurationSeconds` 是人脸就绪后的正式测量时长，默认12秒；主动仍为30秒，频谱算法统一3秒窗口、1秒步长，SNR门槛保持3 dB。旧默认周期7200秒和时长30秒分别一次迁移至新默认，其他自定义值保留；旧版本未记录配置来源，无法区分恰好等于旧默认的人工配置。默认周期不写入持久键，避免Debug默认污染Release。读取或迁移设置不启用服务；非法配置仍返回错误。完整频谱首窗理想连续输入约需6.5秒，较短会话可能只有逐搏初步值或始终没有合格结果，不延长检测或补造读数。
 
 ## 共用内核与独立生命周期
 
@@ -24,7 +24,7 @@
 
 等待期间相机关闭；主动 PPG、主动 RPPG 和被动会话通过相机租约互斥，占用时返回 `CAMERA_BUSY`，不抢占或改用另一镜头。传感器独立采集，不因被动服务的启停而停止。被动服务不依赖 React 页面、主动 runtime 或波形订阅，应用切到后台不等同于关闭服务，实际可执行性仍受 Android 与厂商策略约束。
 
-服务通过低频 `PassiveCaptureSnapshot.latestInstantHeartRate` 提供共用逐搏估计器的合格结果或失效清空，不逐搏刷新通知。切段、过期、锁屏／关闭、会话结束和新会话边界不沿用旧值，旧代次不能污染当前会话。逐搏值不计入频谱平均或最终频谱结论，不新增 CSV；算法及风险见 [RPPG 逐搏瞬时心率](android-rppg.md#逐搏瞬时心率)。
+服务通过低频 `PassiveCaptureSnapshot.latestInstantHeartRate` 提供共用逐搏估计器的合格结果或失效清空，不逐搏刷新通知。切段、过期、锁屏／关闭、会话结束和新会话边界不沿用旧值，旧代次不能污染当前会话。每个新合格RR经原生有序记录队列另存 `beat.csv`，不依赖页面订阅；逐搏不计入频谱平均或最终频谱结论。算法与文件字段见 [RPPG逐搏瞬时心率](android-rppg.md#逐搏瞬时心率)。
 
 ## 终止与结果查询
 
@@ -35,20 +35,22 @@ RPPG 文件路径、字段、时间精度、完整发布条件及全部合法终
 - 首帧后锁屏、关闭服务等合法生命周期中断：可发布 `source=passive`、`termination=interrupted` 的完整结果，信号结论按实际样本记录。
 - 算法、输出初始化、写入或收尾等技术失败：不发布完成产物，临时或不完整目录不可查询。
 
-`PassiveCaptureClient` 提供服务快照、通知设置、启停和配置保存；`listArtifacts()` 只返回共用 `RPPGArtifact` 三件套，包含来源、终止原因、信号结论、样本计数及文件引用。被动来源为 `passive`，不另建波形类型。
+`PassiveCaptureClient` 提供服务快照、通知设置、启停和配置保存；`listArtifacts()` 返回共用 `RPPGArtifact`，包含来源、终止原因、信号结论、样本计数及文件引用。被动来源为 `passive`。新v2会话包含 `session.json/pulse.csv/hr.csv/beat.csv`；旧v1三件套仍可查，不补造逐搏序列。
 
-`listVideoArtifacts()` 独立查询升级前已完成且可读的 `PassiveVideoArtifact`，保留真实宽高、时长、大小和内部 `files/passive-capture/<sessionId>/video.mp4` 路径。旧视频仅供历史查询，不重编码、不迁移、不删除、不转换为 RPPG，也不再生成新录像。新 RPPG 三件套保存在 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`，查询合并已有内部三件套；新旧文件均不自动上传或清理。外部目录不需要新增存储权限，但普通应用访问仍受限制，卸载应用仍会删除文件，不等于公共共享存储。
+`listVideoArtifacts()` 独立查询升级前已完成且可读的 `PassiveVideoArtifact`，保留真实宽高、时长、大小和内部 `files/passive-capture/<sessionId>/video.mp4` 路径。旧视频仅供历史查询，不重编码、不迁移、不删除、不转换为RPPG，也不再生成新录像。新RPPG结果保存在 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`，查询合并已有内部结果；新旧文件均不自动上传或清理。外部目录不需要新增存储权限，但普通应用访问仍受限制，卸载应用仍会删除文件，不等于公共共享存储。
 
-公共路径和原子文件操作由 `AcquisitionPaths`／`AcquisitionFileStore` 维护；历史视频的媒体轨检查与扫描由 `PassiveVideoArtifactStore` 负责。新会话由共用 `RPPGSession`／`RPPGArtifactStore` 持有相机并发布三件套，不经过旧视频 `Finalize` 路径。
+公共路径和原子文件操作由 `AcquisitionPaths`／`AcquisitionFileStore` 维护；历史视频的媒体轨检查与扫描由 `PassiveVideoArtifactStore` 负责。新会话由共用 `RPPGSession`／`RPPGArtifactStore` 持有相机并发布完整结果，不经过旧视频 `Finalize` 路径。
+
+开发页“被动RPPG”按最新会话在前展示最近20条历史，包含UTC开始时间的本地显示、冻结配置、正式目标、频谱窗、有效窗口数及频谱均值。均值只对本轮完整 `hr.csv` 的有效窗口计算，无有效窗显示 `--`。逐搏序列按需展开，列出片段、相对会话首帧的秒数、bpm与RR毫秒；先对绝对纳秒作整数相减再换算，不补点或跨片段连线。旧记录无逐搏文件与新记录没有合格逐搏分别说明。每文件最多512 KiB、4096行，超限或读取失败不以部分数据冒充完整均值；记录仅供工程评估，不进入首页或云端健康历史。
 
 ## 操作与真机边界
 
 入口、真实解锁输入和文件核查见 [Android 开发手册](../development/android-development.md)。真机需记录机型／厂商、Android 与 API、应用版本及 target SDK、权限／通知渠道和后台设置，并分别检查：
 
 1. 短周期真实解锁、页面外运行、周期内重复解锁抑制，以及周期到期但没有解锁时不启动。
-2. 默认 7,200 秒实际等待后的解锁机会；短周期不能替代两小时等待。
+2. 发布默认600秒实际等待后的解锁机会；Debug默认30秒只用于本地操作检查，不替代发布周期。
 3. 观察／测量中锁屏、等待／测量中通知关闭、系统停止及进程重启后的相机释放、不自动恢复和完整结果查询。
-4. 三件套的来源、终止原因、信号结论及样本计数；历史视频不增加、不被替换。
+4. 完整结果的来源、终止原因、信号结论、窗口均值及逐搏序列；历史视频不增加、不被替换。
 5. 实际信号质量、逐搏初步值与频谱结果的区别，以及独立参考仪器的时间对齐与误差。
 
 模拟器素材不代表人体信号；厂商后台兼容、长期等待、颜色／性能和心率准确性仍需真机验证，不能由文件存在或初步 bpm 推导医学有效性。

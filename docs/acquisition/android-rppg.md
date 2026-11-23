@@ -2,7 +2,7 @@
 
 ## 范围
 
-主动面部测量与无预览被动采集共用 `RPPGSession`、信号算法和文件格式，各自持有独立生命周期、配置、算法实例和相机租约。本文统一维护 RPPG 三件套 schema；被动触发与服务规则见 [Android 无扰式被动采集协议](android-passive-capture.md)。
+主动面部测量与无预览被动采集共用 `RPPGSession`、信号算法和文件格式，各自持有独立生命周期、配置、算法实例和相机租约。主动正式目标仍为30秒，无扰默认12秒；两者共用3秒频谱窗口。本文统一维护 RPPG 结果 schema；被动触发与服务规则见 [Android 无扰式被动采集协议](android-passive-capture.md)。
 
 ## 人脸定位模型
 
@@ -28,18 +28,18 @@ CameraX 帧通过共享的 `CameraXPixelFrameAdapter` 映射为借用 `PixelFram
 
 ## 版本化试验配置
 
-`RPPGConfig.EXPERIMENTAL_V1` 固定基线版本 `rppg-experiment-v1`，评审状态为 `pending-review`。以下均为工程试验参数，尚待设备和方法学评审，不是医学标准、临床阈值或诊断结论。
+`RPPGConfig.EXPERIMENTAL_V2` 当前使用3秒试验配置 `rppg-experiment-v2-3s`，评审状态为 `pending-review`。只缩短频谱窗口，SNR门槛仍为3 dB，质量规则不变；旧6秒会话保留 `rppg-experiment-v2` 及其冻结配置，不按新参数重算。这些工程参数不是医学标准、临床阈值或诊断结论。
 
 | 配置项 | 试验值 |
 | --- | --- |
 | 相机请求 | 前置镜头，640 × 480，偏好 30 FPS；AE／AWB 自动；AF 优先自动，当前摄仅支持固定焦点时使用 `OFF`；不锁定曝光／白平衡，不启用补光 |
-| 观察／测量 | 找脸最长 5 s；正式测量目标 30 s，不因无效帧延长 |
+| 观察／测量 | 找脸最长5 s；主动正式目标30 s，无扰默认12 s，不因无效帧延长 |
 | 人脸大小／姿态 | 面宽至少占画面 25%；绝对 yaw／pitch ≤ 20°、roll ≤ 25° |
 | ROI 覆盖 | 额头及双颊各至少 95% 有效像素 |
 | 连续就绪／目标关联 | 连续 1 s；有效帧最大间隔 200 ms；中心移动 ≤ 0.5 个面宽；面部尺度比 0.65–1.55；宽高比变化 ≤ 40% |
 | 重采样 | 20 Hz；线性插值最大间隔 100 ms |
 | POS／滤波 | POS 窗口 1.6 s；因果滤波启动排除 2 s；带通 0.75–3 Hz |
-| 心率搜索／质量 | 45–180 bpm；频谱窗 12 s、步长 1 s；最低 SNR 3 dB |
+| 心率搜索／质量 | 45–180 bpm；频谱窗3 s、步长1 s；最低SNR 3 dB，按Hann主瓣宽度统计信号能量 |
 | 实时输出／缓存 | 批次 200 ms；波形缓存 15 s |
 | 颜色假设 | `BT601_LIMITED_V1` |
 
@@ -53,7 +53,9 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 窗口每个规则样本推进一次。样本只有在其最后一个可影响窗口结束后才定稿；32 点 POS 窗口、20 Hz 采样时，定稿前视约为 `(32 - 1) / 20 = 1.55 s`，缺少未来窗口支持的末尾点不补值。因果滤波采用双线性变换的一阶高通／低通级联：令 `K = tan(pi × cutoff / fs)`，高通 `y[n] = (x[n] - x[n-1]) / (1 + K) + ((1 - K) / (1 + K)) × y[n-1]`；低通 `y[n] = K × (x[n] + x[n-1]) / (1 + K) + ((1 - K) / (1 + K)) × y[n-1]`。滤波不看未来样本，前视等待为零；其频率相关相位响应不压成一个固定延迟。每段启动前 2 s 的信号时间不作为有效波形，首个有效点另记录配置排除时长和实际等待时长。
 
-心率使用同片段 12 s 窗口（20 Hz 下 240 点）、每 1 s 推进一次。每窗去均值并乘 Hann 窗 `w[n] = 0.5 × (1 - cos(2pi n / (N - 1)))`，只在 45–180 bpm（0.75–3 Hz）范围搜索功率谱主峰。对主峰及其两侧的**对数功率**作三点抛物线插值，频率偏移限制在相邻半 bin 内，再换算 `bpm = 60 × f` 并限制在搜索范围。质量指标为 `SNR(dB) = 10 × log10(Ppeak / Prest)`：`Ppeak` 是主峰 ±0.1 Hz 内的带内功率和，`Prest` 是搜索带内其余功率和；低于 3 dB、零能量、边界峰或 SNR 分母不可计算时，bpm 留空并写稳定拒绝原因，不产生置信度百分比。
+心率使用同片段3 s窗口（20 Hz下60点）、每1 s推进一次。每窗去均值并乘对称Hann窗 `w[n] = 0.5 × (1 - cos(2pi n / (N - 1)))`，在45–180 bpm（0.75–3 Hz）范围搜索功率谱局部主峰。候选覆盖范围边界所在bin，并额外计算两侧邻bin供峰形检查和对数功率三点抛物线插值；插值偏移超过半bin、非局部峰或估计频率越界均拒绝，不把越界结果限幅冒充有效值。
+
+质量规则版本仍为 `hann-main-lobe-log-parabolic-v1`。`SNR(dB) = 10 × log10(Ppeak / Prest)`，仅统计中心频率位于搜索带内的bin；距插值主峰不超过 `2 × fs / (N−1)` 的功率作为信号，其余作为噪声。3秒窗按既有公式得到半宽约0.677966 Hz，不固定沿用6秒窗带宽。低于3 dB、零能量或分母不可计算时，bpm留空并保存原因，不产生置信度百分比；快照 `heartRateQuality` 记录规则与带宽。不同窗长的SNR不直接横向比较；短窗和宽主瓣仍可能接受运动或混杂信号，出数不证明准确性。
 
 ### 逐搏瞬时心率
 
@@ -74,25 +76,26 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 无效 ROI、片段／有效区间变化、时间或序号不连续、异常 RR、过期及停止会清空当前值或重新确认；过近重复峰不替换上一个可信峰。滤波和频谱路径不因逐搏结果而重置或放宽门槛。所有逐搏阈值是待真实输入评估的工程值，不能可靠排除所有运动、光照和谐波伪影，也不是医学标准。
 
-主动及被动低频快照的独立可空字段 `latestInstantHeartRate` 包含 `segmentIndex`、`previousPeakTimestampNanos`、`peakTimestampNanos`、`intervalNanos`、`heartRateBpm`；纳秒跨 JS 使用十进制字符串。Dev 页面仅在测量中展示为“逐搏瞬时心率（初步）”，其他情况显示等待／不足。它不进入频谱有效窗口平均，不改变最终 `signalStatus`，也不新增 CSV 或历史逐搏查询；`hr.csv` 仅包含频谱窗口。
+主动及被动低频快照的独立可空字段 `latestInstantHeartRate` 包含 `segmentIndex`、`previousPeakTimestampNanos`、`peakTimestampNanos`、`intervalNanos`、`heartRateBpm`；纳秒跨JS使用十进制字符串。测量中的当前值失效或停止即清空；每个新合格RR另外经原生有序队列写入 `beat.csv`，不依赖页面或低频快照采样，不重复写入仍有效的旧值。逐搏历史仍是初步估计，不进入频谱有效窗口平均，不改变最终 `signalStatus`；`hr.csv` 仅包含频谱窗口。
 
-从点击开始／真实解锁起算的 6–10 s 仅为首结果体验目标，不是保证。频谱首窗的数据条件还包含 POS 定稿等待：20 Hz 下为 `31 + 40 + 239 = 310` 个间隔，即理想连续片段起点后 15.5 s；这不包含相机、找脸、调度或质量拒绝。`minimumHeartRateMeasurementSeconds` 对应完整频谱窗，不是逐搏输出的统一最低时长。
+从点击开始／真实解锁起算的6–10 s仅为首个逐搏结果体验目标，不是保证。频谱首窗的数据条件包含POS定稿等待：20 Hz下为 `31 + 40 + 59 = 130` 个间隔，即理想连续片段起点后6.5 s；这不包含相机、找脸、调度或质量拒绝。12秒完整连续采集中约有6.5至11.5秒六次频谱评估机会，窗口高度重叠，不是六次独立测量。`minimumHeartRateMeasurementSeconds` 对应完整频谱窗，不是逐搏输出的统一最低时长。
 
 ## 文件 schema 与完整发布
 
-新文件位于应用专属外部 `getExternalFilesDir(null)/acquisition/rppg/`，当前为 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`。不新增存储权限，外部根目录不可用时明确失败，不回退内部目录；普通应用访问仍受限制，卸载应用会删除文件。已有内部 `filesDir/acquisition/rppg/` 不迁移、不删除，主动／被动查询分别合并两处已发布结果并按会话标识排序。会话先写入隐藏临时目录 `.<sessionId>.tmp/`，成功发布后目录改为 `<sessionId>/`；三份文件名固定如下。
+新文件位于应用专属外部 `getExternalFilesDir(null)/acquisition/rppg/`，当前为 `Android/data/com.healthcvapp.mobile/files/acquisition/rppg/`。不新增存储权限，外部根目录不可用时明确失败，不回退内部目录；普通应用访问仍受限制，卸载应用会删除文件。已有内部 `filesDir/acquisition/rppg/` 不迁移、不删除，主动／被动查询分别合并两处已发布结果并按会话开始时间升序排列，同时间按会话标识排序。会话先写入隐藏临时目录 `.<sessionId>.tmp/`，成功发布后目录改为 `<sessionId>/`；文件名如下。
 
 | 文件 | 内容 |
 | --- | --- |
 | `pulse.csv` | 已定稿的 POS 脉搏样本；表头为 `segmentIndex,sampleIndex,timeMs,value`。`timeMs` 是相对 `sensorTimeOriginNs` 的毫秒时间，最多六位小数；`value` 是有限的任意单位幅值。 |
-| `hr.csv` | 已评估的心率窗口；表头为 `segmentIndex,windowStartNs,windowEndNs,heartRateBpm,valid,reason,spectralSnrDb`。窗口时间是绝对传感器纳秒整数；拒绝窗口的心率和 SNR 留空，`reason` 写拒绝原因。 |
+| `hr.csv` | 已评估的心率窗口；表头为 `segmentIndex,windowStartNs,windowEndNs,heartRateBpm,valid,reason,spectralSnrDb`。窗口时间是绝对传感器纳秒整数；拒绝窗口的心率留空，`reason` 写拒绝原因；SNR可计算时仍保留，无法计算时才留空。 |
 | `session.json` | 会话配置、相机协商摘要、结束原因、信号状态、样本计数和各片段范围；顶层 `complete` 为 `true` 才表示元信息已定稿。 |
+| `beat.csv` | v2新增的合格逐搏序列；表头为 `segmentIndex,previousPeakTimestampNs,peakTimestampNs,intervalNs,heartRateBpm`。峰与间隔均为传感器纳秒整数，每个新合格RR一行；无合格逐搏时只有表头。 |
 
-`session.json` 的主要字段为 `schemaVersion`（当前 `rppg-session-v1`）、`algorithmVersion`、`sessionId`、`source`、`sensorTimeOriginNs`、`startedAt`、`finishedAt`、`config`、`cameraSummary`、`termination`、`signalStatus`、`sampleCounts`、`segmentRanges` 和 `complete`。绝对纳秒原点及片段首末时间以十进制字符串保存，避免 JSON 消费者转成浮点数而损失精度；CSV 中的窗口纳秒为十进制整数。`sampleCounts` 分别记录脉搏样本、HR 窗口、有效 HR 窗口和拒绝窗口数量；每个 `segmentRanges` 项记录片段号、首末样本序号、首末绝对纳秒时间和样本数。`cameraSummary` 保留请求配置、实际提交配置、调整项、实际帧几何及观测 FPS；`config` 是会话冻结的算法配置快照，`source` 区分 `active` 与 `passive`。
+`session.json` 的主要字段为 `schemaVersion`（新会话 `rppg-session-v2`，旧 `rppg-session-v1` 仍可查询）、`algorithmVersion`、`sessionId`、`source`、`sensorTimeOriginNs`、`startedAt`、`finishedAt`、`config`、`cameraSummary`、`termination`、`signalStatus`、`sampleCounts`、`segmentRanges` 和 `complete`。绝对纳秒原点及片段首末时间以十进制字符串保存，避免JSON消费者转成浮点数而损失精度；CSV中的绝对纳秒为十进制整数。`sampleCounts` 仍只记录脉搏样本、频谱窗口、有效窗口和拒绝窗口数量，不因逐搏出现改变信号结论。`segmentRanges` 记录脉搏片段范围；`cameraSummary` 保留实际相机信息，`config` 是冻结配置，`source` 区分 `active` 与 `passive`。
 
 `startedAt`／`finishedAt` 是 UTC 墙上时钟，覆盖打开、观察和收尾，不等于正式测量时长；元数据不单独记录就绪时刻。周期与截止使用单调 `elapsedRealtimeNanos`，CSV 使用传感器时间轴，系统相机日志还可能使用本地墙上时钟；这些时钟域不能直接相减。
 
-正常关闭先排空已接受的完整记录、关闭两份 CSV，最后创建带 `complete:true` 的 `session.json`。`RPPGArtifactStore.publish()` 仅在三份文件均存在且非空、元信息 schema／会话标识／来源匹配且带完整标记时，将整个临时目录提升为最终目录；目标已存在时拒绝覆盖。查询只扫描最终目录，临时文件和不完整结果不可见。
+正常关闭先排空已接受的完整记录、关闭全部CSV，最后创建带 `complete:true` 的 `session.json`。`RPPGArtifactStore.publish()` 仅在当前schema要求的文件均存在且非空、元信息schema／会话标识／来源匹配且带完整标记时，原子提升整个目录；目标已存在时拒绝覆盖。v2要求四份文件均完成，v1仍按原三件套查询，不补造逐搏文件。查询只扫描最终目录，临时文件和不完整结果不可见。
 
 合法结束原因 `termination` 为 `target_duration`、`user_stop`、`page_left`、`app_background`、`observation_timeout` 或 `interrupted`；被动合法生命周期中断使用 `interrupted`。它与信号结论分开：`valid_heart_rate` 要求至少一个有效频谱 HR 窗口；`no_valid_heart_rate` 表示已有波形或已评估窗口但没有有效 HR；`no_waveform` 表示没有脉搏样本和 HR 窗口。提前停止或合法中断仍可形成完整产物，信号结论按实际数据记录。写入、关闭或处理发生技术失败时，不写完整元信息，不将其伪装成正常无信号或合法停止。
 
@@ -115,7 +118,7 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 `RPPGActiveRuntime` 为一次页面运行串行管理 `RPPGSession` 命令。显式 `openPreview()` 取得本次相机租约并打开前摄预览；预览期间不加载 Face Landmarker、不写正式结果。只有显式 `start()` 才创建模型处理器，并调用 `CameraSource.replaceFrameGeneration()` 排空预览分析帧后进入新观察代次；旧代次回调不进入正式处理。
 
-首个被接受的正式帧建立传感器纳秒原点，随后异步打开会话文件。人脸必须连续满足版本化就绪条件；只有就绪帧才开始重置后的信号算法和正式计时，不回填此前观察帧。目标时长从就绪边界起算，缺脸或缺帧不会顺延。观察超时前收到过正式帧但始终未就绪时，可发布 header-only 三件套并标记 `no_waveform`；观察期没有任何正式帧则返回相机错误，不发布空成功结果。
+首个被接受的正式帧建立传感器纳秒原点，随后异步打开会话文件。人脸必须连续满足版本化就绪条件；只有就绪帧才开始重置后的信号算法和正式计时，不回填此前观察帧。目标时长从就绪边界起算，缺脸或缺帧不会顺延。观察超时前收到过正式帧但始终未就绪时，可发布完整v2四份文件，三份CSV只有表头，并标记 `no_waveform`；观察期没有任何正式帧则返回相机错误，不发布空成功结果。
 
 测量到时、用户停止、宿主后台和页面离开都经过同一个关闭屏障：先拒绝新帧并使代次失效，再关闭相机、等待借用帧退出、收尾算法、排空记录队列并定稿／发布结果。页面离开通过 runtime 的 `close()` 使用 `page_left`；关闭未能释放相机或模型时保留失败状态，不假报关闭成功。技术失败不创建完整元信息或已完成产物；完成会话不会自动重新打开相机，下一次测量需要再次显式打开预览。
 
@@ -135,7 +138,7 @@ ROI 按额头及双颊有效像素数加权得到 RGB 均值；POS 脉搏是**�
 
 产品平均仍是唯一有效频谱窗口的算术平均，按会话、片段和窗口起止纳秒身份去重；`latestInstantHeartRate` 不填入该槽位，也不参与累计。波形可先到达而平均继续为空。结束后的均值只属于当前页面会话，不发布到首页、最近检测时间或健康历史。
 
-产品正式计时从原生 `measuring` 通知启动页面的单调经过时间，不包含授权、打开和找脸；当前没有跨 JS／原生时钟同步协议，不能直接相减绝对纳秒。原生负责截止、终止原因和三件套收尾。展示计时不超过原生目标时长；原生以 `target_duration` 结束时显示完整目标时长（当前为 `00:30`），不受开始通知延迟影响；提前停止或中断仍显示冻结的已用时间，不补足目标时长。正常页面只用 Demo 的待开始／检测中／已结束及原提示，不追加原因或信号解释；技术错误通过统一反馈保留恢复能力，进行中状态圈使用旋转 spin。
+产品正式计时从原生 `measuring` 通知启动页面的单调经过时间，不包含授权、打开和找脸；当前没有跨 JS／原生时钟同步协议，不能直接相减绝对纳秒。原生负责截止、终止原因和本轮完整产物收尾。展示计时不超过原生目标时长；原生以 `target_duration` 结束时显示完整目标时长（当前为 `00:30`），不受开始通知延迟影响；提前停止或中断仍显示冻结的已用时间，不补足目标时长。正常页面只用 Demo 的待开始／检测中／已结束及原提示，不追加原因或信号解释；技术错误通过统一反馈保留恢复能力，进行中状态圈使用旋转 spin。
 
 共用频谱摘要与波形模型在 `apps/native/src/app/rppg/`，图形在 `src/shared/components/RPPGWaveform/`。产品保留本轮展示历史，每屏固定六秒，可拖动回看并回到最新；Dev 保留十五秒／300 点有界缓存。片段、漏批或时间缺口断线，不跨缺口补造波形。退出产品或 Dev 主动页都等待在途命令、`close()` 及资源屏障；已关闭客户端不复用，Dev 重新聚焦时创建新 runtime。真实指尖也注册自己的主动相机离页所有者，只关闭其本轮 PPG 资源，不调用面部 RPPG 的停止。
 

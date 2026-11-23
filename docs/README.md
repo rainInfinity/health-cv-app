@@ -16,6 +16,7 @@
 | 图标生成、SVG 与原生图形维护 | [原生图形](development/native-graphics.md) |
 | SDK 方法、HTTP、文件传输与数据语义 | [云端请求接口](development/cloud-client-api.md) |
 | 采集产物到模型输入的待确认映射 | [上传对接草案](development/acquisition-upload-protocol.md) |
+| 当前数据缺口、后端接口增量及前后端分工 | [后端接口与数据开发指南](development/backend-data-development.md) |
 | 独立浏览器设计演示、页面和模拟边界 | [设计 Demo](design-demo/README.md) |
 
 ## 采集协议
