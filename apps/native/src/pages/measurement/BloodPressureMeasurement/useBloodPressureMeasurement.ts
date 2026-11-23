@@ -1,4 +1,4 @@
-/** 血压使用独立联合 API；只消费低频事实，不接收或生成任何波形。 */
+/** 血压使用独立联合 API；采集事实与真实云端报告分离。 */
 import { useCallback, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { createAcquisitionClient } from '@health-cv-app/acquisition'
@@ -7,6 +7,7 @@ import { chestPlacementGuideSkipped } from '@/app/preferences'
 import { FINGERTIP_DURATION_MILLIS, prepareFingertipCameraConfig } from '@/app/measurement/fingertipConfig'
 import { createMeasurementVoicePlayer } from '@/app/measurement/measurementVoicePlayer'
 import { bloodPressureVoiceResources } from '@/app/measurement/bloodPressureVoiceResources'
+import { appServices } from '@/app/bootstrap'
 import { useContactMeasurementSession } from '../ContactMeasurement/useContactMeasurementSession'
 import { createBloodPressureDisplay } from './bloodPressurePresentation'
 import type { BloodPressureDisplayStatus } from './bloodPressurePresentation'
@@ -14,6 +15,8 @@ import { createBloodPressurePlacementReminder } from './bloodPressurePlacementRe
 import { createBloodPressureVoice } from './bloodPressureVoice'
 import type { BloodPressureVoice } from './bloodPressureVoice'
 import { createBloodPressureChestGuide } from './bloodPressureChestGuide'
+import { createContactResultsLifecycle, emptyContactResultState } from '../ContactMeasurement/contactResultsLifecycle'
+import type { ContactResultState } from '../ContactMeasurement/contactResultsLifecycle'
 
 /** 取消锁独立于播放器，首条快照之前取消也不能在回前台后懒建旧轮语音。 */
 interface VoiceRound {
@@ -32,6 +35,8 @@ interface VoiceRound {
 /** 血压没有页面外历史缓存；轮次投影和提醒由共用生命周期释放。 */
 export function useBloodPressureMeasurement() {
   const [snapshot, setSnapshot] = useState<BloodPressureDisplayStatus | null>(null)
+  const [result, setResult] = useState<ContactResultState>(emptyContactResultState)
+  const [resultsLifecycle] = useState(() => createContactResultsLifecycle('BloodPressureResults', setResult, appServices?.measurements.workflowOptions ?? null))
   const [display] = useState(() => createBloodPressureDisplay(setSnapshot))
   const [placementGuideVisible, setPlacementGuideVisible] = useState(false)
   const [chestGuideVisible, setChestGuideVisible] = useState(false)
@@ -56,13 +61,14 @@ export function useBloodPressureMeasurement() {
     round.voice?.dispose()
   }, [chestGuide])
   const disposeRound = useCallback(() => {
+    resultsLifecycle.cancel()
     chestGuide.cancel()
     const round = voiceRound.current
     if (round == null) return
     round.cancelled = true
     round.voice?.dispose()
     voiceRound.current = null
-  }, [chestGuide])
+  }, [chestGuide, resultsLifecycle])
   const createController = useCallback((context: Parameters<Parameters<typeof useContactMeasurementSession>[0]['createController']>[0]) => {
     disposeRound()
     chestGuide.reset()
@@ -86,9 +92,16 @@ export function useBloodPressureMeasurement() {
         subscribeBloodPressure: (listener) => runtime.subscribeBloodPressure(listener),
       },
       prepareConfig: () => prepareFingertipCameraConfig(runtime), durationMillis: FINGERTIP_DURATION_MILLIS,
+      onCapture(captureId) {
+        if (!context.isCurrent()) return
+        const generation = appServices?.auth.getSessionGeneration()
+        const model = generation == null ? null : appServices?.measurements.getPlan('chest', generation)
+        if (model && generation != null) resultsLifecycle.begin(captureId, 'chest', model, generation)
+      },
       onSnapshot(value) {
         if (!context.isCurrent()) return
         display.update(value)
+        resultsLifecycle.update(value)
         if (context.isForeground() && AppState.currentState === 'active') {
           if (voiceRound.current === round && !round.cancelled) {
             if (round.captureId == null) {
@@ -103,9 +116,10 @@ export function useBloodPressureMeasurement() {
         }
       },
     })
-  }, [chestGuide, display, disposeRound, placementReminder])
+  }, [chestGuide, display, disposeRound, placementReminder, resultsLifecycle])
   const session = useContactMeasurementSession({
-    display, placementReminder, createController, cancelRound, resetRound: disposeRound, disposeRound,
+    method: 'chest', display, placementReminder, createController, cancelRound, resetRound: disposeRound, disposeRound,
+    presentationLifecycle: resultsLifecycle,
   })
   const confirmChestGuide = useCallback((skip: boolean) => {
     try {
@@ -118,5 +132,6 @@ export function useBloodPressureMeasurement() {
   return {
     ...session, snapshot, display, placementGuideVisible, dismissPlacementGuide: placementReminder.dismiss,
     chestGuideVisible, chestGuideStorageError, confirmChestGuide,
+    result, requeryResults: resultsLifecycle.requery, openResults: resultsLifecycle.openResults, closeResults: resultsLifecycle.closeResults, enterDetails: resultsLifecycle.enterDetails,
   }
 }

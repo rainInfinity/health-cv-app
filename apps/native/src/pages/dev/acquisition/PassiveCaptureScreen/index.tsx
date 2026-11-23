@@ -1,27 +1,36 @@
-/** 展示被动 RPPG 服务、正式测量配置、结果三件套及历史视频。 */
+/** 展示被动 RPPG 服务、测量配置、心率历史及旧视频。 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFocusEffect } from '@react-navigation/native'
 import { useStore } from '@nanostores/react'
 import type { PassiveVideoArtifact, RPPGArtifact } from '@health-cv-app/acquisition'
-import { AppState, Linking } from 'react-native'
+import { AppState } from 'react-native'
 import { useTheme } from 'styled-components/native'
 import {
   connectPassiveCaptureScreen,
+  disablePassiveCapture,
+  isPassiveCaptureEnabled,
+  openPassiveCaptureSettings,
+  passiveCaptureBusy,
   passiveCaptureClient,
+  passiveCaptureError,
   passiveCaptureSnapshot,
+  readPassiveCaptureErrorCode,
   refreshPassiveCaptureSnapshot,
+  setPassiveCaptureConfig,
 } from '@/app/passive-capture'
+import { usePassiveCaptureEnable } from '@/app/passive-capture-interaction'
 import {
+  canOpenPassiveCaptureSettings,
   localizePassiveCaptureError,
+  passiveCaptureMessages,
+} from '@/app/passive-capture-messages'
+import {
   localizePassiveCaptureReason,
   localizePassiveCaptureState,
   localizeRppgSignalStatus,
   localizeRppgTermination,
-  passiveCaptureMessages,
 } from '@/pages/dev/acquisition/passiveCaptureMessages'
-import { feedbackMessages } from '@/app/i18n/feedbackMessages'
-import { useFeedback } from '@/shared/components/FeedbackHost'
 import { ActionButton } from '@/shared/components/ActionButton'
 import { AppCard } from '@/shared/components/AppCard'
 import { AppInput } from '@/shared/components/AppInput'
@@ -31,18 +40,21 @@ import { MAX_DISPLAYED_ARTIFACTS } from '@/shared/artifactDisplayLimit'
 import { StatusFeedback } from '@/shared/components/StatusFeedback'
 
 import { ActionGroup, ArtifactGroup } from './styles'
+import { PassiveHistoryRecord } from './PassiveHistoryRecord'
 
 /** 呈现独立的 Android 被动 RPPG 服务、配置与本地产物。 */
 export function PassiveCaptureScreen() {
   const snapshot = useStore(passiveCaptureSnapshot)
   const messages = useStore(passiveCaptureMessages)
-  const sharedMessages = useStore(feedbackMessages)
-  const { showModal } = useFeedback()
+  const busy = useStore(passiveCaptureBusy)
+  const commandError = useStore(passiveCaptureError)
+  const requestEnable = usePassiveCaptureEnable()
   const theme = useTheme()
   const [artifacts, setArtifacts] = useState<RPPGArtifact[]>([])
   const [videoArtifacts, setVideoArtifacts] = useState<PassiveVideoArtifact[]>([])
+  const [filesSessionId, setFilesSessionId] = useState<string | null>(null)
   const visibleArtifacts = useMemo(
-    () => artifacts.slice(-MAX_DISPLAYED_ARTIFACTS),
+    () => artifacts.slice(-MAX_DISPLAYED_ARTIFACTS).reverse(),
     [artifacts],
   )
   const visibleVideoArtifacts = useMemo(
@@ -52,7 +64,6 @@ export function PassiveCaptureScreen() {
   const [intervalInput, setIntervalInput] = useState(String(snapshot.config.intervalSeconds))
   const [durationInput, setDurationInput] = useState(String(snapshot.config.measurementDurationSeconds))
   const [localError, setLocalError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const mounted = useRef(false)
   const refreshArtifacts = useCallback(async () => {
     try {
@@ -65,7 +76,7 @@ export function PassiveCaptureScreen() {
         setVideoArtifacts(historicalVideos)
       }
     } catch (error) {
-      if (mounted.current) setLocalError(readErrorCode(error))
+      if (mounted.current) setLocalError(readPassiveCaptureErrorCode(error))
     }
   }, [])
 
@@ -106,52 +117,18 @@ export function PassiveCaptureScreen() {
     }
   }, [snapshot.lastReason, snapshot.state, refreshArtifacts])
 
-
-  async function runCommand(command: () => Promise<void>): Promise<void> {
-    setBusy(true)
+  /** 原生命令共享防重；开发页只刷新自己的本地产物列表。 */
+  async function runCommand(command: () => Promise<boolean>): Promise<void> {
     setLocalError(null)
-    try {
-      await command()
-      if (mounted.current) refreshPassiveCaptureSnapshot()
-      await refreshArtifacts()
-    } catch (error) {
-      if (mounted.current) setLocalError(readErrorCode(error))
-    } finally {
-      if (mounted.current) setBusy(false)
-    }
+    await command()
+    await refreshArtifacts()
   }
 
-  /** 仅在用户明确启用被动采集时引导厂商后台活动设置。 */
-  function showBackgroundSettingsGuidance(): void {
-    showModal({
-      title: messages.guidanceTitle,
-      message: messages.guidanceMessage,
-      closeLabel: sharedMessages.dismiss,
-      actions: [
-        { label: messages.cancel },
-        { label: messages.openSettings, onPress: () => Linking.openSettings() },
-        {
-          label: messages.continueEnable,
-          primary: true,
-          onPress: () => runCommand(() => passiveCaptureClient.enable()),
-        },
-      ],
-    })
-  }
-
-  const serviceActive = snapshot.state === 'starting'
-    || snapshot.state === 'waiting'
-    || snapshot.state === 'observing'
-    || snapshot.state === 'measuring'
-    || snapshot.state === 'stopping'
-  const errorCode = localError
-    ?? snapshot.errorCode
-    ?? (snapshot.errorMessage != null || snapshot.state === 'failed' ? 'UNKNOWN' : null)
+  const serviceActive = isPassiveCaptureEnabled(snapshot)
+    || snapshot.state === 'starting' || snapshot.state === 'stopping'
+  const errorCode = commandError ?? localError
   const instantHeartRate = snapshot.state === 'measuring' ? snapshot.latestInstantHeartRate : null
-  const canOpenSettings = errorCode != null && (
-    errorCode.includes('PERMISSION')
-    || errorCode.includes('NOTIFICATION')
-  )
+  const canOpenSettings = canOpenPassiveCaptureSettings(errorCode)
 
   return (
     <PageContainer edges={['left', 'right']} contentContainerStyle={{ paddingBottom: theme.spacing.xl }}>
@@ -233,7 +210,7 @@ export function PassiveCaptureScreen() {
             disabled={busy}
             loading={busy}
             secondary
-            onPress={() => void Linking.openSettings()}
+            onPress={() => void openPassiveCaptureSettings()}
           />
         )}
       </AppCard>
@@ -272,13 +249,10 @@ export function PassiveCaptureScreen() {
           disabled={serviceActive || busy}
           loading={busy}
           secondary
-          onPress={() => void runCommand(async () => {
-            const config = {
-              intervalSeconds: Number(intervalInput),
-              measurementDurationSeconds: Number(durationInput),
-            }
-            await passiveCaptureClient.setConfig(config)
-          })}
+          onPress={() => void runCommand(() => setPassiveCaptureConfig({
+            intervalSeconds: Number(intervalInput),
+            measurementDurationSeconds: Number(durationInput),
+          }))}
         />
       </AppCard>
 
@@ -288,7 +262,7 @@ export function PassiveCaptureScreen() {
             label={messages.enable}
             disabled={busy}
             loading={busy}
-            onPress={showBackgroundSettingsGuidance}
+            onPress={() => { setLocalError(null); requestEnable() }}
           />
         ) : (
           <ActionButton
@@ -296,7 +270,7 @@ export function PassiveCaptureScreen() {
             disabled={busy}
             loading={busy}
             secondary
-            onPress={() => void runCommand(() => passiveCaptureClient.disable())}
+            onPress={() => void runCommand(disablePassiveCapture)}
           />
         )}
         {(busy || snapshot.state === 'starting' || snapshot.state === 'stopping') && (
@@ -319,6 +293,7 @@ export function PassiveCaptureScreen() {
         ) : visibleArtifacts.map((artifact) => (
           <ArtifactGroup key={artifact.sessionId}>
             <AppText tone="secondary">{messages.artifactSession}{messages.labelSeparator}{artifact.sessionId}</AppText>
+            <PassiveHistoryRecord artifact={artifact} />
             <AppText tone="secondary" variant="caption">
               {messages.resultSource}{messages.labelSeparator}{messages.sourcePassive}
               {messages.metadataSeparator}{messages.resultTermination}{messages.labelSeparator}
@@ -333,14 +308,21 @@ export function PassiveCaptureScreen() {
               {messages.metadataSeparator}{messages.validHeartRateWindows}{messages.labelSeparator}{artifact.sampleCounts.validHeartRateWindows}
               {messages.metadataSeparator}{messages.rejectedHeartRateWindows}{messages.labelSeparator}{artifact.sampleCounts.rejectedHeartRateWindows}
             </AppText>
-            {artifact.files.map((file) => (
+            <ActionButton
+              label={filesSessionId === artifact.sessionId ? messages.historyHideFiles : messages.historyShowFiles}
+              secondary
+              onPress={() => setFilesSessionId((current) => current === artifact.sessionId ? null : artifact.sessionId)}
+            />
+            {filesSessionId === artifact.sessionId && artifact.files.map((file) => (
               <ArtifactGroup key={`${artifact.sessionId}-${file.kind}`}>
                 <AppText tone="secondary" variant="caption">
                   {file.kind === 'session'
                     ? messages.sessionFile
                     : file.kind === 'pulse'
                       ? messages.pulseFile
-                      : messages.heartRateFile}
+                      : file.kind === 'instant-heart-rate'
+                        ? messages.instantHeartRateFile
+                        : messages.heartRateFile}
                   {messages.labelSeparator}{file.sizeBytes} bytes
                 </AppText>
                 <AppText selectable variant="caption">{file.path}</AppText>
@@ -379,17 +361,4 @@ export function PassiveCaptureScreen() {
   )
 }
 
-/** 从结构化异常提取稳定错误码，不保留底层消息。 */
-function readErrorCode(error: unknown): string {
-  if (
-    error != null
-    && typeof error === 'object'
-    && 'code' in error
-    && typeof error.code === 'string'
-    && error.code.length > 0
-  ) {
-    return error.code
-  }
-  return 'UNKNOWN'
-}
 

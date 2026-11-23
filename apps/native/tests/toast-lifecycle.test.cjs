@@ -57,7 +57,7 @@ test('加载 Toast 无自动计时，手动关闭或替换后按普通状态过�
 
   lifecycle.replace({ id: 2, tone: 'loading' }, (id) => expired.push(id));
   lifecycle.replace({ id: 3, tone: 'success' }, (id) => expired.push(id));
-  assert.deepEqual([...scheduler.active.values()], [3500]);
+  assert.deepEqual([...scheduler.active.values()], [1500]);
   scheduler.fire(1);
   assert.deepEqual(expired, [3]);
 });

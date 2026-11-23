@@ -1,4 +1,4 @@
-/** 提供健康、功能、历史拦截、用户和开发五个底部入口。 */
+/** 提供健康、功能、历史、用户和开发五个底部入口。 */
 
 import { useStore } from '@nanostores/react'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
@@ -15,33 +15,17 @@ import { PRODUCT_TAB_CONFIGURATION } from './config'
 import { DevNavigator } from '@/app/navigation/DevNavigator'
 import { HomeScreen } from '@/pages/home/HomeScreen'
 import { FeaturesScreen } from '@/pages/features/FeaturesScreen'
-import { HistoryUnavailableScreen } from '@/pages/history/HistoryUnavailableScreen'
-import { historyMessages } from '@/pages/history/historyMessages'
+import { HistoryScreen } from '@/pages/history/HistoryScreen'
 import { UserScreen } from '@/pages/user/UserScreen'
-import { feedbackMessages } from '@/app/i18n/feedbackMessages'
-import { useFeedback } from '@/shared/components/FeedbackHost'
 
 const Tab = createBottomTabNavigator<ProductTabParamList>()
 const CARD_PHOTO_SOURCES = Object.values(OPERATION_PHOTOS).map((photos) => photos.card)
 
-/** 展示五个页面 Tab，并把历史 Tab 转为不切页的统一说明弹窗。 */
+/** 产品页共享同一 Tab 容器，保留筛选及既有采集资源交接。 */
 export function ProductTabs() {
   const theme = useTheme()
   const insets = useSafeAreaInsets()
   const labels = useStore(productNavigationMessages)
-  const historyCopy = useStore(historyMessages)
-  const sharedCopy = useStore(feedbackMessages)
-  const { showModal } = useFeedback()
-
-  /** 历史暂未开放；点击不选中 Tab、不触发数据请求。 */
-  const showUnavailableHistory = () => {
-    showModal({
-      title: historyCopy.title,
-      message: historyCopy.message,
-      closeLabel: sharedCopy.dismiss,
-      actions: [{ label: sharedCopy.dismiss, primary: true }],
-    })
-  }
 
   return (
     <Tab.Navigator
@@ -100,11 +84,6 @@ export function ProductTabs() {
       })}
       screenListeners={({ route, navigation }) => ({
         tabPress: (event) => {
-          if (route.name === 'History') {
-            event.preventDefault()
-            showUnavailableHistory()
-            return
-          }
           if (route.name === 'Dev') return
           if (requestRPPGLeave(() => navigation.navigate(route.name))) {
             event.preventDefault()
@@ -140,7 +119,7 @@ export function ProductTabs() {
       />
       <Tab.Screen
         name="History"
-        component={HistoryUnavailableScreen}
+        component={HistoryScreen}
         options={{
           title: labels.history,
           tabBarIcon: ({ color, focused }) => (

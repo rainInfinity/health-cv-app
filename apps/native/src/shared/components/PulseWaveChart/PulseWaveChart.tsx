@@ -25,15 +25,15 @@ type PulseChartOption = ComposeOption<LineSeriesOption | GridComponentOption>
 
 /** 有界坐标数据及绘图区约束；时间统一使用毫秒。 */
 export interface PulseWaveChartProps {
-  /** 时间与原始幅值；绘图层统一取负，调用方不得预先翻转；null 保留缺口。 */
+  /** 时间与输入幅值；null 保留缺口，是否取负由信号类型与 invertPpg 决定。 */
   points: [number, number | null][]
   /** 可见窗口左端，单位毫秒。 */
   startTimeMs: number
   /** 可见窗口右端，单位毫秒，必须大于左端。 */
   endTimeMs: number
-  /** 按取负后的展示幅值计算的纵轴下界，不回写原始样本。 */
+  /** 按最终展示幅值计算的纵轴下界，不回写原始样本。 */
   minimum: number
-  /** 按取负后的展示幅值计算的纵轴上界，必须大于下界。 */
+  /** 按最终展示幅值计算的纵轴上界，必须大于下界。 */
   maximum: number
   /** 容器实际高度，单位 dp。 */
   height: number
@@ -45,10 +45,14 @@ export interface PulseWaveChartProps {
   accessibilityLabel: string
   /** 运行中跟随最新时仅对整条曲线做原生水平平移；不补间幅值。 */
   scrolling?: boolean
+  /** 默认 PPG；处理后心震波使用 SCG，不能套用脉搏方向翻转。 */
+  signal?: 'ppg' | 'scg'
+  /** 原始PPG默认取负；后端已处理方向的报告传false，SCG始终保留方向。 */
+  invertPpg?: boolean
 }
 
 /** 图表只随数据批次重绘；批次之间由 native driver 平移已有 SVG。 */
-export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs, endTimeMs, minimum, maximum, height, appearance, emptyMessage, accessibilityLabel, scrolling = false }: PulseWaveChartProps) {
+export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs, endTimeMs, minimum, maximum, height, appearance, emptyMessage, accessibilityLabel, scrolling = false, signal = 'ppg', invertPpg = true }: PulseWaveChartProps) {
   const theme = useTheme()
   const host = useRef<ScrollingSvgHandle | null>(null)
   const chart = useRef<EChartsType | null>(null)
@@ -63,7 +67,7 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
   const pixelsPerMs = canvas.pixelsPerMs
   const canvasWidth = product ? canvas.width : width
   const canScroll = product && scrolling && active && !reducedMotion
-  const displayPoints = useMemo(() => buildPulseDisplayPoints(points), [points])
+  const displayPoints = useMemo(() => signal === 'ppg' && invertPpg ? buildPulseDisplayPoints(points, signal) : points, [points, signal, invertPpg])
 
   useEffect(() => {
     let mounted = true
@@ -92,7 +96,7 @@ export const PulseWaveChart = memo(function PulseWaveChart({ points, startTimeMs
         axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false },
       },
       yAxis: {
-        type: 'value', min: minimum, max: maximum, interval: (maximum - minimum) / 2,
+        type: 'value', min: minimum, max: maximum, interval: maximum / 2 - minimum / 2,
         axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false },
         splitLine: { show: !product, lineStyle: { color: theme.roles.divider } },
       },

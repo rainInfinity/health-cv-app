@@ -5,6 +5,7 @@ import { createAcquisitionClient } from '@health-cv-app/acquisition'
 import { FINGERTIP_DURATION_MILLIS, prepareFingertipCameraConfig } from '@/app/measurement/fingertipConfig'
 import { fingertipVoiceResources } from '@/app/measurement/fingertipVoiceResources'
 import { createMeasurementVoicePlayer } from '@/app/measurement/measurementVoicePlayer'
+import { appServices } from '@/app/bootstrap'
 import { useContactMeasurementSession } from '../ContactMeasurement/useContactMeasurementSession'
 import { createFingertipCaptureController } from './fingertipCapture'
 import { createFingertipDisplay } from './fingertipPresentation'
@@ -14,14 +15,14 @@ import { createFingertipWaveform } from './fingertipWaveform'
 import type { FingertipWaveform } from './fingertipWaveform'
 import { createFingertipVoice } from './fingertipVoice'
 import type { FingertipVoice } from './fingertipVoice'
-import { createFingertipResultsLifecycle } from './fingertipResultsLifecycle'
-import type { FingertipResultState } from './fingertipResultsLifecycle'
+import { createContactResultsLifecycle, emptyContactResultState } from '../ContactMeasurement/contactResultsLifecycle'
+import type { ContactResultState } from '../ContactMeasurement/contactResultsLifecycle'
 
 /** 组装指尖专属声音与真实采集；语音不控制原生计时及页面成功状态。 */
 export function useFingertipMeasurement() {
   const [snapshot, setSnapshot] = useState<FingertipDisplayStatus | null>(null)
-  const [result, setResult] = useState<FingertipResultState>({ phase: 'idle', captureId: null, expanded: false })
-  const [resultsLifecycle] = useState(() => createFingertipResultsLifecycle(setResult))
+  const [result, setResult] = useState<ContactResultState>(emptyContactResultState)
+  const [resultsLifecycle] = useState(() => createContactResultsLifecycle('FingertipResults', setResult, appServices?.measurements.workflowOptions ?? null))
   const [display] = useState(() => createFingertipDisplay(setSnapshot))
   const [placementGuideVisible, setPlacementGuideVisible] = useState(false)
   const voice = useRef<FingertipVoice | null>(null)
@@ -52,7 +53,9 @@ export function useFingertipMeasurement() {
       prepareConfig: () => prepareFingertipCameraConfig(runtime), durationMillis: FINGERTIP_DURATION_MILLIS,
       onCapture(captureId) {
         if (!context.isCurrent()) return
-        resultsLifecycle.begin(captureId)
+        const generation = appServices?.auth.getSessionGeneration()
+        const model = generation == null ? null : appServices?.measurements.getPlan('fingertip', generation)
+        if (model && generation != null) resultsLifecycle.begin(captureId, 'fingertip', model, generation)
         if (context.isForeground()) voice.current = createFingertipVoice(createMeasurementVoicePlayer(fingertipVoiceResources))
         history.current = createFingertipWaveform(captureId, FINGERTIP_DURATION_MILLIS)
         setWaveform(history.current)
@@ -70,11 +73,11 @@ export function useFingertipMeasurement() {
     })
   }, [display, placementReminder, resultsLifecycle])
   const session = useContactMeasurementSession({
-    display, placementReminder, createController, resetRound, disposeRound, cancelRound, presentationLifecycle: resultsLifecycle,
+    method: 'fingertip', display, placementReminder, createController, resetRound, disposeRound, cancelRound, presentationLifecycle: resultsLifecycle,
   })
   return {
     ...session, snapshot, display, waveform, placementGuideVisible, dismissPlacementGuide: placementReminder.dismiss,
-    result, openResults: resultsLifecycle.openResults, closeResults: resultsLifecycle.closeResults, enterDetails: resultsLifecycle.enterDetails,
+    result, requeryResults: resultsLifecycle.requery, openResults: resultsLifecycle.openResults, closeResults: resultsLifecycle.closeResults, enterDetails: resultsLifecycle.enterDetails,
   }
 }
 

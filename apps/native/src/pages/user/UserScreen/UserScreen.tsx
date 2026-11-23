@@ -68,7 +68,7 @@ export function UserScreen() {
     const toastId = showToast({
       tone: 'loading',
       message: authCopy.logoutProgressToast,
-      dismissible: false,
+      dismissOnBack: false,
     })
     try {
       const result = await services.auth.signOut()
@@ -76,13 +76,13 @@ export function UserScreen() {
       replaceToast(toastId, {
         tone: messageKey === 'logoutSuccess' ? 'success' : 'error',
         message: authCopy[messageKey],
-        dismissible: false,
+        dismissOnBack: false,
       })
     } catch {
       replaceToast(toastId, {
         tone: 'error',
         message: authCopy.signOutError,
-        dismissible: false,
+        dismissOnBack: false,
       })
     } finally {
       signOutLock.current = false
@@ -105,6 +105,10 @@ export function UserScreen() {
 
   /** 按页面归属分流设置路由，其他入口仅显示共同未开放说明。 */
   function openMenu(key: string): void {
+    if (key === 'myRecords') {
+      navigation.navigate('ProductTabs', { screen: 'History' })
+      return
+    }
     if (key === 'notifications') {
       navigation.navigate('PermissionSettings', { section: 'notifications' })
       return

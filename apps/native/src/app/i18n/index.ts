@@ -15,15 +15,15 @@ const translationCache: Record<AppLocale, Components> = {
 
 /** JSON 资源值会扩宽为 string；显式保留界面实际使用的插值参数契约。 */
 type FeatureMessageParameters = {
-  'pages/features': {
-    minutesUnmeasured: { value: number }
-    hoursUnmeasured: { value: number }
-    daysUnmeasured: { value: number }
-  },
-  'pages/metric-detail': {
-    minutesAgo: { value: number }
-    hoursAgo: { value: number }
-    daysAgo: { value: number }
+  bloodPressureResults: {
+    qualityLabel: { score: string }
+    estimateText: { value: string }
+  }
+  fingertipResults: {
+    qualityLabel: { score: string }
+  }
+  'pages/history': {
+    emptyInterval: { metric: string }
   }
   'pages/auth': {
     showPassword: { field: string }

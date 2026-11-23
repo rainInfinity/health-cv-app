@@ -563,12 +563,13 @@ function localizeTermination(
   return labels[reason]
 }
 
-/** 将三件套文件用途映射为可读标签。 */
+/** 将已发布会话的文件用途映射为可读标签。 */
 function localizeArtifactFile(
-  kind: 'session' | 'pulse' | 'heart-rate',
+  kind: 'session' | 'pulse' | 'heart-rate' | 'instant-heart-rate',
   messages: RPPGMessageValues,
 ): string {
   if (kind === 'session') return messages.fileSession
   if (kind === 'pulse') return messages.filePulse
+  if (kind === 'instant-heart-rate') return messages.fileInstantHeartRate
   return messages.fileHeartRate
 }

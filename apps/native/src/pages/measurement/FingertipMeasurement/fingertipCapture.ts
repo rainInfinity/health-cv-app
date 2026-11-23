@@ -17,6 +17,8 @@ interface FingertipCaptureOptions {
   durationMillis: number
   /** 当前页面有效且应用处于前台。 */
   isForeground(): boolean
+  /** 同一认证代次与导航入口仍有效。 */
+  isCurrent?(): boolean
   /** 请求挂载真实预览宿主。 */
   mountPreview(): void
   /** 本轮正式建立后通知页面绑定历史。 */
@@ -55,7 +57,7 @@ export function createFingertipCaptureController(options: FingertipCaptureOption
   let closing: Promise<void> | null = null
   let wake: (() => void) | null = null
   let detach: (() => void) | null = null
-  const current = () => !cancelled && !disposed
+  const current = () => !cancelled && !disposed && (options.isCurrent?.() ?? true)
   const wait = () => new Promise<void>((resolve) => { wake = resolve })
   const releaseWait = () => { const resolve = wake; wake = null; resolve?.() }
 

@@ -1,4 +1,4 @@
-/** 指标解读保持图文分栏，完整建议和风险说明独占下方整行。 */
+/** 指标解读保持图文分栏，风险非医学说明独占下方整行。 */
 
 import styled from 'styled-components/native'
 import { AppText } from '@/shared/components/AppText'
@@ -18,6 +18,8 @@ export const InterpretationCard = styled.View`
   padding: ${({ theme }) => theme.layout.cardPadding}px;
   border-radius: ${({ theme }) => theme.radius.lg}px;
   background-color: ${({ theme }) => theme.colors.surface.default};
+  border-width: 1px;
+  border-color: ${({ theme }) => `${theme.colors.border.default}A6`};
 `
 export const MainRow = styled.View`
   flex-direction: row;
@@ -46,40 +48,42 @@ export const ReadingHeader = styled.View`
   justify-content: space-between;
   gap: 8px;
 `
+export const Assessment = styled(AppText)`
+  padding: 4px 8px;
+  border-radius: 6px;
+  background-color: ${({ theme }) => theme.colors.brand.subtle};
+  color: ${({ theme }) => theme.colors.brand.action};
+`
 export const Reading = styled.View`
   flex-direction: row;
+  flex-shrink: 0;
   align-items: baseline;
   gap: 4px;
 `
 export const ReadingNumber = styled(AppText)`
+  flex-shrink: 0;
   font-size: 24px;
   line-height: 32px;
   font-weight: ${({ theme }) => theme.typography.weight.semibold};
-`
-export const Assessment = styled.View`
-  padding: 4px 8px;
-  border-radius: 6px;
-  background-color: ${({ theme }) => theme.colors.brand.subtle};
 `
 export const Introduction = styled(AppText)`
   margin-top: 12px;
   font-size: 14px;
   line-height: 24px;
 `
-export const Guidance = styled.View`
+export const Advice = styled(AppText)`
   margin-top: 16px;
   padding-left: 12px;
   border-left-width: 2px;
-  border-left-color: ${({ theme }) => theme.colors.brand.primary}47;
-`
-export const Advice = styled(AppText)`
+  border-left-color: ${({ theme }) => `${theme.colors.brand.primary}47`};
   font-size: 14px;
   line-height: 24px;
 `
-export const RiskReading = styled(AppText)`
-  font-size: 20px;
-  line-height: 28px;
-  font-weight: ${({ theme }) => theme.typography.weight.semibold};
+export const RiskGuidance = styled.View`
+  margin-top: 16px;
+  padding-left: 12px;
+  border-left-width: 2px;
+  border-left-color: ${({ theme }) => `${theme.colors.brand.primary}47`};
 `
 export const RiskParagraph = styled(AppText)`
   margin-top: 8px;

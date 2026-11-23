@@ -10,7 +10,6 @@ import { navigationMessages } from '@/app/i18n/navigationMessages'
 import { appLinking } from '@/app/navigation/linking'
 import type { RootStackParamList } from '@/app/navigation/types'
 import { ProductTabs } from '@/app/navigation/ProductTabs'
-import { MetricDetailScreen } from '@/pages/home/MetricDetailScreen'
 import { OnboardingScreen } from '@/pages/home/OnboardingScreen'
 import { StartupScreen } from '@/pages/home/StartupScreen'
 import { MeasurementGuideScreen } from '@/pages/measurement/MeasurementGuide'
@@ -18,6 +17,7 @@ import { FaceMeasurementScreen } from '@/pages/measurement/FaceMeasurement'
 import { FingertipMeasurementScreen } from '@/pages/measurement/FingertipMeasurement'
 import { FingertipResultsScreen } from '@/pages/measurement/FingertipResults'
 import { BloodPressureMeasurementScreen } from '@/pages/measurement/BloodPressureMeasurement'
+import { BloodPressureResultsScreen } from '@/pages/measurement/BloodPressureResults'
 import { AuthScreen } from '@/pages/user/AuthScreen'
 import { LanguageInfoScreen } from '@/pages/user/LanguageInfoScreen'
 import { PermissionSettingsScreen } from '@/pages/user/PermissionSettingsScreen'
@@ -102,15 +102,9 @@ export function RootNavigator() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="MetricDetail"
-          component={MetricDetailScreen}
-          options={{
-            title: messages.metricDetail,
-            headerShown: false,
-            presentation: 'transparentModal',
-            animation: 'fade',
-            contentStyle: { backgroundColor: 'transparent' },
-          }}
+          name="BloodPressureResults"
+          component={BloodPressureResultsScreen}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="Login"

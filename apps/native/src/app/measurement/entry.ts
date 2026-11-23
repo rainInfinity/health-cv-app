@@ -1,9 +1,7 @@
 /** 集中维护部位、指标与准备流程的有限映射，不启动任何采集。 */
 
-import type { MeasurementMethod, MeasurementRouteParams, MeasurementTarget } from '@/app/navigation/types'
+import type { HealthMetric, MeasurementMethod, MeasurementRouteParams, MeasurementTarget } from '@/app/navigation/types'
 
-/** 功能页保留的五项指标卡片。 */
-export type MeasurementFeature = 'fingertip' | 'face' | 'pressure' | 'oxygen' | 'risk'
 
 /** 部位入口只为必要的部位绑定目标，指尖保持未选指标。 */
 export const METHOD_ENTRIES = {
@@ -12,14 +10,15 @@ export const METHOD_ENTRIES = {
   chest: { method: 'chest', target: 'bloodPressure' },
 } as const satisfies Record<MeasurementMethod, MeasurementRouteParams>
 
-/** 指标入口与部位入口共用同一准备流程。 */
-export const FEATURE_ENTRIES = {
-  fingertip: { method: 'fingertip', target: 'fingertipVitals' },
-  face: { method: 'face', target: 'faceHeartRate' },
-  pressure: { method: 'chest', target: 'bloodPressure' },
-  oxygen: { method: 'fingertip', target: 'oxygenSaturation' },
-  risk: { method: 'fingertip', target: 'diabetesRisk' },
-} as const satisfies Record<MeasurementFeature, MeasurementRouteParams>
+/** 首页各指标与部位入口共用同一方式映射和准备偏好。 */
+export const METRIC_ENTRIES = {
+  bloodPressure: { method: 'chest', target: 'bloodPressure' },
+  heartRate: { method: 'fingertip', target: 'heartRate' },
+  respirationRate: { method: 'fingertip', target: 'respirationRate' },
+  oxygenSaturation: { method: 'fingertip', target: 'oxygenSaturation' },
+  faceHeartRate: { method: 'face', target: 'faceHeartRate' },
+  diabetesRisk: { method: 'fingertip', target: 'diabetesRisk' },
+} as const satisfies Record<HealthMetric, MeasurementRouteParams>
 
 /** 所有可用目标都有固定的本地化键，不将任意文案用作控制字段。 */
 export const TARGET_MESSAGE_KEYS = {

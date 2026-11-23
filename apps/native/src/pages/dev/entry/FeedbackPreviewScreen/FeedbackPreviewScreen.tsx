@@ -27,17 +27,17 @@ export function FeedbackPreviewScreen() {
     })
   }
   /** 模拟处理结束后替换加载提示，避免不可取消的预览永久遮挡页面。 */
-  function showLoadingPreview(locked = false): void {
+  function showLoadingPreview(blockBack = false): void {
     const toastId = showToast({
       tone: 'loading',
-      message: locked ? messages.authFlowLoading : messages.previewMessage,
-      dismissible: false,
+      message: blockBack ? messages.authFlowLoading : messages.previewMessage,
+      dismissOnBack: false,
     })
     setTimeout(() => {
       replaceToast(toastId, {
         tone: 'success',
-        message: locked ? messages.authFlowResult : messages.previewMessage,
-        dismissible: !locked,
+        message: blockBack ? messages.authFlowResult : messages.previewMessage,
+        dismissOnBack: !blockBack,
       })
     }, 1200)
   }

@@ -19,8 +19,10 @@ import { FingertipInstructionArtwork } from '@/pages/measurement/ContactMeasurem
 import { FingertipPreview } from '@/pages/measurement/ContactMeasurement/FingertipPreview'
 import { FingertipPulseWave } from '@/pages/measurement/FingertipMeasurement/FingertipPulseWave'
 import { FingertipPlacementGuide } from '@/pages/measurement/ContactMeasurement/FingertipPlacementGuide'
-import { FingertipResultSheet, FingertipResultEntry } from '@/pages/measurement/FingertipResultSheet'
-import { fingertipResultsMessages } from '@/pages/measurement/FingertipResults'
+import { MeasurementResultSheet, MeasurementResultEntry } from '@/pages/measurement/MeasurementResultSheet'
+import { FingertipResultSummary, fingertipResultsMessages } from '@/pages/measurement/FingertipResults'
+import { FingertipResultDashboard } from '@/pages/measurement/FingertipResults/FingertipResultDashboard'
+import { MeasurementFailure } from '@/pages/measurement/MeasurementFailure'
 
 import { useFingertipMeasurement } from './useFingertipMeasurement'
 import { fingertipMessages } from './fingertipMessages'
@@ -136,6 +138,7 @@ export function FingertipMeasurementScreen() {
     if (error == null && !measurement.closeFailed) return
     const code = error?.toUpperCase() ?? ''
     const message = measurement.closeFailed ? messages.errorClose
+      : code === 'CLOUD_ACCESS_REQUIRED' ? '账号、上传用途或当前渠道的统一检测场景尚未就绪，未启动设备。请返回入口后再次明确开始。'
       : code.includes('PERMISSION') ? messages.errorPermission
         : code.includes('TORCH') ? messages.errorTorch
           : code.includes('BACK_CAMERA') ? messages.errorBackCamera
@@ -178,16 +181,17 @@ export function FingertipMeasurementScreen() {
   const running = phase === 'capturing'
   const presentation = measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : snapshot?.presentation ?? 'ready'
   const waitingForResults = measurement.result.phase === 'waiting'
+  const resultFailure = measurement.result.failure
   useEffect(() => {
     if (!waitingForResults || !visible || measurement.leaving || error != null) return
-    const toastId = showToast({ tone: 'loading', message: resultMessages.waitingToast, showLabel: false })
+    const toastId = showToast({ tone: 'loading', message: resultMessages.waitingToast, showLabel: false, blocking: false })
     return () => dismissToast(toastId)
-  }, [waitingForResults, visible, measurement.leaving, measurement.result.captureId, error, resultMessages.waitingToast, showToast, dismissToast])
+  }, [waitingForResults, visible, measurement.leaving, measurement.result.captureId, resultMessages.waitingToast, error, showToast, dismissToast])
 
   const active = waitingForResults || measurement.busy || phase === 'observing' || phase === 'starting' || running || phase === 'stopping'
-  const statusColor = presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
-  const status = waitingForResults ? resultMessages.waitingTitle : messages[presentation]
-  const statusHint = waitingForResults ? resultMessages.waitingHint : presentation === 'ready' ? messages.statusReady
+  const statusColor = resultFailure ? theme.colors.feedback.error : presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
+  const status = resultFailure ? resultMessages[`${resultFailure}FailedTitle`] : waitingForResults ? resultMessages.waitingTitle : messages[presentation]
+  const statusHint = resultFailure ? resultMessages[`${resultFailure}FailedHint`] : waitingForResults ? resultMessages.waitingHint : presentation === 'ready' ? messages.statusReady
     : presentation === 'partial' ? messages.statusPartial
       : presentation === 'covered' ? messages.statusCovered
         : presentation === 'running' ? messages.statusRunning
@@ -201,8 +205,8 @@ export function FingertipMeasurementScreen() {
 
   /** 先登记已释放资源的同轮交接，再压入详情，避免普通失焦清空历史。 */
   function showDetails() {
-    const captureId = measurement.enterDetails()
-    if (captureId != null) navigation.navigate('FingertipResults', { captureId })
+    const params = measurement.enterDetails()
+    if (params != null) navigation.navigate('FingertipResults', params)
   }
 
   return (
@@ -251,13 +255,13 @@ export function FingertipMeasurementScreen() {
         </Viewfinder>
         <DataPanel $compact={compact} onLayout={(event) => setPanelTop(event.nativeEvent.layout.y)} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
           {measurement.result.phase !== 'idle' && !measurement.leaving && error == null && (
-            <FingertipResultEntry waiting={waitingForResults} onPress={measurement.openResults} />
+            <MeasurementResultEntry waiting={waitingForResults} waitingLabel={resultMessages.waitingTitle} availableLabel={resultMessages.viewResults} onPress={measurement.openResults} />
           )}
           <Session onLayout={(event) => setSessionHeight(event.nativeEvent.layout.height)}>
             <StatusGroup>
               <StatusBadge $started={snapshot != null} accessible accessibilityRole="text" accessibilityLabel={status} accessibilityLiveRegion="polite">
                 {visible && active && presentation !== 'failed'
-                  ? <LoadingIndicator size={14} color={statusColor} />
+                  ? <LoadingIndicator size={14} />
                   : <Svg width="14" height="14" viewBox="0 0 14 14" accessible={false}>
                       <Circle cx="7" cy="7" r="6" fill="none" stroke={statusColor} strokeWidth="2" />
                     </Svg>}
@@ -335,16 +339,19 @@ export function FingertipMeasurementScreen() {
         onConfirm={measurement.dismissPlacementGuide}
         reducedMotion={reducedMotion}
       />
-      <FingertipResultSheet
+      <MeasurementResultSheet
         key={measurement.result.captureId ?? measurement.previewKey}
         expanded={measurement.result.expanded && error == null && !measurement.leaving}
         active={visible}
         panelTop={panelTop}
         reducedMotion={reducedMotion}
         onClose={measurement.closeResults}
-        onDetails={showDetails}
-        onRetest={measurement.retry}
-      />
+        collapseLabel={resultMessages.collapse}
+      >
+        {resultFailure ? <MeasurementFailure kind={resultFailure} messages={resultMessages} onRetry={resultFailure === 'query' ? () => { void measurement.requeryResults() } : measurement.retry}>
+          {resultFailure === 'detection' && measurement.result.report?.state === 'all_failed' && <FingertipResultDashboard report={measurement.result.report} />}
+        </MeasurementFailure> : measurement.result.report && <FingertipResultSummary report={measurement.result.report} onDetails={showDetails} onRetest={measurement.retry} />}
+      </MeasurementResultSheet>
     </Screen>
   )
 }

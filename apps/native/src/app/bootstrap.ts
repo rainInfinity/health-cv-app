@@ -15,6 +15,8 @@ import { createAppQueries } from './query/resources';
 import type { AppQueries } from './query/resources';
 import { readRuntimeConfig } from './runtime-config';
 import type { RuntimeConfig } from './runtime-config';
+import { createMeasurementServices } from './measurement/service';
+import type { MeasurementServices } from './measurement/service';
 
 /** 应用进程内唯一的会话依赖集合。 */
 export interface AppServices {
@@ -28,6 +30,8 @@ export interface AppServices {
   queries: AppQueries;
   /** 当前作用域，用于后续查询键和缓存清理。 */
   scope: AuthScope;
+  /** 当前代次的显式场景目录选择与云端流程依赖。 */
+  measurements: MeasurementServices;
 }
 
 /** 使用显式运行配置创建应用真实依赖，不初始化页面或业务流程。 */
@@ -50,12 +54,13 @@ export function createAppServices(config: RuntimeConfig): AppServices {
   });
   const queries = createAppQueries(client, auth, queryClient, scope);
 
-  return { client, auth, queryClient, queries, scope };
+  const measurements = createMeasurementServices(client, auth, queries, queryClient);
+  return { client, auth, queryClient, queries, scope, measurements };
 }
 
 const runtimeConfig = readRuntimeConfig();
 
-/** 云端配置缺失时仅禁用云端服务；本地采集入口仍可启动。 */
+/** 云端配置缺失时接触式产品门控反馈不可用，独立开发及面部本地路径不变。 */
 export const appServices = runtimeConfig ? createAppServices(runtimeConfig) : null;
 
 if (appServices) {

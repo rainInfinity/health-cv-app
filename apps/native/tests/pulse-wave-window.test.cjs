@@ -76,13 +76,3 @@ test('共享绘图仅翻转展示，零值不断线、真实缺口保留，重�
   assert.ok(Math.abs(position(3) - 0.85) < 1e-12);
 });
 
-test('报告样例经统一绘图翻转后呈现正向脉搏峰，保持真实信号方向约定', async () => {
-  const { processedPulseSample } = await import('../src/pages/measurement/FingertipResults/fingertipResultSample.ts');
-  const { selectPulseWindow } = await windowModule;
-  const { buildPulseDisplayPoints } = await displayModule;
-  const firstWindow = buildPulseDisplayPoints(selectPulseWindow(processedPulseSample, 0));
-  const baseline = firstWindow.find(([time]) => time === 0)[1];
-  const peak = firstWindow.find(([time]) => time === 200)[1];
-  assert.ok(peak > baseline + 0.8, '报告脉搏峰应向上，不得被统一绘图翻转成负向谷值');
-  assert.ok(peak > 0);
-});

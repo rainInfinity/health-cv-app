@@ -115,7 +115,7 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
     const operationToastId = showToast({
       tone: 'loading',
       message: isRegister ? messages.registerProgressToast : messages.loginProgressToast,
-      dismissible: false,
+      dismissOnBack: false,
     })
     try {
       if (isRegister) {
@@ -123,7 +123,7 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
         replaceToast(operationToastId, {
           tone: 'success',
           message: messages.registerSuccess,
-          dismissible: false,
+          dismissOnBack: false,
         })
         if (
           mountedRef.current
@@ -138,24 +138,21 @@ export function AuthScreen({ mode, initialUsername = '' }: AuthScreenProps) {
       replaceToast(operationToastId, {
         tone: 'success',
         message: messages.loginSuccess,
-        dismissible: false,
+        dismissOnBack: false,
       })
       if (
         mountedRef.current
         && focusGeneration.current === operationFocusGeneration
         && navigation.isFocused()
       ) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'ProductTabs', params: { screen: 'User' } }],
-        })
+        navigation.goBack()
       }
     } catch (error) {
       const messageKey = classifyAuthFormError(error, isRegister ? 'register' : 'login')
       replaceToast(operationToastId, {
         tone: 'error',
         message: messages[messageKey],
-        dismissible: false,
+        dismissOnBack: false,
       })
     } finally {
       submitLock.current = false

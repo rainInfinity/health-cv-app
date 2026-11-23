@@ -17,7 +17,7 @@ export interface ToastTimerRequest {
   id: number
   /** 加载状态保持，其他状态按时自动关闭。 */
   tone: FeedbackTone
-  /** 普通提示的自动关闭时长，默认 3500 毫秒。 */
+  /** 自动关闭时长；成功默认1500毫秒，错误和信息默认3500毫秒。 */
   durationMs?: number
 }
 
@@ -40,7 +40,7 @@ export class SingleToastLifecycle {
       this.timer = null
       this.activeId = null
       onExpire(request.id)
-    }, request.durationMs ?? 3500)
+    }, request.durationMs ?? (request.tone === 'success' ? 1500 : 3500))
   }
 
   /** 显式结束当前提示并使已排队的旧回调失效。 */

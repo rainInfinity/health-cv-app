@@ -1,4 +1,4 @@
-/** 注册五项健康功能页使用的中文文案。 */
+/** 注册检测部位入口与无扰心率开关使用的中文文案。 */
 
 import { defineFeatureMessages } from '@/app/i18n'
 

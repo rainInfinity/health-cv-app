@@ -1,7 +1,7 @@
 /** 提供全局单弹窗、单 Toast 队列及其可访问原生呈现。 */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Modal, Pressable, StyleSheet } from 'react-native'
+import { Modal, Pressable, StyleSheet, View } from 'react-native'
 import Svg, { Circle, Path } from 'react-native-svg'
 import { useStore } from '@nanostores/react'
 import { useTheme } from 'styled-components/native'
@@ -22,10 +22,12 @@ export interface FeedbackToastOptions {
   tone: FeedbackTone
   /** 单行或多行反馈正文。 */
   message: string
-  /** 自动关闭时间，默认 3500 毫秒；加载态始终等待显式结束。 */
+  /** 自动关闭时间；成功默认1500毫秒，错误和信息默认3500毫秒，加载等待显式结束。 */
   durationMs?: number
-  /** 是否允许点击蒙版或系统返回关闭；默认普通提示允许、加载提示不允许。 */
-  dismissible?: boolean
+  /** 是否允许系统返回关闭；默认普通提示允许、加载提示不允许，不影响外部点击规则。 */
+  dismissOnBack?: boolean
+  /** 默认使用原生窗口；false 使用隔离触摸的根覆盖层，保留 Android 系统返回。 */
+  blocking?: boolean
   /** 是否添加中文状态名前缀；默认显示，检测结果等待仅显示业务正文。 */
   showLabel?: boolean
 }
@@ -51,6 +53,23 @@ const FeedbackContext = createContext<FeedbackContextValue | null>(null)
 interface ActiveToast extends FeedbackToastOptions {
   /** 每次替换都会递增的本地序号。 */
   id: number
+}
+
+/** 普通提示使用原生窗口；长任务覆盖层隔离触摸但不截获系统返回。 */
+function ToastLayer({ blocking, onRequestClose, children }: {
+  /** 是否使用阻断式原生窗口。 */
+  blocking: boolean
+  /** 阻断窗口收到用户关闭时的动作。 */
+  onRequestClose: () => void
+  /** 提示正文。 */
+  children: ReactNode
+}) {
+  if (!blocking) return <View pointerEvents="auto" style={StyleSheet.absoluteFill}>{children}</View>
+  return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onRequestClose}>
+      {children}
+    </Modal>
+  )
 }
 
 /** 将弹窗和 Toast 主机置于应用根下，供所有页面共享。 */
@@ -95,9 +114,14 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     setToast(null)
   }, [toastLifecycle])
 
-  /** 用户取消只关闭允许取消的当前提示，不结束或取消业务操作。 */
-  const cancelToast = useCallback(() => {
-    if (toast != null && (toast.dismissible ?? toast.tone !== 'loading')) dismissToast(toast.id)
+  /** 系统返回沿用调用方的关闭策略，不结束或取消业务操作。 */
+  const dismissToastOnBack = useCallback(() => {
+    if (toast != null && (toast.dismissOnBack ?? toast.tone !== 'loading')) dismissToast(toast.id)
+  }, [dismissToast, toast])
+
+  /** 所有非加载提示都允许点击外部关闭，不改变正在执行的业务。 */
+  const dismissToastOnBackdrop = useCallback(() => {
+    if (toast != null && toast.tone !== 'loading') dismissToast(toast.id)
   }, [dismissToast, toast])
 
   /** 替换当前弹窗并保留调用方提供的明确操作。 */
@@ -127,12 +151,11 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   const iconColorByTone = {
     success: theme.colors.feedback.success,
     error: theme.colors.feedback.error,
-    loading: theme.colors.feedback.loading,
     information: theme.colors.feedback.information,
   } as const
   return (
     <FeedbackContext.Provider value={context}>
-      {children}
+      <View style={{ flex: 1 }} accessibilityElementsHidden={toast != null} importantForAccessibility={toast != null ? 'no-hide-descendants' : 'auto'}>{children}</View>
       {modal != null && (
         <Modal
           visible
@@ -148,24 +171,17 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
         </Modal>
       )}
       {toast != null && (
-        <Modal
-          visible
-          transparent
-          animationType="fade"
-          statusBarTranslucent
-          navigationBarTranslucent
-          onRequestClose={cancelToast}
-        >
+        <ToastLayer blocking={toast.blocking !== false} onRequestClose={dismissToastOnBack}>
           <ToastOverlay>
             <Pressable
               style={StyleSheet.absoluteFill}
-              onPress={cancelToast}
-              accessible={toast.dismissible ?? toast.tone !== 'loading'}
+              onPress={dismissToastOnBackdrop}
+              accessible={toast.tone !== 'loading'}
               accessibilityRole="button"
               accessibilityLabel={sharedMessages.dismiss}
             />
             <ToastSurface
-              accessibilityViewIsModal
+              accessibilityViewIsModal={toast.blocking !== false}
               accessibilityRole={toast.tone === 'error' ? 'alert' : undefined}
               accessibilityState={{ busy: toast.tone === 'loading' }}
               style={theme.surfaceElevation.overlay}
@@ -173,7 +189,7 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
               onStartShouldSetResponder={() => true}
             >
               {toast.tone === 'loading' ? (
-                <LoadingIndicator color={iconColorByTone.loading} size={64} />
+                <LoadingIndicator size={64} />
               ) : (
                 <Svg width={64} height={64} viewBox="0 0 24 24" fill="none" stroke={theme.colors.surface.default} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" accessible={false}>
                   <Circle cx={12} cy={12} r={10} fill={iconColorByTone[toast.tone]} stroke="none" />
@@ -185,7 +201,7 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
               <ToastCopy>{toast.showLabel === false ? toast.message : `${sharedMessages[toast.tone]}：${toast.message}`}</ToastCopy>
             </ToastSurface>
           </ToastOverlay>
-        </Modal>
+        </ToastLayer>
       )}
     </FeedbackContext.Provider>
   )

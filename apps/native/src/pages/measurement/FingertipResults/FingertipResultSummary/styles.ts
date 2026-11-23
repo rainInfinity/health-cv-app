@@ -29,7 +29,7 @@ export const CompletionHint = styled(AppText)`
 `
 export const Disclaimer = styled(AppText)`
   margin-top: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 0;
   text-align: center;
   line-height: 20px;
 `

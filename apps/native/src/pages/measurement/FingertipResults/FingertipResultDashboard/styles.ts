@@ -1,4 +1,4 @@
-/** 四项看板共用排版，只按展示场景切换边框或轻阴影。 */
+/** 四项看板统一白底细边框，保持原有图文和质量角标排布。 */
 
 import styled from 'styled-components/native'
 import { AppText } from '@/shared/components/AppText'
@@ -11,7 +11,7 @@ export const DashboardRow = styled.View`
   align-items: stretch;
   gap: 12px;
 `
-export const MetricCard = styled.View<{ $summary: boolean }>`
+export const MetricCard = styled.View`
   position: relative;
   flex: 1;
   min-width: 0;
@@ -19,7 +19,7 @@ export const MetricCard = styled.View<{ $summary: boolean }>`
   padding: ${({ theme }) => theme.layout.cardPadding}px;
   border-radius: ${({ theme }) => theme.radius.lg}px;
   background-color: ${({ theme }) => theme.colors.surface.default};
-  border-width: ${({ $summary }) => $summary ? 1 : 0}px;
+  border-width: 1px;
   border-color: ${({ theme }) => `${theme.colors.border.default}A6`};
 `
 export const MetricBody = styled.View`
@@ -34,20 +34,16 @@ export const MetricReading = styled.View`
   min-width: 0;
   flex-shrink: 1;
 `
-export const RiskReading = styled.View`
-  align-items: center;
-  flex-shrink: 1;
-`
-export const RiskText = styled(AppText)`
+export const RiskReading = styled(AppText)`
   font-size: 20px;
-  line-height: 28px;
+  line-height: 26px;
   font-weight: ${({ theme }) => theme.typography.weight.semibold};
+  text-align: center;
 `
 export const DialFrame = styled.View`
   flex: 1;
   align-items: center;
   justify-content: center;
-  margin-top: 8px;
 `
 export const Reference = styled.View`
   flex-direction: row;

@@ -2,6 +2,7 @@
 
 import { useStore } from '@nanostores/react'
 import { useTheme } from 'styled-components/native'
+import type { MeasurementReport } from '@/app/measurement/resultAdapter'
 import { AppText } from '@/shared/components/AppText'
 import { ActionButton } from '@/shared/components/ActionButton'
 import { ArrowRight, CircleCheck } from '@/shared/graphics'
@@ -10,14 +11,15 @@ import { FingertipResultDashboard } from '../FingertipResultDashboard'
 import { Actions, Completion, CompletionHint, CompletionTitle, Disclaimer, RetestButton, SuccessTitle, SummaryBody } from './styles'
 
 export interface FingertipResultSummaryProps {
+  report: MeasurementReport
   /** 由采集页核验同轮结果资格并导航。 */
   onDetails: () => void
   /** 沿用采集页安全关闭旧轮后重测的命令。 */
   onRetest: () => void
 }
 
-/** 简要结果仅在指标卡下方保留短声明，详情页完整说明保持独立。 */
-export function FingertipResultSummary({ onDetails, onRetest }: FingertipResultSummaryProps) {
+/** 完成区表示本轮流程已结束，成员有效性仍按真实报告取值或占位。 */
+export function FingertipResultSummary({ report, onDetails, onRetest }: FingertipResultSummaryProps) {
   const messages = useStore(fingertipResultsMessages)
   const theme = useTheme()
   return (
@@ -28,9 +30,9 @@ export function FingertipResultSummary({ onDetails, onRetest }: FingertipResultS
           <SuccessTitle accessibilityRole="header">{messages.completedTitle}</SuccessTitle>
         </CompletionTitle>
         <CompletionHint>{messages.summaryHint}</CompletionHint>
-        <AppText variant="caption" tone="muted">{messages.measurementTime}</AppText>
+        <AppText variant="caption" tone="muted">{report.measurementTime}</AppText>
       </Completion>
-      <FingertipResultDashboard variant="summary" />
+      <FingertipResultDashboard report={report} />
       <Disclaimer variant="caption" tone="muted">{messages.summaryDisclaimer}</Disclaimer>
       <Actions>
         <ActionButton label={messages.details} icon={<ArrowRight size={20} color={theme.colors.surface.default} accessible={false} />} iconPosition="trailing" onPress={onDetails} />

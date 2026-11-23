@@ -1,76 +1,41 @@
-/** 根据已确认的认证事实选择健康页面展示，不读取或写入服务端缓存。 */
+/** 只映射当前会话的权威健康记录，不产生评估或本地采集读数。 */
 
+import type { Rsp } from '@health-cv-app/cloud-client'
 import type { AuthState } from '@/app/auth/types'
 
-/** 用同一数据结构表达已登录展示值或认证未完成的空态。 */
+/** 各指标保留自己的记录与提交时间；没有记录时保持 null。 */
 export interface HealthPresentation {
-  /** 最近一次血压收缩压，空态为 null，单位 mmHg。 */
   systolic: number | null
-  /** 最近一次血压舒张压，空态为 null，单位 mmHg。 */
   diastolic: number | null
-  /** 最近一次指尖心率，空态为 null，单位 次/分。 */
   heartRate: number | null
-  /** 最近一次呼吸率，空态为 null，单位 次/分。 */
   respirationRate: number | null
-  /** 最近一次血氧饱和度，空态为 null，单位百分比。 */
   oxygenSaturation: number | null
-  /** 固定展示记录时间；空态为 null，ISO 8601 带 +08:00 时区。 */
-  measuredAt: string | null
+  /** 后端原始风险档位；概率仍保留在 records，不用它推算档位。 */
+  diabetesRisk: Rsp.Measurements.MeasurementRecord['riskLevel']
+  records: Rsp.Measurements.LatestMeasurements
 }
 
-/** 未确认登录时使用的共享空展示对象。 */
-const EMPTY_PRESENTATION: HealthPresentation = {
-  systolic: null,
-  diastolic: null,
-  heartRate: null,
-  respirationRate: null,
-  oxygenSaturation: null,
-  measuredAt: null,
+const EMPTY_RECORDS: Rsp.Measurements.LatestMeasurements = {
+  bloodPressure: null, heartRate: null, respirationRate: null, oxygenSaturation: null, diabetesRisk: null,
 }
 
-/** 仅在认证已确认后供页面展示的固定内容；不作为真实测量记录。 */
-const AUTHENTICATED_PRESENTATION: HealthPresentation = {
-  systolic: 118,
-  diastolic: 76,
-  heartRate: 72,
-  respirationRate: 16,
-  oxygenSaturation: 98,
-  measuredAt: '2026-10-31T08:30:00+08:00',
+/** 通过合同代码而非数组位置读取原值，缺失不能补零。 */
+export function measurementReading(record: Rsp.Measurements.MeasurementRecord | null, code: string): number | null {
+  const value = record?.readings.find((reading) => reading.code === code)?.value
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-/** 将四态认证映射为唯一健康展示策略。 */
-export function selectHealthPresentation(authState: AuthState): HealthPresentation {
-  return authState.status === 'authenticated'
-    ? AUTHENTICATED_PRESENTATION
-    : EMPTY_PRESENTATION
-}
-
-/** 格式化本地固定记录与当前时间的真实间隔分类。 */
-export function getMeasurementRecency(
-  measuredAt: string | null,
-  nowMillis: number,
-): MeasurementRecency {
-  if (measuredAt == null) return { kind: 'none' }
-
-  const measuredAtMillis = Date.parse(measuredAt)
-  if (!Number.isFinite(measuredAtMillis)) return { kind: 'unknown' }
-
-  const elapsedMillis = nowMillis - measuredAtMillis
-  if (elapsedMillis < 0) return { kind: 'future' }
-  if (elapsedMillis < 60_000) return { kind: 'recent' }
-  if (elapsedMillis < 3_600_000) {
-    return { kind: 'elapsed', value: Math.floor(elapsedMillis / 60_000), unit: 'minute' }
+/** 认证尚未确认时即使调用方仍持有旧响应，也不暴露健康内容。 */
+export function selectHealthPresentation(authState: AuthState, latest?: Rsp.Measurements.LatestMeasurements): HealthPresentation {
+  const records = authState.status === 'authenticated' && latest ? latest : EMPTY_RECORDS
+  return {
+    records,
+    systolic: measurementReading(records.bloodPressure, 'sbp'),
+    diastolic: measurementReading(records.bloodPressure, 'dbp'),
+    heartRate: measurementReading(records.heartRate, 'hr'),
+    respirationRate: measurementReading(records.respirationRate, 'br'),
+    oxygenSaturation: measurementReading(records.oxygenSaturation, 'spo2'),
+    diabetesRisk: records.diabetesRisk?.riskLevel ?? null,
   }
-  if (elapsedMillis < 86_400_000) {
-    return { kind: 'elapsed', value: Math.floor(elapsedMillis / 3_600_000), unit: 'hour' }
-  }
-  return { kind: 'elapsed', value: Math.floor(elapsedMillis / 86_400_000), unit: 'day' }
 }
 
-/** 描述测量间隔的可本地化语义，不包含任何固定语言文案。 */
-export type MeasurementRecency =
-  | { kind: 'none' }
-  | { kind: 'unknown' }
-  | { kind: 'future' }
-  | { kind: 'recent' }
-  | { kind: 'elapsed'; value: number; unit: 'minute' | 'hour' | 'day' }

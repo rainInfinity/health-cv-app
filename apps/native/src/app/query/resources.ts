@@ -1,9 +1,9 @@
 /** 通过认证会话门控本人账号、资料、模型和任务服务端查询。 */
 
-import type { QueryClient, QueryObserverOptions } from '@tanstack/react-query';
+import { focusManager, onlineManager, type QueryClient, type QueryObserverOptions } from '@tanstack/react-query';
 import type { CloudClient, Req, Rsp } from '@health-cv-app/cloud-client';
 
-import type { AuthSessionManager } from '../auth/session';
+import { AuthSessionError, type AuthSessionManager } from '../auth/session';
 import type { AuthScope } from '../auth/scope';
 import { createServerQueryKeys } from './keys';
 
@@ -17,6 +17,10 @@ export interface ProtectedQueryOptions<TData> {
   staleTime?: NonNullable<QueryObserverOptions<TData>['staleTime']>;
   /** 通过认证保护入口执行一次资源请求。 */
   queryFn: (context: { signal: AbortSignal }) => Promise<TData>;
+  /** 区间错误后只允许用户显式重取，避免集合持续变化导致自动循环。 */
+  refetchOnWindowFocus?: QueryObserverOptions<TData>['refetchOnWindowFocus'];
+  refetchOnReconnect?: QueryObserverOptions<TData>['refetchOnReconnect'];
+  refetchOnMount?: QueryObserverOptions<TData>['refetchOnMount'];
 }
 
 /** 描述资料 PATCH 的 Query Mutation 变量。 */
@@ -39,6 +43,25 @@ export interface ProfileMutationOptions {
   onSuccess: (profile: Rsp.Users.MyProfile) => void;
 }
 
+/** 一个完整筛选区间的唯一缓存；未完成数据不能用于最终趋势或统计。 */
+export interface MeasurementHistoryData {
+  items: Rsp.Measurements.MeasurementRecord[];
+  total: number;
+  complete: boolean;
+  error: unknown | null;
+}
+
+/** 历史页的筛选身份不包含分页；分页属于同一整段读取。 */
+export type MeasurementHistoryParams = Pick<Req.Measurements.MeasurementListParams, 'metric' | 'from' | 'to'>;
+
+/** 表示 offset 分页期间已发现集合变化，而不是已取得完整快照。 */
+class MeasurementCollectionChangedError extends Error {
+  constructor() {
+    super('健康记录已变化，请刷新后重试');
+    this.name = 'MeasurementCollectionChangedError';
+  }
+}
+
 /** 公开本人账号、资料、模型和任务的认证门控查询配置。 */
 export interface AppQueries {
   /** 本人账号身份查询。 */
@@ -51,6 +74,12 @@ export interface AppQueries {
   tasks(query?: Req.Tasks.TaskListParams): ProtectedQueryOptions<Rsp.Tasks.TaskPage>;
   /** 单个任务详情查询。 */
   task(taskId: number): ProtectedQueryOptions<Rsp.Tasks.TaskDetail>;
+  /** 读取五项最新有效结果；刷新失败由查询状态保留旧值与错误。 */
+  latestMeasurements(): ProtectedQueryOptions<Rsp.Measurements.LatestMeasurements>;
+  /** 连续取得完整区间；显式重新读取始终从 offset=0 开始。 */
+  measurementHistory(query: MeasurementHistoryParams): ProtectedQueryOptions<MeasurementHistoryData>;
+  /** 已知新有效任务后丢弃旧区间，读取服务端权威结果而不追加本地读数。 */
+  invalidateMeasurements(generation?: number): Promise<void>;
   /** 更新本人资料并写回完整服务端响应。 */
   updateProfile(): ProfileMutationOptions;
 }
@@ -124,6 +153,99 @@ export function createAppQueries(
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           auth.runProtected((options) => client.tasks.getById(taskId, options), { signal }, generation),
       };
+    },
+    latestMeasurements() {
+      const generation = auth.getSessionGeneration();
+      const keys = createServerQueryKeys(scope, generation);
+      return {
+        queryKey: keys.latestMeasurements,
+        enabled: auth.isAuthenticatedAt(generation),
+        staleTime: 30_000,
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          auth.runProtected((options) => client.measurements.latest(options), { signal }, generation),
+      };
+    },
+    measurementHistory(query: MeasurementHistoryParams) {
+      const generation = auth.getSessionGeneration();
+      // 复制请求筛选，避免调用方修改对象后出现 key 与实际请求不一致。
+      const filter = { metric: query.metric, from: query.from, to: query.to };
+      const queryKey = createServerQueryKeys(scope, generation).measurementHistory(filter.metric, filter.from, filter.to);
+      const canAutoRefetch: NonNullable<QueryObserverOptions<MeasurementHistoryData>['refetchOnWindowFocus']> =
+        (cached) => !cached.state.data?.error;
+      return {
+        queryKey,
+        enabled: auth.isAuthenticatedAt(generation),
+        staleTime: 30_000,
+        refetchOnWindowFocus: canAutoRefetch,
+        refetchOnReconnect: canAutoRefetch,
+        refetchOnMount: canAutoRefetch,
+        async queryFn({ signal }: { signal: AbortSignal }): Promise<MeasurementHistoryData> {
+          const previous = queryClient.getQueryData<MeasurementHistoryData>(queryKey);
+          const assertCurrent = () => {
+            if (!auth.isAuthenticatedAt(generation)) throw new AuthSessionError('session-changed');
+            if (signal.aborted) throw new AuthSessionError('operation-cancelled');
+          };
+          // 只允许发现集合变化后整段自动重读一次；通信失败从不自动重试。
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const items: Rsp.Measurements.MeasurementRecord[] = [];
+            const ids = new Set<string>();
+            let total = 0;
+            let offset = 0;
+            try {
+              assertCurrent();
+              while (true) {
+                const page = await auth.runProtected(
+                  (options) => client.measurements.list({ ...filter, offset, limit: 100 }, options),
+                  { signal },
+                  generation,
+                );
+                assertCurrent();
+                if (offset > 0 && page.total !== total) throw new MeasurementCollectionChangedError();
+                if (!Number.isInteger(page.total) || page.total < 0 ||
+                    page.offset !== offset || !Number.isInteger(page.limit) || page.limit < 1 || page.limit > 100 ||
+                    page.items.length > page.limit || offset + page.items.length > page.total) {
+                  throw new Error('健康记录分页响应无效，请重新查询');
+                }
+                total = page.total;
+                for (const record of page.items) {
+                  if (ids.has(record.recordId)) throw new MeasurementCollectionChangedError();
+                  ids.add(record.recordId);
+                  items.push(record);
+                }
+                if (items.length === total) return { items, total, complete: true, error: null };
+                if (page.items.length !== page.limit) throw new Error('健康记录区间尚未完整，请重新查询');
+                offset = page.offset + page.limit;
+              }
+            } catch (error) {
+              assertCurrent();
+              if (error instanceof MeasurementCollectionChangedError) {
+                const incomplete = previous?.complete ? { ...previous, error } : { items: [], total: 0, complete: false, error };
+                const active = queryClient.getQueryCache().find({ queryKey, exact: true })?.isActive();
+                if (attempt === 0 && active && focusManager.isFocused() && onlineManager.isOnline()) continue;
+                return incomplete;
+              }
+              // 旧完整结果仍属于同一区间和代次，可以明确标记未刷新，而不是变成空记录。
+              return previous?.complete
+                ? { ...previous, error }
+                : { items: [], total, complete: false, error };
+            }
+          }
+          // 循环的第二轮必定返回或抛出；不会以占位数据伪装完整区间。
+          throw new MeasurementCollectionChangedError();
+        },
+      };
+    },
+    async invalidateMeasurements(generation = auth.getSessionGeneration()) {
+      if (!auth.isAuthenticatedAt(generation)) return;
+      const keys = createServerQueryKeys(scope, generation);
+      const root = [...keys.root, 'measurements'] as const;
+      await queryClient.cancelQueries({ queryKey: root });
+      if (!auth.isAuthenticatedAt(generation)) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.latestMeasurements, exact: true, refetchType: 'all' }),
+        // 取消旧轮后整段重读；刷新期间仍保留同区间上次完整展示。
+        queryClient.invalidateQueries({ queryKey: [...root, 'history'] }),
+      ]);
     },
     /** 局部 PATCH 成功后用服务端完整资料替换当前会话缓存。 */
     updateProfile() {

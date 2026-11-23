@@ -1,4 +1,4 @@
-/** 血压双阶段真实采集页面：不挂载波形或健康读数，正式开窗仅由原生准入。 */
+/** 血压双阶段采集及同轮云端结果，正式开窗仅由原生准入。 */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AccessibilityInfo, Animated, ScrollView, View, useWindowDimensions } from 'react-native'
@@ -20,6 +20,9 @@ import { FingertipPreview } from '@/pages/measurement/ContactMeasurement/Fingert
 import { ChestInstructionArtwork } from './ChestInstructionArtwork'
 import { ChestPlacementGuide } from './ChestPlacementGuide'
 import { FingertipPlacementGuide } from '@/pages/measurement/ContactMeasurement/FingertipPlacementGuide'
+import { MeasurementResultSheet, MeasurementResultEntry } from '@/pages/measurement/MeasurementResultSheet'
+import { BloodPressureResultSummary, bloodPressureResultsMessages } from '@/pages/measurement/BloodPressureResults'
+import { MeasurementFailure } from '@/pages/measurement/MeasurementFailure'
 
 import { useBloodPressureMeasurement } from './useBloodPressureMeasurement'
 import { fingertipMessages } from '../FingertipMeasurement/fingertipMessages'
@@ -35,6 +38,7 @@ import {
 export function BloodPressureMeasurementScreen() {
   const commonMessages = useStore(fingertipMessages)
   const pressureMessages = useStore(bloodPressureMessages)
+  const resultMessages = useStore(bloodPressureResultsMessages)
   const messages = useMemo(() => ({ ...commonMessages, ...pressureMessages }), [commonMessages, pressureMessages])
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'BloodPressureMeasurement'>>()
   const theme = useTheme()
@@ -50,10 +54,11 @@ export function BloodPressureMeasurementScreen() {
   const diameter = Math.min(332, width - 40, originalDiameter + (compact ? 32 : 36))
   const measurement = useBloodPressureMeasurement()
   const { snapshot, visible } = measurement
-  const { showModal } = useFeedback()
+  const { showModal, showToast, dismissToast } = useFeedback()
   const [page, setPage] = useState(0)
   const [pageWidth, setPageWidth] = useState(Math.max(1, width - panelPadding * 2))
   const [viewfinderHeight, setViewfinderHeight] = useState(viewfinderSlotHeight)
+  const [panelTop, setPanelTop] = useState(48 + viewfinderSlotHeight)
   const [sessionHeight, setSessionHeight] = useState(64 * fontScale)
   const [captionHeights, setCaptionHeights] = useState({ back: 50 * fontScale, front: 50 * fontScale })
   const captionHeight = Math.max(captionHeights.back, captionHeights.front)
@@ -125,6 +130,7 @@ export function BloodPressureMeasurementScreen() {
     pager.current?.scrollTo({ x: 0, animated: false })
   }, [measurement.previewKey])
 
+
   useEffect(() => {
     const phase = snapshot?.phase
     if (phase === 'awaiting_chest' || phase === 'starting' || phase === 'capturing') selectPage.current(1)
@@ -137,6 +143,7 @@ export function BloodPressureMeasurementScreen() {
     if (error == null && !measurement.closeFailed) return
     const code = error?.toUpperCase() ?? ''
     const message = measurement.closeFailed ? messages.errorClose
+      : code === 'CLOUD_ACCESS_REQUIRED' ? '账号、上传用途或当前渠道的统一检测场景尚未就绪，未启动设备。请返回入口后再次明确开始。'
       : code.includes('PERMISSION') ? messages.errorPermission
         : code.includes('TORCH') ? messages.errorTorch
           : code.includes('BACK_CAMERA') ? messages.errorBackCamera
@@ -173,11 +180,18 @@ export function BloodPressureMeasurementScreen() {
   const phase = snapshot?.phase ?? 'preparing'
   const running = phase === 'capturing'
   const presentation = measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : snapshot?.presentation ?? 'ready'
-  const active = measurement.busy || phase === 'observing_finger' || phase === 'awaiting_chest' || phase === 'starting' || running || phase === 'stopping' || (phase === 'completed' && !snapshot?.resourcesReleased)
-  const statusColor = presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
+  const waitingForResults = measurement.result.phase === 'waiting'
+  const resultFailure = measurement.result.failure
+  useEffect(() => {
+    if (!waitingForResults || !visible || measurement.leaving || error != null) return
+    const toastId = showToast({ tone: 'loading', message: resultMessages.waitingToast, showLabel: false, blocking: false })
+    return () => dismissToast(toastId)
+  }, [waitingForResults, visible, measurement.leaving, measurement.result.captureId, resultMessages.waitingToast, error, showToast, dismissToast])
+  const active = waitingForResults || measurement.busy || phase === 'observing_finger' || phase === 'awaiting_chest' || phase === 'starting' || running || phase === 'stopping' || (phase === 'completed' && !snapshot?.resourcesReleased)
+  const statusColor = resultFailure ? theme.colors.feedback.error : presentation === 'ready' ? theme.colors.text.muted : theme.colors.brand.action
   const waitingChest = measurement.localError == null && !measurement.leaving && (phase === 'awaiting_chest' || phase === 'starting')
-  const status = waitingChest ? messages.awaitingChest : messages[presentation]
-  const statusHint = waitingChest ? messages.statusAwaitingChest : presentation === 'ready' ? messages.statusReady
+  const status = resultFailure ? resultMessages[`${resultFailure}FailedTitle`] : waitingForResults ? resultMessages.waitingTitle : waitingChest ? messages.awaitingChest : messages[presentation]
+  const statusHint = resultFailure ? resultMessages[`${resultFailure}FailedHint`] : waitingForResults ? resultMessages.waitingHint : waitingChest ? messages.statusAwaitingChest : presentation === 'ready' ? messages.statusReady
     : presentation === 'partial' ? messages.statusPartial
       : presentation === 'covered' ? messages.statusCovered
         : presentation === 'running' ? messages.statusRunning
@@ -187,6 +201,12 @@ export function BloodPressureMeasurementScreen() {
   const minimumPageHeight = Math.max(compact ? 118 : 140, captionHeight + 72)
   const pageHeight = Math.max(minimumPageHeight, availableHeight - 48 - viewfinderHeight - panelPadding * 2 - sessionHeight - (compact ? 8 : 20) - 52)
   const artHeight = Math.max(64, Math.min(156, Math.max(96, height * 0.16), pageHeight - captionHeight - 8))
+
+  /** 本轮详情额外携带captureId，历史报告只需要taskId。 */
+  function showDetails() {
+    const params = measurement.enterDetails()
+    if (params != null) navigation.navigate('BloodPressureResults', params)
+  }
 
   return (
     <Screen style={{ paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
@@ -201,7 +221,7 @@ export function BloodPressureMeasurementScreen() {
           <Rect width={width} height={height} fill={`url(#${id}-background)`} />
         </Svg>
       </View>
-      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={[localStyles.scrollContent, { minHeight: availableHeight }]}>
+      <ScrollView pointerEvents={measurement.result.expanded ? 'none' : 'auto'} accessibilityElementsHidden={measurement.result.expanded} importantForAccessibility={measurement.result.expanded ? 'no-hide-descendants' : 'auto'} nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={[localStyles.scrollContent, { minHeight: availableHeight }]}>
         <Toolbar>
           <HeaderAction
             accessibilityRole="button"
@@ -225,7 +245,7 @@ export function BloodPressureMeasurementScreen() {
             display={measurement.display}
             highlightNotice
             noticeRequiresAction={waitingChest}
-            notice={measurement.localError != null || measurement.leaving ? undefined : waitingChest ? messages.hintAwaitingChest : running ? messages.hintRunning : undefined}
+            notice={measurement.localError != null || measurement.leaving ? undefined : presentation === 'completed' ? resultMessages.completedHint : waitingChest ? messages.hintAwaitingChest : running ? messages.hintRunning : undefined}
             overridePresentation={measurement.localError != null ? 'failed' : measurement.leaving ? 'stopping' : null}
             previewMounted={measurement.previewMounted}
             onPreviewLayout={measurement.onPreviewLayout}
@@ -234,12 +254,15 @@ export function BloodPressureMeasurementScreen() {
             reducedMotion={reducedMotion}
           />
         </Viewfinder>
-        <DataPanel $compact={compact} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
+        <DataPanel $compact={compact} onLayout={(event) => setPanelTop(event.nativeEvent.layout.y)} style={{ marginLeft: -insets.left, marginRight: -insets.right, paddingLeft: panelPadding + insets.left, paddingRight: panelPadding + insets.right, paddingBottom: panelPadding + insets.bottom }}>
+          {measurement.result.phase !== 'idle' && !measurement.leaving && error == null && (
+            <MeasurementResultEntry waiting={waitingForResults} waitingLabel={resultMessages.waitingTitle} availableLabel={resultMessages.viewResults} onPress={measurement.openResults} />
+          )}
           <Session onLayout={(event) => setSessionHeight(event.nativeEvent.layout.height)}>
             <StatusGroup>
               <StatusBadge $started={snapshot != null} accessible accessibilityRole="text" accessibilityLabel={status} accessibilityLiveRegion="polite">
                 {visible && active && presentation !== 'failed'
-                  ? <LoadingIndicator size={14} color={statusColor} />
+                  ? <LoadingIndicator size={14} />
                   : <Svg width="14" height="14" viewBox="0 0 14 14" accessible={false}>
                       <Circle cx="7" cy="7" r="6" fill="none" stroke={statusColor} strokeWidth="2" />
                     </Svg>}
@@ -286,7 +309,7 @@ export function BloodPressureMeasurementScreen() {
                 ))}
               </Instructions>
               <ChestInstructionArtwork
-                active={visible && page === 1 && !measurement.leaving && !measurement.chestGuideVisible}
+                active={visible && page === 1 && !measurement.leaving && !measurement.chestGuideVisible && !measurement.result.expanded}
                 visible={page === 1}
                 reducedMotion={reducedMotion}
                 height={artHeight}
@@ -317,6 +340,18 @@ export function BloodPressureMeasurementScreen() {
         storageError={measurement.chestGuideStorageError}
         reducedMotion={reducedMotion}
       />
+      <MeasurementResultSheet
+        key={measurement.result.captureId ?? measurement.previewKey}
+        expanded={measurement.result.expanded && error == null && !measurement.leaving}
+        active={visible}
+        panelTop={panelTop}
+        reducedMotion={reducedMotion}
+        onClose={measurement.closeResults}
+        collapseLabel={resultMessages.collapse}
+      >
+        {resultFailure ? <MeasurementFailure kind={resultFailure} messages={resultMessages} onRetry={resultFailure === 'query' ? () => { void measurement.requeryResults() } : measurement.retry} />
+          : measurement.result.report && <BloodPressureResultSummary report={measurement.result.report} onDetails={showDetails} onRetest={measurement.retry} />}
+      </MeasurementResultSheet>
     </Screen>
   )
 }

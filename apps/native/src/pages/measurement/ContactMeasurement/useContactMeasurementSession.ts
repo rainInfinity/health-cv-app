@@ -8,9 +8,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { createAcquisitionLeaveGuard } from '@/app/navigation/acquisitionLeaveGuard'
 import { registerAcquisitionLeaveRequest } from '@/app/navigation/acquisitionNavigationGuard'
 import type { RootStackParamList } from '@/app/navigation/types'
+import { appServices } from '@/app/bootstrap'
+import { useMeasurementAccess } from '@/app/measurement/useMeasurementAccess'
+import type { ContactMethod } from '@/app/measurement/cloudPlan'
 import type { FingertipCaptureController } from '../FingertipMeasurement/fingertipCapture'
 
-/** 指尖可显式保留已释放资源的同轮详情展示；其他方式不提供此能力。 */
+/** 接触式检测可显式保留已释放资源的同轮详情展示，未接入时沿用离页清理。 */
 interface ContactPresentationLifecycle {
   /** 真正离开、失败或重测时同步撤销展示资格和迟到回调。 */
   cancel(): void
@@ -25,6 +28,7 @@ interface ContactPresentationLifecycle {
 }
 
 interface ContactSessionOptions {
+  method: ContactMethod
   /** 只管理展示投影，不持有设备。 */
   display: { reset(): void; cancelPendingHints(): void; dispose(): void }
   /** 方式专属提醒，仅由原生观测事实触发。 */
@@ -36,7 +40,7 @@ interface ContactSessionOptions {
   disposeRound?(): void
   /** 立即撤销方式专属副作用，不等待相机关闭屏障；未提供时不创建额外能力。 */
   cancelRound?(): void
-  /** 仅指尖结果显式启用同轮详情保留；未提供时沿用既有离页清理。 */
+  /** 方式专属结果显式启用同轮详情保留；未提供时沿用既有离页清理。 */
   presentationLifecycle?: ContactPresentationLifecycle
 }
 
@@ -46,7 +50,8 @@ function getErrorCode(error: unknown): string {
 }
 
 /** 一个明确导航入口自动准备；后台与重新聚焦都不能自动创建第二轮。 */
-export function useContactMeasurementSession({ display, placementReminder, createController, resetRound, disposeRound, cancelRound, presentationLifecycle }: ContactSessionOptions) {
+export function useContactMeasurementSession({ method, display, placementReminder, createController, resetRound, disposeRound, cancelRound, presentationLifecycle }: ContactSessionOptions) {
+  const checkAccess = useMeasurementAccess()
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>()
   const [previewMounted, setPreviewMounted] = useState(false)
   const [previewKey, setPreviewKey] = useState(0)
@@ -61,6 +66,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
   const started = useRef(false)
   const retainedPresentation = useRef(false)
   const generation = useRef(0)
+  const identityGeneration = useRef<number | null>(null)
   const controller = useRef<FingertipCaptureController | null>(null)
   const preparing = useRef(false)
   const closeBarrier = useRef<Promise<void> | null>(null)
@@ -149,6 +155,13 @@ export function useContactMeasurementSession({ display, placementReminder, creat
         throw error
       }
       if (!mounted.current || !focused.current || leaveRequested.current) return
+      if (!await checkAccess(method)) {
+        if (mounted.current && focused.current && !leaveRequested.current) setLocalError('CLOUD_ACCESS_REQUIRED')
+        return
+      }
+      if (!mounted.current || !focused.current || leaveRequested.current) return
+      const authGeneration = appServices?.auth.getSessionGeneration()
+      identityGeneration.current = authGeneration ?? null
       controller.current?.dispose()
       resetRound?.()
       display.reset()
@@ -156,6 +169,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       const currentGeneration = ++generation.current
       setPreviewKey(currentGeneration)
       const valid = () => mounted.current && focused.current && !leaveRequested.current && generation.current === currentGeneration
+        && authGeneration != null && appServices?.auth.isAuthenticatedAt(authGeneration) === true
       const next = createController({
         isCurrent: valid,
         isForeground: () => valid() && AppState.currentState === 'active',
@@ -183,7 +197,7 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       preparing.current = false
       if (mounted.current) setBusy(false)
     }
-  }, [cancelRound, closeCurrent, createController, display, placementReminder, presentationLifecycle, resetRound])
+  }, [cancelRound, checkAccess, closeCurrent, createController, display, method, placementReminder, presentationLifecycle, resetRound])
 
   useFocusEffect(useCallback(() => {
     focused.current = true
@@ -219,6 +233,19 @@ export function useContactMeasurementSession({ display, placementReminder, creat
       void closeCurrent().catch(() => undefined)
     }
   }, [cancelRound, closeCurrent, display, disposeRound, navigation, placementReminder, presentationLifecycle, requestLeave, start]))
+
+  useEffect(() => {
+    const auth = appServices?.auth
+    if (!auth) return
+    return auth.state.subscribe(() => {
+      if (identityGeneration.current == null || auth.isAuthenticatedAt(identityGeneration.current)) return
+      presentationLifecycle?.cancel()
+      cancelRound?.()
+      display.reset()
+      void closeCurrent().catch(() => undefined)
+      if (mounted.current) setLocalError('CLOUD_ACCESS_REQUIRED')
+    })
+  }, [cancelRound, closeCurrent, display, presentationLifecycle])
 
   useEffect(() => {
     mounted.current = true

@@ -12,6 +12,7 @@ import { useTheme } from 'styled-components/native'
 import type { MeasurementMethod, RootStackParamList } from '@/app/navigation/types'
 import { resolveMeasurementEntry, TARGET_MESSAGE_KEYS } from '@/app/measurement/entry'
 import { measurementGuideSkipped } from '@/app/preferences'
+import { useMeasurementAccess } from '@/app/measurement/useMeasurementAccess'
 import { ActionButton } from '@/shared/components/ActionButton'
 import { AppText } from '@/shared/components/AppText'
 import { FeedbackDialog } from '@/shared/components/FeedbackDialog'
@@ -48,6 +49,7 @@ export function MeasurementGuideScreen({ navigation, route }: NativeStackScreenP
   const { width, height } = useWindowDimensions()
   const { method, target } = route.params
   const preference = measurementGuideSkipped[method]
+  const checkAccess = useMeasurementAccess()
   const skipped = useStore(preference)
   const configuration = GUIDE_CONFIGURATION[method]
   const { dialog, opacity, showDialog, closeDialog } = useGuideDialog()
@@ -84,14 +86,15 @@ export function MeasurementGuideScreen({ navigation, route }: NativeStackScreenP
   }, [cancelDialog, dialog]))
 
   /** 跳过时移除准备层级，其他指尖式流程保留准备页供返回。 */
-  const startMeasurement = useCallback(() => {
+  const startMeasurement = useCallback(async () => {
+    if (!await checkAccess(method)) return
     const destination = resolveMeasurementEntry({ method, target }, true)
     if (method === 'face' || skipped) {
       navigation.replace(...destination)
     } else {
       navigation.navigate(...destination)
     }
-  }, [method, navigation, skipped, target])
+  }, [checkAccess, method, navigation, skipped, target])
 
   /** 已勾选时当次也不提醒；其他情况先在引导页内完成声音确认。 */
   const prompt = useCallback(() => {

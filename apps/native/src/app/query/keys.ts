@@ -15,6 +15,9 @@ export function createServerQueryKeys(scope: AuthScope, generation: number) {
     tasks: (offset?: number, limit?: number) =>
       [...root, 'tasks', offset ?? null, limit ?? null] as const,
     task: (taskId: number) => [...root, 'task', taskId] as const,
+    latestMeasurements: [...root, 'measurements', 'latest'] as const,
+    measurementHistory: (metric: string, from: string, to: string) =>
+      [...root, 'measurements', 'history', metric, from, to] as const,
     updateProfile: [...root, 'mutation', 'profile'] as const,
   };
 }

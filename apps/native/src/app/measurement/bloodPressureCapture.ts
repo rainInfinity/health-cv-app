@@ -17,8 +17,12 @@ interface BloodPressureCaptureOptions {
   durationMillis: number
   /** 当前页面有效且应用处于前台。 */
   isForeground(): boolean
+  /** 同一认证代次与导航入口仍有效。 */
+  isCurrent?(): boolean
   /** 请求挂载真实预览宿主。 */
   mountPreview(): void
+  /** 仅在本次明确启动返回真实轮次后通知，不从任意快照建立轮次。 */
+  onCapture?(captureId: string): void
   /** 仅派发同轮事实。 */
   onSnapshot(snapshot: BloodPressureSnapshot): void
   /** 准备期间真正后台中断，权限弹窗短暂失活除外。 */
@@ -51,7 +55,7 @@ export function createBloodPressureCaptureController(options: BloodPressureCaptu
   let closing: Promise<void> | null = null
   let wake: (() => void) | null = null
   let detach: (() => void) | null = null
-  const current = () => !cancelled && !disposed
+  const current = () => !cancelled && !disposed && (options.isCurrent?.() ?? true)
   const wait = () => new Promise<void>((resolve) => { wake = resolve })
   const releaseWait = () => { const resolve = wake; wake = null; resolve?.() }
 
@@ -91,6 +95,7 @@ export function createBloodPressureCaptureController(options: BloodPressureCaptu
         try {
           captureId = await command(() => options.client.startBloodPressureCapture({ durationMillis: options.durationMillis }))
           if (disposed) return
+          options.onCapture?.(captureId)
           update(options.client.getBloodPressureSnapshot())
         } catch (error) {
           detach?.()

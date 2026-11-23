@@ -166,7 +166,7 @@ export function FaceMeasurementScreen() {
             </View>
             <View style={{ width: expandedText ? undefined : width < 360 ? 78 : 92, alignItems: 'center', flexShrink: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: width < 360 ? 6 : 10, borderRadius: theme.radius.pill, backgroundColor: running ? theme.colors.brand.subtle : theme.colors.surface.subtle }}>
-                {running ? <LoadingIndicator size={14} color={statusColor} /> : <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: statusColor }} accessible={false} />}
+                {running ? <LoadingIndicator size={14} /> : <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: statusColor }} accessible={false} />}
                 <AppText accessibilityLiveRegion="polite" style={[labelStyle, { color: statusColor, flexShrink: 1 }]}>{status}</AppText>
               </View>
               <AppText tone="muted" style={[mutedStyle, { textAlign: 'center', marginTop: 8 }]}>{statusHint}</AppText>

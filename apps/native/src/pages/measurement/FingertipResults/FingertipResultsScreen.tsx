@@ -1,9 +1,10 @@
-/** 本轮指尖结果详情只消费固定展示样例，入口资格由检测页掌握。 */
-
+/** 指尖报告按关联任务鉴权读取，不依赖仍存活的原生采集轮次。 */
 import { useId } from 'react'
 import { useStore } from '@nanostores/react'
-import { useNavigation } from '@react-navigation/native'
-import { useWindowDimensions } from 'react-native'
+import { useNavigation, useRoute } from '@react-navigation/native'
+import type { RouteProp } from '@react-navigation/native'
+import type { RootStackParamList } from '@/app/navigation/types'
+import { useWindowDimensions, View } from 'react-native'
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
 import { useTheme } from 'styled-components/native'
 import { PageContainer } from '@/shared/components/PageContainer'
@@ -12,13 +13,21 @@ import { XinmuLogo } from '@/shared/graphics'
 import { fingertipResultsMessages } from './fingertipResultsMessages'
 import { FingertipResultDashboard } from './FingertipResultDashboard'
 import { FingertipResultInterpretations } from './FingertipResultInterpretations'
-import { ProcessedPulseWave } from './ProcessedPulseWave'
+import { ReportWaveform } from '@/pages/measurement/ReportWaveform'
+import { useMeasurementReport } from './useMeasurementReport'
 import { Disclaimer, Header, HeaderButton, HeaderTitle, LogoSlot, OverviewHeading, QualityNote, ReportBackground, Screen } from './styles'
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
+import { MeasurementFailure } from '@/pages/measurement/MeasurementFailure'
+import { LoadingIndicator } from '@/shared/components/LoadingIndicator'
 
 /** 使用现有根栈返回，不建立独立导航容器，也不重新准备采集轮次。 */
 export function FingertipResultsScreen() {
   const messages = useStore(fingertipResultsMessages)
-  const navigation = useNavigation()
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'FingertipResults'>>()
+  const route = useRoute<RouteProp<RootStackParamList, 'FingertipResults'>>()
+  const { task, report, error, refresh } = useMeasurementReport(route.params.taskId)
+  const failed = report?.state === 'all_failed' || report?.state === 'task_failed'
+  const ready = !error && report?.hasValidMembers === true
   const theme = useTheme()
   const { width, height } = useWindowDimensions()
   const gradientId = `result-background-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
@@ -32,6 +41,11 @@ export function FingertipResultsScreen() {
         <HeaderTitle accessibilityRole="header">{messages.title}</HeaderTitle>
         <LogoSlot accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><XinmuLogo size={28} /></LogoSlot>
       </Header>
+      {!ready ? <View style={{ flex: 1, justifyContent: 'center' }}>
+        {error ? <MeasurementFailure kind="query" messages={messages} onRetry={refresh} />
+          : failed ? <MeasurementFailure kind="detection" messages={messages} onRetry={() => route.params.captureId ? navigation.goBack() : navigation.navigate('MeasurementGuide', { method: 'fingertip' })} />
+            : <View style={{ alignItems: 'center' }}><LoadingIndicator size={36} /></View>}
+      </View> :
       <PageContainer edges={['bottom']} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingHorizontal: 20, paddingBottom: 24, gap: 0 }}>
         <ReportBackground width={width} height={height} pointerEvents="none" accessible={false}>
           <Defs>
@@ -43,13 +57,13 @@ export function FingertipResultsScreen() {
           </Defs>
           <Rect width={width} height={height} fill={`url(#${gradientId})`} />
         </ReportBackground>
-        <OverviewHeading><AppText variant="section" accessibilityRole="header">{messages.overview}</AppText><AppText variant="caption" tone="muted">{messages.measurementTime}</AppText></OverviewHeading>
+        <OverviewHeading><AppText variant="section" accessibilityRole="header">{messages.overview}</AppText><AppText variant="caption" tone="muted">{report?.measurementTime ?? '--'}</AppText></OverviewHeading>
         <Disclaimer variant="caption" tone="muted">{messages.disclaimer}</Disclaimer>
-        <FingertipResultDashboard variant="details" />
+        <FingertipResultDashboard report={report} detailed />
         <QualityNote variant="caption" tone="muted">{messages.qualityNote}</QualityNote>
-        <ProcessedPulseWave />
-        <FingertipResultInterpretations />
-      </PageContainer>
+        {task && report?.hasValidMembers && <ReportWaveform task={task} kind="ppg" title={messages.pulseWave} labels={messages} />}
+        <FingertipResultInterpretations report={report} />
+      </PageContainer>}
     </Screen>
   )
 }

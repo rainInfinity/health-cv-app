@@ -2,7 +2,7 @@
 
 import type { NavigatorScreenParams } from '@react-navigation/native'
 
-/** 可从产品首页查看的只读健康指标详情。 */
+/** 产品健康指标及检测目标。 */
 export type HealthMetric =
   | 'bloodPressure'
   | 'heartRate'
@@ -47,10 +47,10 @@ export type DevStackParamList = {
 export type ProductTabParamList = {
   /** 健康摘要。 */
   Home: undefined
-  /** 五项健康功能说明。 */
+  /** 三种部位检测和真实被动服务入口。 */
   Features: undefined
-  /** 仅作为拦截入口的历史 Tab。 */
-  History: undefined
+  /** 页面保留筛选，外部指标选择消费后清除。 */
+  History: { metric?: Exclude<HealthMetric, 'faceHeartRate'>; day?: string; requestId?: string } | undefined
   /** 用户中心。 */
   User: undefined
   /** 可独立返回的原生开发验证栈。 */
@@ -65,18 +65,18 @@ export type RootStackParamList = {
   Onboarding: undefined
   /** 底部产品 Tab 容器。 */
   ProductTabs: NavigatorScreenParams<ProductTabParamList> | undefined
-  /** 健康指标只读详情。 */
-  MetricDetail: { metric: HealthMetric }
   /** 产品检测准备；按方式复用动作及设备级偏好。 */
   MeasurementGuide: MeasurementRouteParams
   /** 显式开始后才打开真实前摄的面部心率页。 */
   FaceMeasurement: { target?: MeasurementTarget } | undefined
   /** 明确入口后准备真实后摄的指尖检测页。 */
   FingertipMeasurement: { target?: MeasurementTarget } | undefined
-  /** 已释放资源的指尖本轮详情；只传轮次身份，不携带采样。 */
-  FingertipResults: { captureId: string }
+  /** 鉴权读取任务报告；本轮往返可额外携带采集身份。 */
+  FingertipResults: { taskId: number; captureId?: string }
   /** 覆盖及 IMU 联合准入驱动的血压本地采集页。 */
   BloodPressureMeasurement: { target?: MeasurementTarget } | undefined
+  /** 历史报告不依赖原生轮次仍存活。 */
+  BloodPressureResults: { taskId: number; captureId?: string }
   /** 真实登录表单；可仅回填用户名。 */
   Login: { username?: string } | undefined
   /** 真实注册表单；可仅回填用户名。 */

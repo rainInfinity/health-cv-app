@@ -1,4 +1,4 @@
-/** 管理被动 RPPG 页面文案、阶段、结果质量和稳定错误映射。 */
+/** 管理被动 RPPG 开发页的阶段、结果质量和事件文案映射。 */
 
 import type {
   PassiveCaptureState,
@@ -6,7 +6,6 @@ import type {
   RPPGTerminationReason,
 } from '@health-cv-app/acquisition'
 import type zhCNTranslations from '@/app/i18n/locales/zh-CN.json'
-import { defineFeatureMessages } from '@/app/i18n'
 
 type PassiveCaptureMessageValues = Omit<
   typeof zhCNTranslations['acquisition/passive'],
@@ -65,9 +64,6 @@ const signalStatusMessageKeys: Record<RPPGSignalStatus, PassiveCaptureStringMess
   no_waveform: 'signalNoWaveform',
 }
 
-/** 被动 RPPG 验证页面的功能文案。 */
-export const passiveCaptureMessages = defineFeatureMessages('acquisition/passive')
-
 /** 将原生运行阶段映射为当前语言的状态文案。 */
 export function localizePassiveCaptureState(
   state: PassiveCaptureState,
@@ -99,24 +95,3 @@ export function localizeRppgSignalStatus(
   return messages[signalStatusMessageKeys[signalStatus]]
 }
 
-/** 按稳定错误码选择安全文案，不回显底层异常消息。 */
-export function localizePassiveCaptureError(
-  code: string,
-  messages: PassiveCaptureMessageValues,
-): string {
-  const normalizedCode = code.toUpperCase()
-  if (normalizedCode === 'PLATFORM_UNSUPPORTED') return messages.errorPlatform
-  if (normalizedCode.includes('PERMISSION') || normalizedCode.includes('NOTIFICATION')) return messages.errorPermission
-  if (normalizedCode.includes('CAMERA_BUSY')) return messages.errorCameraBusy
-  if (normalizedCode.includes('FOREGROUND_SERVICE') || normalizedCode.includes('SERVICE') || normalizedCode.includes('STOP')) {
-    return messages.errorService
-  }
-  if (normalizedCode.includes('CONFIG') || normalizedCode.includes('INVALID') || normalizedCode.includes('INTERVAL') || normalizedCode.includes('DURATION')) {
-    return messages.errorConfiguration
-  }
-  if (normalizedCode.includes('FILE') || normalizedCode.includes('VIDEO') || normalizedCode.includes('ARTIFACT') || normalizedCode.includes('ENCOD')) {
-    return messages.errorFile
-  }
-  if (normalizedCode.includes('CAMERA')) return messages.errorCamera
-  return messages.errorGeneric
-}

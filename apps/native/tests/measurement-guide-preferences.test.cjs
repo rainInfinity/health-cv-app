@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { afterEach, beforeEach, test } = require('node:test');
 const { createPersistentStorageEngine } = require('../node_modules/.cache/native-test/app/storage/persistentEngine.js');
 const { createChestPlacementGuidePreference, createMeasurementGuidePreferences } = require('../node_modules/.cache/native-test/app/preferences/measurementGuide.js');
-const { FEATURE_ENTRIES, METHOD_ENTRIES, resolveMeasurementEntry } = require('../node_modules/.cache/native-test/app/measurement/entry.js');
+const { METRIC_ENTRIES, METHOD_ENTRIES, resolveMeasurementEntry } = require('../node_modules/.cache/native-test/app/measurement/entry.js');
 const { clearHarnessQueryClients, createHarness } = require('./helpers.cjs');
 
 let values;
@@ -26,14 +26,14 @@ afterEach(clearHarnessQueryClients);
 
 test('从一个指尖指标保存偏好，其他指尖指标与部位入口共用，其他方式隔离', () => {
   const preference = createMeasurementGuidePreferences();
-  preference[FEATURE_ENTRIES.fingertip.method].set(true);
+  preference[METRIC_ENTRIES.heartRate.method].set(true);
 
   const restored = createMeasurementGuidePreferences();
-  assert.equal(restored[FEATURE_ENTRIES.oxygen.method].get(), true);
-  assert.equal(restored[FEATURE_ENTRIES.risk.method].get(), true);
+  assert.equal(restored[METRIC_ENTRIES.oxygenSaturation.method].get(), true);
+  assert.equal(restored[METRIC_ENTRIES.diabetesRisk.method].get(), true);
   assert.equal(restored[METHOD_ENTRIES.fingertip.method].get(), true);
-  assert.equal(restored[FEATURE_ENTRIES.face.method].get(), false);
-  assert.equal(restored[FEATURE_ENTRIES.pressure.method].get(), false);
+  assert.equal(restored[METRIC_ENTRIES.faceHeartRate.method].get(), false);
+  assert.equal(restored[METRIC_ENTRIES.bloodPressure.method].get(), false);
 
   restored.chest.set(true);
   const next = createMeasurementGuidePreferences();
@@ -50,7 +50,7 @@ test('持久跳过偏好让面部、指尖和血压入口直达各自检测页�
   preference.fingertip.set(true);
   preference.chest.set(true);
   const restored = createMeasurementGuidePreferences();
-  for (const entry of [...Object.values(METHOD_ENTRIES), ...Object.values(FEATURE_ENTRIES)]) {
+  for (const entry of [...Object.values(METHOD_ENTRIES), ...Object.values(METRIC_ENTRIES)]) {
     const route = resolveMeasurementEntry(entry, restored[entry.method].get());
     assert.deepEqual(route, [
       entry.method === 'face' ? 'FaceMeasurement' : entry.method === 'fingertip' ? 'FingertipMeasurement' : 'BloodPressureMeasurement',
@@ -58,19 +58,19 @@ test('持久跳过偏好让面部、指尖和血压入口直达各自检测页�
     ]);
   }
   restored.fingertip.set(false);
-  assert.deepEqual(resolveMeasurementEntry(FEATURE_ENTRIES.oxygen, restored.fingertip.get()), [
-    'MeasurementGuide', FEATURE_ENTRIES.oxygen,
+  assert.deepEqual(resolveMeasurementEntry(METRIC_ENTRIES.oxygenSaturation, restored.fingertip.get()), [
+    'MeasurementGuide', METRIC_ENTRIES.oxygenSaturation,
   ]);
 });
 
 test('血压部位与指标共用胸口偏好，未跳过进入准备，重建后直接到同一血压页', () => {
   const preference = createMeasurementGuidePreferences();
-  for (const entry of [METHOD_ENTRIES.chest, FEATURE_ENTRIES.pressure]) {
+  for (const entry of [METHOD_ENTRIES.chest, METRIC_ENTRIES.bloodPressure]) {
     assert.deepEqual(resolveMeasurementEntry(entry, preference.chest.get()), ['MeasurementGuide', entry]);
   }
   preference.chest.set(true);
   const restored = createMeasurementGuidePreferences();
-  for (const entry of [METHOD_ENTRIES.chest, FEATURE_ENTRIES.pressure]) {
+  for (const entry of [METHOD_ENTRIES.chest, METRIC_ENTRIES.bloodPressure]) {
     assert.deepEqual(resolveMeasurementEntry(entry, restored.chest.get()), ['BloodPressureMeasurement', { target: 'bloodPressure' }]);
   }
   assert.equal(restored.face.get(), false);

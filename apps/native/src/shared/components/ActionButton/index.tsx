@@ -129,7 +129,7 @@ export function ActionButton({
           )}
           <ButtonContent>
             {loading && (
-              <LoadingIndicator color={color} size={theme.icon.compact} />
+              <LoadingIndicator color={secondary ? undefined : color} size={theme.icon.compact} />
             )}
             {!loading && iconPosition === 'leading' && iconContent}
             <ButtonLabel $disabled={disabled && !loading} $secondary={secondary} $danger={danger}>
