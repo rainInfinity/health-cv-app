@@ -12,7 +12,9 @@ const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ...['app.js', 'pages.js', 'measurement-pages.js', 'face-measurement.js', 'contact-measurement.js', 'fingertip-results.js', 'contact-illustrations.js', 'chest-reference-illustrations.js', 'pulse-wave.js', 'data.js', 'history.js', 'ui.js', 'profile.js'].map((name) => [`/${name}`, [name, 'text/javascript; charset=utf-8']]),
+  ...['app.js', 'pages.js', 'measurement-pages.js', 'face-measurement.js', 'contact-measurement.js', 'fingertip-results.js', 'blood-pressure-results.js', 'result-wave.js', 'contact-illustrations.js', 'chest-reference-illustrations.js', 'pulse-wave.js', 'data.js', 'history.js', 'history-date-picker.js', 'selection-sheet.js', 'ui.js', 'profile.js'].map((name) => [`/${name}`, [name, 'text/javascript; charset=utf-8']]),
+  ...['state-previews.js', 'data-states.js', 'result-states.js'].map((name) => [`/${name}`, [name, 'text/javascript; charset=utf-8']]),
+  ...['data-states.css', 'result-states.css'].map((name) => [`/${name}`, [name, 'text/css; charset=utf-8']]),
   ['/vendor/echarts.esm.min.js', ['../../node_modules/echarts/dist/echarts.esm.min.js', 'text/javascript; charset=utf-8']],
   ...[
     ['xinmu-logo.svg', 'image/svg+xml'],

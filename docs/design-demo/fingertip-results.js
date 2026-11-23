@@ -1,6 +1,8 @@
 /** 指尖结果的固定样例、简要结果结构与独立报告；不调用算法或后端。 */
-import { init } from '/vendor/echarts.esm.min.js';
-import { icon } from './ui.js';
+import { mountResultWave, processedPpgSamples, resultWaveCard } from './result-wave.js';
+import { icon, qualityBadge } from './ui.js';
+import { clearMissingResultDials, resultReportForState, resultSummaryForState } from './result-states.js';
+import { formatRiskLevel } from './data.js';
 
 /** 本轮展示用的处理结果；等级是固定文案，不由前端阈值推断。 */
 const result = {
@@ -12,8 +14,8 @@ const result = {
     { key: 'breath', label: '呼吸率', value: 16, unit: '次/分', qualityScore: 86, reference: '12–20 次/分', status: '静息范围内', text: '呼吸率反映每分钟呼吸的次数。本次结果处于常见成人静息参考范围。', advice: '保持自然呼吸即可，不需要刻意深呼吸或憋气。' },
     { key: 'oxygen', label: '血氧饱和度', value: 98, unit: '%', qualityScore: 96, reference: '95–100%', status: '参考范围内', text: '血氧饱和度反映血液中血红蛋白与氧结合的比例。本次估计结果处于常见参考范围。', advice: '手指温度、移动和按压力度可能影响读数；如有不适，不应仅凭本次结果判断。' },
   ],
-  /** 风险只展示分类，不表示血糖值、患病概率或诊断。 */
-  risk: '较低风险',
+  /** 使用演示档位映射文案，不表示血糖值、患病概率或诊断。 */
+  riskLevel: 0,
   /** 风险算法的信号质量分，与风险分类及患病概率无关。 */
   riskQualityScore: 76,
 };
@@ -24,23 +26,13 @@ function metricIcon(key) {
   return `<span data-result-icon="${key}" aria-hidden="true"></span>`;
 }
 
-/** 将看板中的风险等级与“风险”二字分成两行，不用于指标解读。 */
-function riskValue(value) {
-  return `<span>${value.replace(/风险$/, '')}</span><span>风险</span>`;
-}
-
-/** 将 70–100 分的质量展示样例映射为角标色阶，90 与 80 归入较高一档。 */
-function qualityBadge(score) {
-  const tone = score >= 90 ? 'high' : score >= 80 ? 'medium' : 'low';
-  return `<span class="result-quality-badge ${tone}" role="img" aria-label="信号质量 ${score} 分，满分 100 分" title="信号质量 ${score} 分 / 100 分"><strong>${score}</strong></span>`;
-}
 
 /** 简要结果与报告共用首页式四卡看板，读数与图形只维护一套。 */
-function metricDashboard() {
+function metricDashboard(singleLine = false) {
   return `<section class="result-dashboard" aria-label="本次检测结果">
     ${result.vitals.slice(0, 2).map((item) => `<div class="revised-metric result-metric-card">${qualityBadge(item.qualityScore)}<h3>${item.label}</h3><div class="result-card-body"><div class="result-card-reading"><strong>${item.value}</strong><span>${item.unit}</span></div><span class="result-card-art ${item.key}" aria-hidden="true">${metricIcon(item.key)}</span></div><div class="result-card-reference"><span>参考区间</span><span>${item.reference}</span></div></div>`).join('')}
     <div class="revised-metric result-metric-card">${qualityBadge(result.vitals[2].qualityScore)}<h3>血氧饱和度</h3><div class="result-card-dial" data-result-dial aria-label="血氧饱和度 ${result.vitals[2].value}%" role="img"></div><div class="result-card-reference"><span>参考区间</span><span>${result.vitals[2].reference}</span></div></div>
-    <div class="revised-metric result-metric-card">${qualityBadge(result.riskQualityScore)}<h3>糖尿病风险</h3><div class="result-card-body"><strong class="result-card-risk">${riskValue(result.risk)}</strong><span class="result-card-art risk" aria-hidden="true">${metricIcon('risk')}</span></div><div class="result-card-reference"><span>仅供参考</span></div></div>
+    <div class="revised-metric result-metric-card">${qualityBadge(result.riskQualityScore)}<h3>糖尿病风险</h3><div class="result-card-body"><strong class="result-card-risk">${formatRiskLevel(result.riskLevel, !singleLine)}</strong><span class="result-card-art risk" aria-hidden="true">${metricIcon('risk')}</span></div><div class="result-card-reference"><span>仅供参考</span></div></div>
   </section>`;
 }
 
@@ -63,70 +55,73 @@ export const fingertipResultsPage = `<div class="phone fingertip-results">
   <main class="result-report">
     <header class="result-report-heading result-section-heading"><h2>结果总览</h2><time>${result.time}</time></header>
     <p class="result-disclaimer">检测结果仅供健康管理参考，不能替代医学诊断。如有持续不适，请及时就医。</p>
-    ${metricDashboard()}
+    ${metricDashboard(true)}
     <p class="result-quality-note">指标右上角信号质量评分，满分100，分数越高，代表本次检测结果相对较准确。</p>
-    <section class="result-wave-card" aria-labelledby="result-wave-title"><div class="result-section-heading result-wave-heading"><div><h2 id="result-wave-title">脉搏波</h2><span class="result-processing-tag">处理后</span></div><span>左右滑动查看</span></div><div class="result-wave pulse-wave" tabindex="0" role="group" aria-label="处理后脉搏波，每屏六秒，可横向拖动或使用方向键查看本轮三十秒数据"></div><div class="result-wave-navigation"><span data-result-range>0–6 秒</span><span>共 30 秒</span></div></section>
+    ${resultWaveCard('result-wave', '脉搏波')}
     <section class="result-interpretations" aria-labelledby="result-interpretation-title"><div class="result-section-heading"><h2 id="result-interpretation-title">指标解读</h2><span>结合静息状态参考</span></div>
       ${result.vitals.map((item) => `<article class="result-interpretation"><div class="result-interpretation-main"><div class="result-interpretation-identity"><h3>${item.label}</h3><span class="result-metric-icon ${item.key}">${metricIcon(item.key)}</span></div><div class="result-interpretation-content"><header><div class="result-interpretation-reading"><strong>${item.value}</strong><span>${item.unit}</span></div><span class="result-assessment">${item.status}</span></header><p>${item.text}</p></div></div><p class="result-advice">${item.advice}</p></article>`).join('')}
-      <article class="result-interpretation result-risk-interpretation"><div class="result-interpretation-main"><div class="result-interpretation-identity"><h3>糖尿病风险</h3><span class="result-metric-icon risk">${metricIcon('risk')}</span></div><div class="result-interpretation-content"><header><strong class="result-risk-reading">${result.risk}</strong></header><p>本次筛查提示较低风险，不表示没有糖尿病，也不是血糖检测结果。</p></div></div><div class="result-risk-guidance"><h4>如何看待这项结果</h4><p>风险评估用于健康管理参考。若有糖尿病家族史，或出现多饮、多尿、体重不明原因下降等情况，建议咨询医生，通过血糖或糖化血红蛋白等检查进一步评估。</p></div></article>
+      <article class="result-interpretation result-risk-interpretation"><div class="result-interpretation-main"><div class="result-interpretation-identity"><h3>糖尿病风险</h3><span class="result-metric-icon risk">${metricIcon('risk')}</span></div><div class="result-interpretation-content"><header><strong class="result-risk-reading">${formatRiskLevel(result.riskLevel, false)}</strong></header><p>本次筛查提示较低风险，不表示没有糖尿病，也不是血糖检测结果。</p></div></div><div class="result-risk-guidance"><h4>如何看待这项结果</h4><p>风险评估用于健康管理参考。若有糖尿病家族史，或出现多饮、多尿、体重不明原因下降等情况，建议咨询医生，通过血糖或糖化血红蛋白等检查进一步评估。</p></div></article>
     </section>
   </main><div class="gesture"></div>
 </div>`;
 
-/** 预先生成整轮处理后样例，独立于采集页实时波形，不冒充后端响应。 */
-const processedSamples = Array.from({ length: 901 }, (_, index) => {
-  const seconds = index / 30;
-  const phase = (seconds * 1.2) % 1;
-  const pulse = Math.exp(-(((phase - .22) / .09) ** 2)) + .28 * Math.exp(-(((phase - .5) / .12) ** 2));
-  return [seconds, pulse * (.94 + .05 * Math.sin(seconds * .8))];
-});
-
-/** 展示完整处理后记录；六秒窗口只平移，支持手势回看与键盘操作。 */
-export function mountFingertipResults(root) {
-  const plot = root.querySelector('.result-wave');
-  const range = root.querySelector('[data-result-range]');
-  const colors = getComputedStyle(plot);
-  const chart = init(plot, null, { renderer: 'svg' });
-  let start = 0;
-  chart.setOption({
-    animation: false,
-    grid: { left: 4, right: 12, top: 8, bottom: 8 },
-    xAxis: { type: 'value', min: 0, max: 30, show: false },
-    yAxis: { type: 'value', min: -.135, max: 1.212, show: false },
-    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none', startValue: 0, endValue: 6, minValueSpan: 6, maxValueSpan: 6, zoomOnMouseWheel: false, moveOnMouseWheel: false, moveOnMouseMove: true, preventDefaultMouseMove: true }],
-    series: [{ type: 'line', data: processedSamples, showSymbol: false, smooth: false, clip: true, lineStyle: { width: 1.5, color: colors.getPropertyValue('--primary').trim() }, emphasis: { disabled: true } }],
+/** 失败指标只清空结果；低质量变体保留固定质量样例，不推导拒绝阈值。 */
+function stateDashboard(previewState, singleLine = false) {
+  const template = document.createElement('template');
+  template.innerHTML = metricDashboard(singleLine);
+  const partial = previewState === 'partial' || previewState === 'partial-quality';
+  const qualityFailed = previewState === 'partial-quality' || previewState === 'failed-quality';
+  const cards = [...template.content.querySelectorAll('.result-metric-card')];
+  cards.forEach((card, index) => {
+    if (partial && index < 2) return;
+    card.classList.add('result-metric-missing');
+    card.querySelector('.result-quality-badge').remove();
+    if (qualityFailed) card.insertAdjacentHTML('afterbegin', qualityBadge(62));
+    if (index === 2) {
+      const dial = card.querySelector('[data-result-dial]');
+      dial.setAttribute('data-result-dial-empty', '');
+      dial.setAttribute('aria-label', '血氧饱和度未能生成结果');
+    } else {
+      card.querySelector('.result-card-reading strong, .result-card-risk').textContent = '--';
+    }
+    card.querySelector('.result-card-reference').innerHTML = `<span>${qualityFailed ? '信号质量过低' : '未能生成结果'}</span>`;
   });
+  return template.innerHTML;
+}
 
-  /** 范围文字跟随手势实际窗口，不重新生成或修改采样值。 */
-  function syncControls() {
-    const zoom = chart.getOption().dataZoom[0];
-    start = Math.max(0, Math.min(24, zoom.startValue));
-    range.textContent = `${start.toFixed(1)}–${(start + 6).toFixed(1)} 秒`;
-  }
+/** 有效项目保留原有解读，失败项目不附加正常结论与建议。 */
+function stateInterpretations(previewState) {
+  const qualityFailed = previewState === 'partial-quality';
+  return `<section class="result-interpretations" aria-labelledby="result-interpretation-title"><div class="result-section-heading"><h2 id="result-interpretation-title">指标解读</h2><span>结合静息状态参考</span></div>
+    ${result.vitals.map((item, index) => index < 2
+      ? `<article class="result-interpretation"><div class="result-interpretation-main"><div class="result-interpretation-identity"><h3>${item.label}</h3><span class="result-metric-icon ${item.key}">${metricIcon(item.key)}</span></div><div class="result-interpretation-content"><header><div class="result-interpretation-reading"><strong>${item.value}</strong><span>${item.unit}</span></div><span class="result-assessment">${item.status}</span></header><p>${item.text}</p></div></div><p class="result-advice">${item.advice}</p></article>`
+      : `<article class="result-interpretation"><div class="pressure-interpretation-heading"><h3>${item.label}</h3><div class="result-interpretation-reading"><strong>--</strong><span>${item.unit}</span></div></div><p>${qualityFailed ? '信号质量过低，未能生成结果。' : `本次信号未能生成有效${item.label}结果。`}</p></article>`).join('')}
+    <article class="result-interpretation"><div class="pressure-interpretation-heading"><h3>糖尿病风险</h3><strong class="result-risk-reading">--</strong></div><p>${qualityFailed ? '信号质量过低，未能生成风险评估，不代表风险高低。' : '本次未能生成风险评估，不代表风险高低。'}</p></article>
+  </section>`;
+}
 
-  /** 显式跳到指定六秒区间，缩放始终关闭。 */
-  function seek(value) {
-    const next = Math.max(0, Math.min(24, value));
-    chart.dispatchAction({ type: 'dataZoom', startValue: next, endValue: next + 6 });
-    syncControls();
-  }
+/** 默认成功 HTML 保持不变，衍生状态不补造缺失结果。 */
+export function fingertipResultsForState(previewState = 'success') {
+  if (previewState === 'success') return fingertipResultsPage;
+  return resultReportForState(fingertipResultsPage, previewState, {
+    measurementRoute: 'fingertip-measurement',
+    overview: ['partial', 'partial-quality'].includes(previewState) ? stateDashboard(previewState, true) : '',
+    interpretations: ['partial', 'partial-quality'].includes(previewState) ? stateInterpretations(previewState) : '',
+  });
+}
 
-  /** 方向键逐秒移动，首尾键跳到整轮记录两端。 */
-  function onKeydown(event) {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    seek(event.key === 'Home' ? 0 : event.key === 'End' ? 24 : start + (event.key === 'ArrowLeft' ? -1 : 1));
-  }
+/** 检测页沿用同源看板，查询或任务失败不伪装检测读数。 */
+export function fingertipSummaryForState(previewState = 'success') {
+  return resultSummaryForState(fingertipSummary, previewState, ['partial', 'partial-quality', 'failed', 'failed-quality'].includes(previewState) ? stateDashboard(previewState) : '');
+}
 
-  const observer = new ResizeObserver(() => chart.resize());
-  observer.observe(plot);
-  chart.on('datazoom', syncControls);
-  plot.addEventListener('keydown', onKeydown);
-  root.querySelector('h1').focus({ preventScroll: true });
-  syncControls();
-  return () => {
-    observer.disconnect();
-    plot.removeEventListener('keydown', onKeydown);
-    chart.dispose();
-  };
+/** 展示指尖处理后 PPG，离开报告时释放图表和交互。 */
+export function mountFingertipResults(root, { previewState = 'success' } = {}) {
+  clearMissingResultDials(root);
+  const card = root.querySelector('.result-wave-card:not([data-wave-state])');
+  const dispose = ['success', 'partial', 'partial-quality'].includes(previewState) && card
+    ? mountResultWave(card, processedPpgSamples, -.135, 1.212)
+    : () => {};
+  root.querySelector('h1')?.focus({ preventScroll: true });
+  return dispose;
 }

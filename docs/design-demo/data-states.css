@@ -1,0 +1,78 @@
+/* 数据状态仅使用现有主题令牌，不影响成功态的页面结构与配色。 */
+.ds-skeleton {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  border-radius: 6px;
+  background: linear-gradient(100deg, var(--border) 10%, var(--subtle) 45%, var(--border) 80%);
+  background-size: 240% 100%;
+  animation: ds-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+.ds-skeleton-value { width: 54px; height: 26px; }
+.ds-skeleton-time { width: 86px; height: 10px; border-radius: 4px; }
+[data-ds-state="loading"] .pressure-number,
+[data-ds-state="loading"] .lively-number strong { min-height: 36px; }
+[data-ds-state="loading"] .pressure-number > small { margin-left: 6px; }
+[data-ds-state="loading"] .oxygen-dial[data-ds-loading] { animation: ds-dial-pulse 1.6s ease-in-out infinite; }
+[data-ds-state="empty"] .pressure-number,
+[data-ds-state="empty"] .lively-number strong { color: var(--muted); }
+[data-ds-state="loading"] .risk-body .empty-state,
+[data-ds-state="empty"] .risk-body .empty-state { font-size: var(--font-metric); line-height: var(--line-metric); font-weight: 600; color: var(--muted); }
+.ds-notice {
+  display: flex;
+  min-height: 232px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+  color: var(--ink);
+  text-align: center;
+}
+.ds-notice-copy { min-width: 0; }
+.ds-notice-copy > strong { display: block; font-size: 16px; line-height: 24px; font-weight: 500; }
+.ds-notice-copy > p { margin: 6px 0 0; color: var(--secondary); font-size: 12px; line-height: 20px; }
+.ds-state-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--action);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.ds-state-link > .icon { width: 16px; height: 16px; }
+.ds-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  line-height: 0;
+  animation: ds-spinner-rotate 900ms linear infinite;
+}
+.ds-spinner > .loading-spinner { display: block; width: 100%; height: 100%; }
+.ds-value-loading { position: relative; display: inline-flex; vertical-align: baseline; }
+.ds-value-reserve { display: block; visibility: hidden; }
+.ds-value-loading > .ds-spinner { position: absolute; width: var(--ds-spinner-size); height: var(--ds-spinner-size); left: calc(50% - var(--ds-spinner-size) / 2); top: calc(50% - var(--ds-spinner-size) / 2); }
+.ds-spinner-svg {
+  fill: none;
+  transform-box: view-box;
+  transform-origin: center;
+  animation: ds-spinner-rotate 900ms linear infinite;
+}
+.history[data-ds-state="loading"] .content { padding-bottom: 0; }
+.history .content > :not(#history-panel) { flex-shrink: 0; }
+.history[data-ds-state] #history-panel { display: grid; place-items: center; min-height: 0; }
+.history[data-ds-state] .ds-notice { width: 100%; }
+.ds-history-loading { display: grid; place-items: center; width: 100%; }
+.ds-history-loading > .ds-spinner { width: 36px; height: 36px; }
+@keyframes ds-skeleton-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes ds-spinner-rotate { to { transform: rotate(360deg); } }
+@keyframes ds-dial-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }

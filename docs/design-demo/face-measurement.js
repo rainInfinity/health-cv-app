@@ -1,5 +1,6 @@
 /** 面部心率检测的纯设计演示；照片、脉搏波和读数均不来自设备或算法。 */
 import { mountPulseWave } from './pulse-wave.js';
+import { loadingIcon } from './ui.js';
 
 /** 检测页保留上方取景区，下方全宽面板集中展示读数、波形与操作。 */
 export const faceMeasurementPage = `<div class="phone face-measurement" data-phase="ready">
@@ -31,7 +32,7 @@ export const faceMeasurementPage = `<div class="phone face-measurement" data-pha
         <time class="face-elapsed" data-face-time aria-label="检测计时">00:00</time>
       </div>
       <div class="face-session">
-        <div class="face-capture-status" role="status"><span class="face-status-indicator" aria-hidden="true"></span><span data-face-status>待开始</span></div>
+        <div class="face-capture-status" role="status"><span class="face-status-indicator" aria-hidden="true">${loadingIcon()}</span><span data-face-status>待开始</span></div>
         <p class="face-heart-hint" data-face-hint>点击开始</p>
       </div>
     </div>

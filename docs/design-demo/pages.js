@@ -3,6 +3,7 @@ import { measurementPages } from './measurement-pages.js';
 import { faceMeasurementPage } from './face-measurement.js';
 import { bloodPressureMeasurementPage, fingertipMeasurementPage } from './contact-measurement.js';
 import { fingertipResultsPage } from './fingertip-results.js';
+import { bloodPressureResultsPage } from './blood-pressure-results.js';
 
 /** 登录和注册共享品牌组合，避免标志、名称或 Slogan 出现差异。 */
 const authBrand = `
@@ -20,6 +21,7 @@ export const pages = {
   'fingertip-measurement': fingertipMeasurementPage,
   'fingertip-results': fingertipResultsPage,
   'blood-pressure-measurement': bloodPressureMeasurementPage,
+  'blood-pressure-results': bloodPressureResultsPage,
   desktop: `
 <div class="phone brand-desktop">
 <div class="status"><span>9:41</span><span class="system" aria-hidden="true">▮▮▮ ▰</span></div>
@@ -270,11 +272,17 @@ export const pages = {
 <h2 class="title">健康功能</h2>
 <p class="header-disclaimer">检测结果仅供参考，非医学诊断依据</p>
 </header>
-<div class="function-tabs" role="tablist" aria-label="功能分类">
-<button type="button" id="function-tab-method" role="tab" aria-selected="true" aria-controls="function-panel-method" data-action="function-view" data-view="method">按检测部位</button>
-<button type="button" id="function-tab-metric" role="tab" aria-selected="false" aria-controls="function-panel-metric" tabindex="-1" data-action="function-view" data-view="metric">按指标</button>
+<section class="passive-heart-card" aria-labelledby="passive-heart-title">
+<div class="passive-heart-copy">
+<h3 id="passive-heart-title" class="passive-heart-title">无扰心率检测</h3>
+<p id="passive-heart-description" class="passive-heart-description">日常解锁使用手机时，自动测量心率</p>
 </div>
-<section id="function-panel-method" class="capture-grid" role="tabpanel" aria-labelledby="function-tab-method">
+<label class="passive-heart-control">
+<input type="checkbox" role="switch" data-setting="passivePreference" aria-labelledby="passive-heart-title" aria-describedby="passive-heart-description">
+<span class="passive-heart-icon" aria-hidden="true"></span>
+</label>
+</section>
+<section class="capture-grid" aria-label="按部位检测">
 ${[
   ['face', '面部检测', '面部心率', '面向前置摄像头', 'op3.png'],
   ['fingertip', '指尖检测', '心率、呼吸率、血氧饱和度、糖尿病风险', '指腹轻覆后置镜头', 'op1.png'],
@@ -283,138 +291,6 @@ ${[
 <span class="capture-copy"><span class="capture-title">${title}</span><span class="capture-metrics">${metrics}</span><span class="capture-instruction">${instruction}</span></span>
 <img src="/brand-assets/${image}" width="176" height="176" alt="">
 </button>`).join('')}
-</section>
-<section id="function-panel-metric" class="function-grid" role="tabpanel" aria-labelledby="function-tab-metric" hidden>
-<button type="button" class="function-card" data-measurement="fingertip" aria-label="指尖心率与呼吸率功能说明">
-<svg class="function-illustration" data-illustration="fingertip" viewBox="0 0 100 84" fill="none" aria-hidden="true">
-<defs>
-<linearGradient id="finger-skin" x1="440" y1="400" x2="700" y2="1540" gradientUnits="userSpaceOnUse"><stop stop-color="var(--illustration-skin-light)"/><stop offset="1" stop-color="var(--illustration-skin)"/></linearGradient>
-<linearGradient id="finger-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
-<linearGradient id="finger-phone" x2="1" y2="1"><stop stop-color="var(--illustration-teal-light)"/><stop offset="1" stop-color="var(--mint)"/></linearGradient>
-</defs>
-<!-- 按实际图形范围等比缩放并居中，保留内部手势与图标的相对位置。 -->
-<g class="function-artwork" transform="translate(12.381 4.342) scale(.9198)">
-<ellipse cx="27" cy="79" rx="26" ry="3" fill="var(--brand-subtle)"/>
-<g transform="translate(-6 -15.6) scale(.06)">
-<rect x="224" y="258" width="632" height="1200" rx="100" fill="var(--surface)"/>
-<rect x="235" y="270" width="610" height="1180" rx="90" fill="url(#finger-phone)" stroke="var(--illustration-camera-rim)" stroke-width="13"/>
-<rect x="350" y="350" width="390" height="390" rx="110" fill="var(--illustration-camera-rim)"/>
-<g fill="var(--illustration-camera)" stroke="var(--illustration-blue-light)" stroke-width="12">
-<circle cx="450" cy="450" r="55"/><circle cx="620" cy="480" r="55"/>
-<circle cx="450" cy="620" r="55"/><circle cx="620" cy="620" r="55"/>
-</g>
-<circle cx="545" cy="425" r="31" fill="var(--illustration-flash)" fill-opacity=".35"/>
-<rect x="534" y="400" width="22" height="50" rx="11" fill="var(--illustration-flash)" stroke="var(--surface)" stroke-width="7"/>
-<path d="M110 1568c20-178 11-348 25-478 4-80 55-125 80-195 10-37 26-65 38-56 21 19 5 127 27 264 41-106 64-214 75-345l38-264c8-65 17-113 59-117 45-5 69 33 69 91l-8 387c-1 64 22 96 51 96 38-2 69-30 105-72l86-116c35-63 60-141 78-197 13-32 39-16 54 16 44 78 37 172-5 279 53 23 97 121 63 180 8 77-45 139-81 206-33 53-74 91-91 163l-42 158Z" fill="url(#finger-skin)" stroke="var(--surface)" stroke-width="24" stroke-linejoin="round"/>
-<rect x="431" y="394" width="70" height="95" rx="32" fill="var(--illustration-skin-light)" transform="rotate(-5 466 442)"/>
-</g>
-<g class="function-symbols" transform="translate(-24 -6)">
-<svg class="function-heart-symbol" x="55" y="37" width="30" height="30" viewBox="0 0 200 200" transform="rotate(-12 70 52)">
-<path d="M100 30C79 15 54 16 34 28 9 42 1 69 15 99 30 132 68 163 100 183 132 163 170 132 185 99 199 69 191 42 166 28 146 16 121 15 100 30Z" fill="url(#finger-heart)" stroke="var(--surface)" stroke-width="12.5" stroke-linejoin="round"/>
-<path d="M35 104h34l13-30 17 51 18-69 13 48h35" stroke="var(--surface)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-<svg class="function-breath-symbol" x="68.5" y="23" width="33.75" height="30" viewBox="0 0 32 32" preserveAspectRatio="none" transform="rotate(10 85.375 38)">
-<path d="M14 8C8 7 4 13 3 22c-1 6 2 8 6 6l5-4Zm4 0c6-1 10 5 11 14 1 6-2 8-6 6l-5-4Z" fill="var(--illustration-blue-light)" stroke="var(--surface)" stroke-width="1.5" stroke-linejoin="round"/>
-<path d="M16 3v11m0-2-6 8m6-8 6 8" stroke="var(--accent-blue)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-</g>
-</g>
-</svg>
-<span class="function-copy"><span class="function-title">心率与呼吸率</span><span class="function-description">指尖检测，一次了解两项指标。</span><span class="function-recency"></span></span>
-<span class="function-chevron" aria-hidden="true">›</span>
-</button>
-<button type="button" class="function-card" data-measurement="face" aria-label="面部心率功能说明">
-<svg class="function-illustration" viewBox="0 0 100 84" fill="none" aria-hidden="true">
-<defs>
-<linearGradient id="face-skin" x1="36" y1="24" x2="63" y2="55" gradientUnits="userSpaceOnUse"><stop stop-color="var(--illustration-skin-light)"/><stop offset="1" stop-color="var(--illustration-skin)"/></linearGradient>
-<linearGradient id="face-shirt" x2="1" y2="1"><stop stop-color="var(--illustration-teal-light)"/><stop offset="1" stop-color="var(--mint)"/></linearGradient>
-<linearGradient id="face-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
-</defs>
-<g class="function-artwork" transform="translate(-9.582 -4.713) scale(1.0576)">
-<ellipse cx="49" cy="74" rx="31" ry="4" fill="var(--brand-subtle)"/>
-<path d="M25 70c0-12 10-18 18-19V42h15v9c11 2 19 8 19 19Z" fill="url(#face-shirt)" stroke="var(--surface)" stroke-width="4" stroke-linejoin="round"/>
-<path d="M43 45v11q7 7 15 0V45" fill="url(#face-skin)"/>
-<path d="M29 36c-4-32 46-36 43-1v18c-8 7-35 7-43-1Z" fill="var(--illustration-hair)" stroke="var(--surface)" stroke-width="3"/>
-<path d="M34 31c10 0 17-8 20-13 1 8 8 13 13 14v10c0 24-33 24-33 0Z" fill="url(#face-skin)"/>
-<path d="M41 39h2m14 0h2m-13 9q5 3 9 0" stroke="var(--illustration-outline)" stroke-width="1.4" stroke-linecap="round"/>
-<path d="M23 27v-9h9m36 0h10v9M23 53v10h9m36 0h10V53" stroke="var(--primary)" stroke-width="1.7" stroke-linecap="round"/>
-<g transform="rotate(30 79 40) translate(65.95 26.95) scale(.1305)">
-<path d="M100 30C79 15 54 16 34 28 9 42 1 69 15 99 30 132 68 163 100 183 132 163 170 132 185 99 199 69 191 42 166 28 146 16 121 15 100 30Z" fill="url(#face-heart)" stroke="var(--surface)" stroke-width="12.5" stroke-linejoin="round"/>
-<path d="M35 104h34l13-30 17 51 18-69 13 48h35" stroke="var(--surface)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-</g>
-</svg>
-<span class="function-copy"><span class="function-title">面部心率</span><span class="function-description">面向前摄，非接触估计心率。</span><span class="function-recency"></span></span>
-<span class="function-chevron" aria-hidden="true">›</span>
-</button>
-<button type="button" class="function-card" data-metric="0" aria-label="血压检测功能说明">
-<svg class="function-illustration" data-illustration="bp" viewBox="0 0 100 84" fill="none" aria-hidden="true">
-<defs>
-<linearGradient id="pressure-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
-<linearGradient id="pressure-dial" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
-</defs>
-<g class="function-artwork" transform="translate(.406 -1.223) scale(.9392)">
-<ellipse cx="50" cy="74" rx="34" ry="4" fill="var(--brand-subtle)"/>
-<g transform="translate(10 8) scale(.32)">
-<path d="M100 30C79 15 54 16 34 28 9 42 1 69 15 99 30 132 68 163 100 183 132 163 170 132 185 99 199 69 191 42 166 28 146 16 121 15 100 30Z" fill="url(#pressure-heart)" stroke="var(--surface)" stroke-width="9" stroke-linejoin="round"/>
-<path d="M35 104h34l13-30 17 51 18-69 13 48h35" stroke="var(--surface)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M55 39c-19 3-30 16-32 31" stroke="var(--surface)" stroke-width="10" stroke-linecap="round" opacity=".65"/>
-</g>
-<circle cx="73" cy="57" r="20" fill="url(#pressure-dial)" stroke="var(--surface)" stroke-width="4"/>
-<path d="M59 59a14 14 0 0 1 28 0" stroke="var(--mint)" stroke-width="3" stroke-linecap="round"/>
-<path d="m73 58 8-10M60 68h26" stroke="var(--action)" stroke-width="1.6" stroke-linecap="round"/>
-<circle cx="73" cy="58" r="2.5" fill="var(--primary)"/>
-</g>
-</svg>
-<span class="function-copy"><span class="function-title">血压检测</span><span class="function-description">覆盖后摄并贴靠胸口，获取血压估计值。</span><span class="function-recency"></span></span>
-<span class="function-chevron" aria-hidden="true">›</span>
-</button>
-<button type="button" class="function-card" data-metric="3" aria-label="血氧饱和度功能说明">
-<svg class="function-illustration" data-illustration="oxygen" viewBox="0 0 100 84" fill="none" aria-hidden="true">
-<defs>
-<radialGradient id="oxygen-bubble" cx=".32" cy=".25" r=".8"><stop stop-color="var(--surface)"/><stop offset=".4" stop-color="var(--illustration-blue-light)"/><stop offset="1" stop-color="var(--primary)"/></radialGradient>
-<linearGradient id="oxygen-tile" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
-</defs>
-<g class="function-artwork" transform="translate(5.167 3.125) scale(.9017)">
-<ellipse cx="50" cy="74" rx="34" ry="4" fill="var(--brand-subtle)"/>
-<circle cx="47" cy="36" r="28" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="3"/>
-<path d="M28 29q2-11 13-13" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" opacity=".9"/>
-<text x="31" y="45" fill="var(--action)" font-size="25" font-weight="500">O<tspan font-size="14" dy="4">2</tspan></text>
-<circle cx="79" cy="19" r="9" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="2"/>
-<circle cx="16" cy="50" r="6" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="2"/>
-<rect x="40" y="51" width="48" height="24" rx="9" fill="url(#oxygen-tile)" stroke="var(--surface)" stroke-width="3" transform="rotate(-8 64 63)"/>
-<path d="M48 64h7l4-6 5 12 5-9 4 3h7" stroke="var(--primary)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-</svg>
-<span class="function-copy"><span class="function-title">血氧饱和度</span><span class="function-description">指尖检测，了解血氧估计值。</span><span class="function-recency"></span></span>
-<span class="function-chevron" aria-hidden="true">›</span>
-</button>
-<button type="button" class="function-card" data-metric="4" aria-label="糖尿病风险功能说明">
-<svg class="function-illustration" data-illustration="risk" viewBox="0 0 100 84" fill="none" aria-hidden="true">
-<defs>
-<linearGradient id="risk-paper" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
-<linearGradient id="risk-glass" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--mint)" stop-opacity=".65"/></linearGradient>
-</defs>
-<g class="function-artwork" transform="translate(3.717 1.298) scale(.9469)">
-<ellipse cx="50" cy="75" rx="34" ry="4" fill="var(--brand-subtle)"/>
-<g transform="rotate(-8 40 42)">
-<path d="M23 10h29l12 12v45a5 5 0 0 1-5 5H23a5 5 0 0 1-5-5V15a5 5 0 0 1 5-5Z" fill="url(#risk-paper)" stroke="var(--surface)" stroke-width="4"/>
-<path d="M52 10v12h12" fill="var(--mint)" fill-opacity=".7"/>
-<path d="M28 29h19m-19 8h24m-24 8h16m-16 9h11" stroke="var(--primary)" stroke-opacity=".75" stroke-width="2" stroke-linecap="round"/>
-<path d="M30 14c-2 4-6 7-6 10a6 6 0 0 0 12 0c0-3-4-6-6-10Z" fill="var(--illustration-rose)"/>
-<text x="39" y="24" fill="var(--action)" font-size="7" font-weight="600">GLU</text>
-</g>
-<path d="m69 59 14 15" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
-<path d="m69 59 14 15" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/>
-<circle cx="61" cy="48" r="20" fill="url(#risk-glass)" stroke="var(--surface)" stroke-width="4"/>
-<circle cx="61" cy="48" r="17" stroke="var(--primary)" stroke-width="1.5"/>
-<path d="m61 36 10 6v12l-10 6-10-6V42Z" fill="var(--mint)" fill-opacity=".8" stroke="var(--action)" stroke-width="1"/>
-<text x="61" y="53" text-anchor="middle" fill="var(--action)" font-size="16" font-weight="600">G</text>
-</g>
-</svg>
-<span class="function-copy"><span class="function-title">糖尿病风险</span><span class="function-description">了解糖尿病相关风险评估信息。</span><span class="function-recency"></span></span>
-<span class="function-chevron" aria-hidden="true">›</span>
-</button>
 </section>
 </main>
 <nav aria-label="主导航">
@@ -467,24 +343,18 @@ ${[
 </div>
 <main class="content">
 <div class="hist-metric-picker" aria-label="历史指标">
-<button type="button" data-action="history-metric-step" data-offset="-1" aria-label="上一个指标"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+<button type="button" data-action="history-metric-step" data-offset="-1" aria-label="上一个指标"></button>
 <div class="hist-metric-select">
-<select id="history-metric" aria-label="选择健康指标">
-<option value="0">血压</option>
-<option value="1">心率</option>
-<option value="2">呼吸率</option>
-<option value="3">血氧饱和度</option>
-<option value="4">糖尿病风险</option>
-</select>
+<button type="button" id="history-metric" data-action="history-metric-menu" aria-label="选择健康指标" aria-haspopup="dialog" aria-expanded="false"><span data-history-metric-label>血压</span></button>
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
 </div>
-<button type="button" data-action="history-metric-step" data-offset="1" aria-label="下一个指标"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+<button type="button" data-action="history-metric-step" data-offset="1" aria-label="下一个指标"></button>
 </div>
 <section class="history-period" aria-label="时间区间">
 <div class="function-tabs hist-period-options" role="group" aria-label="区间类型">
-<button type="button" data-action="history-period" data-period="day" aria-pressed="false">日</button>
-<button type="button" data-action="history-period" data-period="week" aria-pressed="true">周</button>
-<button type="button" data-action="history-period" data-period="month" aria-pressed="false">月</button>
+<button type="button" data-action="history-period" data-period="1" aria-pressed="false">日</button>
+<button type="button" data-action="history-period" data-period="7" aria-pressed="true">7天</button>
+<button type="button" data-action="history-period" data-period="30" aria-pressed="false">30天</button>
 <button type="button" data-action="history-period" data-period="custom" aria-pressed="false">自定义</button>
 </div>
 <div class="hist-period-navigation">
@@ -495,7 +365,7 @@ ${[
 </section>
 <div id="history-panel" role="region" aria-label="当前指标趋势与记录">
 </div>
-<p class="hist-disclaimer">仅供健康管理参考，非医学诊断依据。</p>
+<p class="hist-disclaimer">检测仅供健康管理参考，非医学诊断依据。</p>
 </main>
 <nav aria-label="主导航">
 <div class="navitem ">
@@ -871,12 +741,106 @@ ${authBrand}
 <p>从血压估计开始，记录心率、呼吸率与血氧，慢慢了解身体的日常变化。</p>
 </div>
 <div class="intro-feature-visual" aria-label="了解健康测量与风险筛查功能">
-<div class="intro-primary-art" data-feature-art="bp" aria-hidden="true"></div>
+<div class="intro-primary-art" data-feature-art="bp" aria-hidden="true">
+<svg class="function-illustration" data-illustration="bp" viewBox="0 0 100 84" fill="none" aria-hidden="true">
+<defs>
+<linearGradient id="pressure-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
+<linearGradient id="pressure-dial" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
+</defs>
+<g class="function-artwork" transform="translate(.406 -1.223) scale(.9392)">
+<ellipse cx="50" cy="74" rx="34" ry="4" fill="var(--brand-subtle)"/>
+<g transform="translate(10 8) scale(.32)">
+<path d="M100 30C79 15 54 16 34 28 9 42 1 69 15 99 30 132 68 163 100 183 132 163 170 132 185 99 199 69 191 42 166 28 146 16 121 15 100 30Z" fill="url(#pressure-heart)" stroke="var(--surface)" stroke-width="9" stroke-linejoin="round"/>
+<path d="M35 104h34l13-30 17 51 18-69 13 48h35" stroke="var(--surface)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M55 39c-19 3-30 16-32 31" stroke="var(--surface)" stroke-width="10" stroke-linecap="round" opacity=".65"/>
+</g>
+<circle cx="73" cy="57" r="20" fill="url(#pressure-dial)" stroke="var(--surface)" stroke-width="4"/>
+<path d="M59 59a14 14 0 0 1 28 0" stroke="var(--mint)" stroke-width="3" stroke-linecap="round"/>
+<path d="m73 58 8-10M60 68h26" stroke="var(--action)" stroke-width="1.6" stroke-linecap="round"/>
+<circle cx="73" cy="58" r="2.5" fill="var(--primary)"/>
+</g>
+</svg>
+</div>
 <div class="intro-feature-caption">从血压估计开始</div>
 <ul class="intro-feature-list">
-<li><div data-feature-art="fingertip" aria-hidden="true"></div><span>心率与呼吸</span></li>
-<li><div data-feature-art="oxygen" aria-hidden="true"></div><span>血氧估计</span></li>
-<li><div data-feature-art="risk" aria-hidden="true"></div><span>糖尿病风险筛查</span></li>
+<li><div data-feature-art="fingertip" aria-hidden="true">
+<svg class="function-illustration" data-illustration="fingertip" viewBox="0 0 100 84" fill="none" aria-hidden="true">
+<defs>
+<linearGradient id="finger-skin" x1="440" y1="400" x2="700" y2="1540" gradientUnits="userSpaceOnUse"><stop stop-color="var(--illustration-skin-light)"/><stop offset="1" stop-color="var(--illustration-skin)"/></linearGradient>
+<linearGradient id="finger-heart" x2="1" y2="1"><stop stop-color="var(--illustration-rose-light)"/><stop offset="1" stop-color="var(--illustration-rose)"/></linearGradient>
+<linearGradient id="finger-phone" x2="1" y2="1"><stop stop-color="var(--illustration-teal-light)"/><stop offset="1" stop-color="var(--mint)"/></linearGradient>
+</defs>
+<!-- 按实际图形范围等比缩放并居中，保留内部手势与图标的相对位置。 -->
+<g class="function-artwork" transform="translate(12.381 4.342) scale(.9198)">
+<ellipse cx="27" cy="79" rx="26" ry="3" fill="var(--brand-subtle)"/>
+<g transform="translate(-6 -15.6) scale(.06)">
+<rect x="224" y="258" width="632" height="1200" rx="100" fill="var(--surface)"/>
+<rect x="235" y="270" width="610" height="1180" rx="90" fill="url(#finger-phone)" stroke="var(--illustration-camera-rim)" stroke-width="13"/>
+<rect x="350" y="350" width="390" height="390" rx="110" fill="var(--illustration-camera-rim)"/>
+<g fill="var(--illustration-camera)" stroke="var(--illustration-blue-light)" stroke-width="12">
+<circle cx="450" cy="450" r="55"/><circle cx="620" cy="480" r="55"/>
+<circle cx="450" cy="620" r="55"/><circle cx="620" cy="620" r="55"/>
+</g>
+<circle cx="545" cy="425" r="31" fill="var(--illustration-flash)" fill-opacity=".35"/>
+<rect x="534" y="400" width="22" height="50" rx="11" fill="var(--illustration-flash)" stroke="var(--surface)" stroke-width="7"/>
+<path d="M110 1568c20-178 11-348 25-478 4-80 55-125 80-195 10-37 26-65 38-56 21 19 5 127 27 264 41-106 64-214 75-345l38-264c8-65 17-113 59-117 45-5 69 33 69 91l-8 387c-1 64 22 96 51 96 38-2 69-30 105-72l86-116c35-63 60-141 78-197 13-32 39-16 54 16 44 78 37 172-5 279 53 23 97 121 63 180 8 77-45 139-81 206-33 53-74 91-91 163l-42 158Z" fill="url(#finger-skin)" stroke="var(--surface)" stroke-width="24" stroke-linejoin="round"/>
+<rect x="431" y="394" width="70" height="95" rx="32" fill="var(--illustration-skin-light)" transform="rotate(-5 466 442)"/>
+</g>
+<g class="function-symbols" transform="translate(-24 -6)">
+<svg class="function-heart-symbol" x="55" y="37" width="30" height="30" viewBox="0 0 200 200" transform="rotate(-12 70 52)">
+<path d="M100 30C79 15 54 16 34 28 9 42 1 69 15 99 30 132 68 163 100 183 132 163 170 132 185 99 199 69 191 42 166 28 146 16 121 15 100 30Z" fill="url(#finger-heart)" stroke="var(--surface)" stroke-width="12.5" stroke-linejoin="round"/>
+<path d="M35 104h34l13-30 17 51 18-69 13 48h35" stroke="var(--surface)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+<svg class="function-breath-symbol" x="68.5" y="23" width="33.75" height="30" viewBox="0 0 32 32" preserveAspectRatio="none" transform="rotate(10 85.375 38)">
+<path d="M14 8C8 7 4 13 3 22c-1 6 2 8 6 6l5-4Zm4 0c6-1 10 5 11 14 1 6-2 8-6 6l-5-4Z" fill="var(--illustration-blue-light)" stroke="var(--surface)" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M16 3v11m0-2-6 8m6-8 6 8" stroke="var(--accent-blue)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</g>
+</g>
+</svg>
+</div><span>心率与呼吸</span></li>
+<li><div data-feature-art="oxygen" aria-hidden="true">
+<svg class="function-illustration" data-illustration="oxygen" viewBox="0 0 100 84" fill="none" aria-hidden="true">
+<defs>
+<radialGradient id="oxygen-bubble" cx=".32" cy=".25" r=".8"><stop stop-color="var(--surface)"/><stop offset=".4" stop-color="var(--illustration-blue-light)"/><stop offset="1" stop-color="var(--primary)"/></radialGradient>
+<linearGradient id="oxygen-tile" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
+</defs>
+<g class="function-artwork" transform="translate(5.167 3.125) scale(.9017)">
+<ellipse cx="50" cy="74" rx="34" ry="4" fill="var(--brand-subtle)"/>
+<circle cx="47" cy="36" r="28" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="3"/>
+<path d="M28 29q2-11 13-13" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+<text x="31" y="45" fill="var(--action)" font-size="25" font-weight="500">O<tspan font-size="14" dy="4">2</tspan></text>
+<circle cx="79" cy="19" r="9" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="2"/>
+<circle cx="16" cy="50" r="6" fill="url(#oxygen-bubble)" stroke="var(--surface)" stroke-width="2"/>
+<rect x="40" y="51" width="48" height="24" rx="9" fill="url(#oxygen-tile)" stroke="var(--surface)" stroke-width="3" transform="rotate(-8 64 63)"/>
+<path d="M48 64h7l4-6 5 12 5-9 4 3h7" stroke="var(--primary)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>
+</div><span>血氧估计</span></li>
+<li><div data-feature-art="risk" aria-hidden="true">
+<svg class="function-illustration" data-illustration="risk" viewBox="0 0 100 84" fill="none" aria-hidden="true">
+<defs>
+<linearGradient id="risk-paper" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--illustration-teal-light)"/></linearGradient>
+<linearGradient id="risk-glass" x2="1" y2="1"><stop stop-color="var(--surface)"/><stop offset="1" stop-color="var(--mint)" stop-opacity=".65"/></linearGradient>
+</defs>
+<g class="function-artwork" transform="translate(3.717 1.298) scale(.9469)">
+<ellipse cx="50" cy="75" rx="34" ry="4" fill="var(--brand-subtle)"/>
+<g transform="rotate(-8 40 42)">
+<path d="M23 10h29l12 12v45a5 5 0 0 1-5 5H23a5 5 0 0 1-5-5V15a5 5 0 0 1 5-5Z" fill="url(#risk-paper)" stroke="var(--surface)" stroke-width="4"/>
+<path d="M52 10v12h12" fill="var(--mint)" fill-opacity=".7"/>
+<path d="M28 29h19m-19 8h24m-24 8h16m-16 9h11" stroke="var(--primary)" stroke-opacity=".75" stroke-width="2" stroke-linecap="round"/>
+<path d="M30 14c-2 4-6 7-6 10a6 6 0 0 0 12 0c0-3-4-6-6-10Z" fill="var(--illustration-rose)"/>
+<text x="39" y="24" fill="var(--action)" font-size="7" font-weight="600">GLU</text>
+</g>
+<path d="m69 59 14 15" stroke="var(--surface)" stroke-width="11" stroke-linecap="round"/>
+<path d="m69 59 14 15" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/>
+<circle cx="61" cy="48" r="20" fill="url(#risk-glass)" stroke="var(--surface)" stroke-width="4"/>
+<circle cx="61" cy="48" r="17" stroke="var(--primary)" stroke-width="1.5"/>
+<path d="m61 36 10 6v12l-10 6-10-6V42Z" fill="var(--mint)" fill-opacity=".8" stroke="var(--action)" stroke-width="1"/>
+<text x="61" y="53" text-anchor="middle" fill="var(--action)" font-size="16" font-weight="600">G</text>
+</g>
+</svg>
+</div><span>糖尿病风险筛查</span></li>
 </ul>
 </div>
 <footer class="intro-footer">

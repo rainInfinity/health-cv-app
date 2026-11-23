@@ -15,13 +15,19 @@ export function icon(name) {
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.chevron}</svg>`;
 }
 
-/** 按实际经过的分钟、小时或整天显示间隔；无记录或时钟早于记录时不虚构检测。 */
-export function measurementRecency(measuredAt, now = Date.now()) {
-  if (!measuredAt) return '尚未检测';
-  const elapsed = now - Date.parse(measuredAt);
-  if (elapsed < 0) return '检测时间待核对';
-  if (elapsed < 60_000) return '刚刚检测';
-  if (elapsed < 3_600_000) return `已 ${Math.floor(elapsed / 60_000)} 分钟未检测`;
-  if (elapsed < 86_400_000) return `已 ${Math.floor(elapsed / 3_600_000)} 小时未检测`;
-  return `已 ${Math.floor(elapsed / 86_400_000)} 天未检测`;
+let loadingSequence = 0;
+
+/** 复用原生加载圈的24画布、半径9与线宽2，白色按钮前景不使用品牌渐变。 */
+export function loadingIcon({ className = '', foreground = false, hidden = false } = {}) {
+  const gradientId = `demo-loading-${++loadingSequence}`;
+  const stroke = foreground ? 'currentColor' : `url(#${gradientId})`;
+  const track = foreground ? 'currentColor' : 'var(--primary)';
+  return `<svg class="icon loading-spinner ${escapeHtml(className)}" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"${hidden ? ' hidden' : ''}>${foreground ? '' : `<defs><linearGradient id="${gradientId}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0" stop-color="var(--primary)"/><stop offset="1" stop-color="var(--mint)"/></linearGradient></defs>`}<circle cx="12" cy="12" r="9" stroke="${track}" stroke-opacity=".18"/><path d="M12 3a9 9 0 1 1-9 9" stroke="${stroke}"/></svg>`;
+}
+
+
+/** 将质量展示样例映射为既有角标色阶，90 与 80 归入较高一档。 */
+export function qualityBadge(score) {
+  const tone = score >= 90 ? 'high' : score >= 80 ? 'medium' : 'low';
+  return `<span class="result-quality-badge ${tone}" role="img" aria-label="信号质量 ${score} 分，满分 100 分" title="信号质量 ${score} 分 / 100 分"><strong>${score}</strong></span>`;
 }

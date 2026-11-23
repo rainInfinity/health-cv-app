@@ -8,6 +8,8 @@
   <title>心沐 · 交互设计演示</title>
   <link rel="icon" type="image/png" href="/brand-assets/favicon.png">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./data-states.css">
+  <link rel="stylesheet" href="./result-states.css">
 </head>
 <body>
   <aside class="demo-sidebar" aria-label="设计演示导航">
@@ -41,11 +43,11 @@
       </div>
     </div>
     <div class="demo-controls" role="group" aria-label="演示操作">
+      <button type="button" class="demo-home-refresh" data-home-refresh data-action="home-refresh" hidden>刷新首页</button>
       <button type="button" class="demo-finger-control" data-finger-toggle hidden>模拟放置指尖</button>
       <button type="button" class="demo-finger-control" data-chest-contact hidden>模拟贴靠胸口</button>
       <button type="button" class="demo-finger-control" data-finger-missing hidden>模拟未检测到手指</button>
       <button type="button" class="demo-finger-control" data-finger-uncover hidden>模拟覆盖丢失</button>
-      <button type="button" class="demo-finger-control" data-finger-result hidden>预览检测结果</button>
       <button type="button" class="demo-reset" data-action="reset-demo">重置演示</button>
     </div>
   </div>
