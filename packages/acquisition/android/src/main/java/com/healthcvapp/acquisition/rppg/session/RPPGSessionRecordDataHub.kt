@@ -87,7 +87,7 @@ internal class RPPGSessionRecordDataHub(
     } catch (error: Throwable) {
       val failure = RPPGRecordPipelineFailure(
         code = "FILE_WRITE_FAILED",
-        message = "RPPG 三件套记录写入失败。",
+        message = "RPPG 结果记录写入失败。",
         cause = error,
       )
       failAndStop(failure)

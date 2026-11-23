@@ -95,12 +95,12 @@ class HybridRPPG : HybridRPPGSpec(), LifecycleEventListener {
     result.toNitro()
   }
 
-  /** 查询外部新结果和内部已有的完整主动 RPPG 三件套。 */
+  /** 查询外部新结果和内部已有的完整主动 RPPG 结果，并按真实开始时间升序返回。 */
   override fun listArtifacts(): Promise<Array<RPPGArtifact>> = Promise.async {
     buildList {
       addAll(artifactStore.listArtifacts())
       addAll(internalArtifactStore.listArtifacts())
-      sortBy { it.sessionId }
+      sortWith(compareBy<ModelRPPGArtifact> { it.startedAtSortKey }.thenBy { it.sessionId })
     }.map { it.toNitro() }.toTypedArray()
   }
 

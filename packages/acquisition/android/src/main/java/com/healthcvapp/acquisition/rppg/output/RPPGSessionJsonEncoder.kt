@@ -11,7 +11,7 @@ import com.healthcvapp.acquisition.rppg.model.RPPGSegmentRange
 
 /** 将完成状态、实际相机协商和文件范围编码为 UTF-8 JSON 文本。 */
 internal object RPPGSessionJsonEncoder {
-  /** 为已关闭的三件套生成最终会话元信息。 */
+  /** 为已关闭的完整结果文件集合生成最终会话元信息。 */
   fun encode(
     session: RPPGSessionDescriptor,
     finalization: RPPGSessionFinalization,

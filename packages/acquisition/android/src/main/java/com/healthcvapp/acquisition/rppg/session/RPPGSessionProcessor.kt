@@ -183,6 +183,7 @@ internal class FaceRPPGSessionProcessor(
       beatEstimator.resetSession()
       return
     }
+    val previousInstantHeartRate = beatEstimator.latestHeartRate
     beatEstimator.accept(filteredSample)
     emit(
       RPPGPulseSample(
@@ -192,6 +193,10 @@ internal class FaceRPPGSessionProcessor(
         value = filteredSample.value,
       ),
     )
+    val instantHeartRate = beatEstimator.latestHeartRate
+    if (instantHeartRate != null && instantHeartRate !== previousInstantHeartRate) {
+      emit(instantHeartRate)
+    }
     heartRateEstimator.accept(filteredSample, heartRateOutput)
     if (!heartRateOutput.hasWindow) return
     emit(

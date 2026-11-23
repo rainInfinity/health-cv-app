@@ -8,7 +8,7 @@ import com.healthcvapp.acquisition.rppg.model.RPPGConfig
 
 /** 当前相机未提供颜色描述时采用的、显式标记版本的 BT.601 limited-range 转换。 */
 internal object RppgYuvColorConverter {
-  val ASSUMPTION_ID: String = RPPGConfig.EXPERIMENTAL_V1.colorAssumptionId
+  val ASSUMPTION_ID: String = RPPGConfig.EXPERIMENTAL_V2.colorAssumptionId
 
   /** 将一个 YUV 样本转换为不透明 ARGB 像素。 */
   fun toArgb(y: Int, u: Int, v: Int): Int {

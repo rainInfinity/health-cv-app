@@ -11,7 +11,7 @@ import org.junit.Test
 class RppgTimeResamplerTest {
   @Test
   fun interpolatesOnSensorTimeGridInsteadOfFrameArrivalIntervals() {
-    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V1)
+    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V2)
     val sample = RppgResampledRgb()
 
     assertEquals(RppgResamplerEvent.SEGMENT_STARTED, resampler.accept(0L, rgb(0.0)))
@@ -34,7 +34,7 @@ class RppgTimeResamplerTest {
 
   @Test
   fun longGapStartsFreshSegmentWithoutInterpolatingAcrossIt() {
-    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V1)
+    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V2)
     val sample = RppgResampledRgb()
 
     resampler.accept(0L, rgb(0.0))
@@ -53,7 +53,7 @@ class RppgTimeResamplerTest {
 
   @Test
   fun rejectsNonMonotonicAndInvalidSamplesAndStartsNewSegments() {
-    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V1)
+    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V2)
 
     assertEquals(RppgResamplerEvent.SEGMENT_STARTED, resampler.accept(100L, rgb(10.0)))
     assertEquals(
@@ -76,7 +76,7 @@ class RppgTimeResamplerTest {
 
   @Test
   fun resetClearsGridHistoryAndSessionIndexes() {
-    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V1, bufferCapacity = 2)
+    val resampler = RppgTimeResampler(RPPGConfig.EXPERIMENTAL_V2, bufferCapacity = 2)
     resampler.accept(10_000_000L, rgb(10.0))
     resampler.accept(60_000_000L, rgb(60.0))
     resampler.accept(110_000_000L, rgb(110.0))

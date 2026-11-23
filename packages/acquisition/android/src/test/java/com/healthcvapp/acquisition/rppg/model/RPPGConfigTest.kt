@@ -10,12 +10,13 @@ import org.junit.Test
 class RPPGConfigTest {
   @Test
   fun sessionSnapshotContainsVersionedProcessingValuesBeyondRequestedFps() {
-    val config = RPPGConfig.EXPERIMENTAL_V1
+    val config = RPPGConfig.EXPERIMENTAL_V2
     val snapshot = config.sessionSnapshot()
     val cameraRequest = snapshot["cameraRequest"] as Map<*, *>
     val faceReadiness = snapshot["faceReadiness"] as Map<*, *>
+    val heartRateQuality = snapshot["heartRateQuality"] as Map<*, *>
 
-    assertEquals("rppg-experiment-v1", snapshot["configVersion"])
+    assertEquals("rppg-experiment-v2-3s", snapshot["configVersion"])
     assertEquals("pending-review", snapshot["reviewStatus"])
     assertEquals("front", cameraRequest["lensFacing"])
     assertEquals(true, cameraRequest["exposureAuto"])
@@ -47,16 +48,22 @@ class RPPGConfigTest {
     assertEquals(3.0, snapshot["bandpassHighHz"])
     assertEquals(45.0, snapshot["minimumHeartRateBpm"])
     assertEquals(180.0, snapshot["maximumHeartRateBpm"])
-    assertEquals(12_000_000_000L, snapshot["heartRateWindowNanos"])
+    assertEquals(3_000_000_000L, snapshot["heartRateWindowNanos"])
     assertEquals(1_000_000_000L, snapshot["heartRateStepNanos"])
     assertEquals(3.0, snapshot["minimumHeartRateSnrDb"])
+    assertEquals("hann-main-lobe-log-parabolic-v1", heartRateQuality["version"])
+    assertEquals("symmetric-hann", heartRateQuality["windowFunction"])
+    assertEquals("search-range-bin-centers", heartRateQuality["snrPowerBand"])
+    assertEquals(2.0, heartRateQuality["snrMainLobeHalfWidthBins"])
+    assertEquals(40.0 / 59.0, heartRateQuality["snrMainLobeHalfWidthHz"] as Double, 1e-12)
+    assertEquals(6_500_000_000L, config.minimumSpectralMeasurementNanos)
     assertEquals(200_000_000L, snapshot["realtimeBatchNanos"])
     assertEquals(15_000_000_000L, snapshot["realtimeBufferNanos"])
   }
 
   @Test
   fun rejectsUnsupportedColorAssumptionsAndFrequencyValuesOutsideBandpass() {
-    val config = RPPGConfig.EXPERIMENTAL_V1
+    val config = RPPGConfig.EXPERIMENTAL_V2
 
     assertThrows(IllegalArgumentException::class.java) {
       config.copy(colorAssumptionId = "UNVERSIONED_COLOR")

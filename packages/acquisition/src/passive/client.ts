@@ -61,7 +61,7 @@ export class PassiveCaptureClient {
     this.unwrap(await this.native.disable())
   }
 
-  /** 查询外部及已有内部目录中已发布的被动 RPPG 三件套。 */
+  /** 查询外部及已有内部目录中已发布的被动 RPPG 结果，保留历史 v1 三件套。 */
   listArtifacts(): Promise<RPPGArtifact[]> {
     this.ensureAndroid()
     return this.native.listArtifacts()

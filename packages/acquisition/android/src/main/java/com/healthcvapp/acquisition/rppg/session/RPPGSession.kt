@@ -589,7 +589,7 @@ internal class RPPGSession(
     }
   }
 
-  /** 首帧后在 IO dispatcher 建立三件套，不把文件操作放进 CameraX 回调。 */
+  /** 首帧后在 IO dispatcher 建立结果文件，不把文件操作放进 CameraX 回调。 */
   private fun beginOutputOpen(sensorTimeOrigin: Long) {
     val sessionId = snapshot.sessionId
       ?: throw RPPGSessionException("SESSION_NOT_STARTED", "正式结果会话标识不存在。")
@@ -653,6 +653,7 @@ internal class RPPGSession(
         if (record.valid) validHeartRateWindowCount = Math.addExact(validHeartRateWindowCount, 1L)
         updateSnapshot { it.copy(latestHeartRate = record) }
       }
+      is RPPGInstantHeartRate -> Unit // 逐搏记录不参与频谱质量结论或窗口计数。
     }
   }
 
@@ -851,7 +852,7 @@ internal class RPPGSession(
     return RPPGSessionOperationResult(true, completed)
   }
 
-  /** 首个结果文件失败后阻止 session.json 被定稿或三件套被发布。 */
+  /** 首个结果文件失败后阻止 session.json 被定稿或完整结果被发布。 */
   private fun markOutputFailed(cause: Throwable) {
     output?.fail(cause)
     recordDataHub?.fail(cause)
@@ -1119,7 +1120,7 @@ internal class RPPGSession(
   }
 
   private companion object {
-    const val SESSION_SCHEMA_VERSION = "rppg-session-v1"
+    const val SESSION_SCHEMA_VERSION = "rppg-session-v2"
     const val ALGORITHM_VERSION = "rppg-active-v1"
     const val NANOS_PER_MILLISECOND = 1_000_000L
   }

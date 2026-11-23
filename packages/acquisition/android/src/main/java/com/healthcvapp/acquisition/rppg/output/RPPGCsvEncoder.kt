@@ -3,6 +3,7 @@
 package com.healthcvapp.acquisition.rppg.output
 
 import com.healthcvapp.acquisition.rppg.model.RPPGHeartRateWindow
+import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGPulseSample
 import com.healthcvapp.acquisition.storage.csv.CsvRowEncoder
 
@@ -91,5 +92,22 @@ internal object RPPGHeartRateCsvEncoder : CsvRowEncoder<RPPGHeartRateWindow> {
       if (character == '"') destination.append("\"\"") else destination.append(character)
     }
     destination.append('"')
+  }
+}
+
+/** 只保存新合格 RR，不保存失效快照；纳秒直接写十进制整数，避免浮点精度损失。 */
+internal object RPPGBeatCsvEncoder : CsvRowEncoder<RPPGInstantHeartRate> {
+  override val header: String =
+    "segmentIndex,previousPeakTimestampNs,peakTimestampNs,intervalNs,heartRateBpm"
+
+  override fun rowCount(record: RPPGInstantHeartRate): Int = 1
+
+  override fun appendRow(record: RPPGInstantHeartRate, rowIndex: Int, destination: StringBuilder) {
+    check(rowIndex == 0)
+    destination.append(record.segmentIndex)
+      .append(',').append(record.previousPeakTimestampNanos)
+      .append(',').append(record.peakTimestampNanos)
+      .append(',').append(record.intervalNanos)
+      .append(',').append(record.heartRateBpm)
   }
 }

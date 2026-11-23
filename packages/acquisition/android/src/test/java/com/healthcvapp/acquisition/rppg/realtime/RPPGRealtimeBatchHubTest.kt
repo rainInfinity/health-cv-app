@@ -45,7 +45,7 @@ class RPPGRealtimeBatchHubTest {
       val output = output(root, sessionId)
       output.open()
       val dispatcher = StandardTestDispatcher(testScheduler)
-      val realtime = realtimeHub(sessionId, RPPGConfig.EXPERIMENTAL_V1, dispatcher)
+      val realtime = realtimeHub(sessionId, RPPGConfig.EXPERIMENTAL_V2, dispatcher)
       val observed = mutableListOf<RPPGRealtimeBatch>()
       val subscription = realtime.subscribe(observed::add)
       runCurrent()
@@ -80,7 +80,7 @@ class RPPGRealtimeBatchHubTest {
   fun `slow subscriber drops only its own batches while fast subscriber and csv keep all samples`() = runTest {
     withRoot { root ->
       val sessionId = "slow-subscriber-session"
-      val config = RPPGConfig.EXPERIMENTAL_V1.copy(realtimeBatchNanos = 50_000_000L)
+      val config = RPPGConfig.EXPERIMENTAL_V2.copy(realtimeBatchNanos = 50_000_000L)
       val output = output(root, sessionId, config)
       output.open()
       val dispatcher = StandardTestDispatcher(testScheduler)
@@ -130,7 +130,7 @@ class RPPGRealtimeBatchHubTest {
   @Test
   fun `segment changes manual flush and close flush partial batches without crossing segments`() = runTest {
     val sessionId = "segment-batches"
-    val realtime = realtimeHub(sessionId, RPPGConfig.EXPERIMENTAL_V1, StandardTestDispatcher(testScheduler))
+    val realtime = realtimeHub(sessionId, RPPGConfig.EXPERIMENTAL_V2, StandardTestDispatcher(testScheduler))
     val batches = mutableListOf<RPPGRealtimeBatch>()
     val subscription = realtime.subscribe(batches::add)
     runCurrent()
@@ -180,11 +180,11 @@ class RPPGRealtimeBatchHubTest {
   )
 
   /** 构造以指定算法参数打开的会话输出。 */
-  private fun output(root: File, sessionId: String, config: RPPGConfig = RPPGConfig.EXPERIMENTAL_V1) =
+  private fun output(root: File, sessionId: String, config: RPPGConfig = RPPGConfig.EXPERIMENTAL_V2) =
     RPPGSessionOutput(
       filesDirectory = root,
       session = RPPGSessionDescriptor(
-        schemaVersion = "rppg-session-v1",
+        schemaVersion = "rppg-session-v2",
         algorithmVersion = "rppg-realtime-v1",
         sessionId = sessionId,
         source = RPPGSessionSource.ACTIVE,

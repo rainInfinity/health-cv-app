@@ -1,4 +1,4 @@
-/** 验证 RPPG 三件套的 CSV 数值、空值及统一采集时间轴。 */
+/** 验证 RPPG 结果 CSV 数值、空值及统一采集时间轴。 */
 
 package com.healthcvapp.acquisition.rppg.output
 
@@ -16,6 +16,7 @@ import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceConfig
 import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceMode
 import com.healthcvapp.acquisition.rppg.model.RPPGConfig
 import com.healthcvapp.acquisition.rppg.model.RPPGHeartRateWindow
+import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGPulseSample
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionDescriptor
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionFinalization
@@ -23,7 +24,12 @@ import com.healthcvapp.acquisition.rppg.model.RPPGSessionSource
 import com.healthcvapp.acquisition.rppg.model.RPPGSignalStatus
 import com.healthcvapp.acquisition.rppg.model.RPPGTerminationReason
 import com.healthcvapp.acquisition.storage.AcquisitionPaths
+import com.healthcvapp.acquisition.storage.AcquisitionFileStore
+import com.healthcvapp.acquisition.storage.csv.BatchWriter
+import com.healthcvapp.acquisition.storage.csv.BatchWriterFactory
+import com.healthcvapp.acquisition.storage.csv.CsvBatchWriter
 import java.io.File
+import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +40,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 使用真实临时文件验证三份结果能恢复采集时序和来源。 */
+/** 使用真实临时文件验证结果能恢复采集时序和来源。 */
 class RPPGSessionOutputTest {
   @Test
   fun `writes finite pulse and nullable heart rate rows on one exact sensor timeline`() = runTest {
@@ -161,6 +167,10 @@ class RPPGSessionOutputTest {
           listOf("segmentIndex,windowStartNs,windowEndNs,heartRateBpm,valid,reason,spectralSnrDb"),
           paths.rppgPartialHeartRateFile(sessionId).readLines(),
         )
+        assertEquals(
+          listOf("segmentIndex,previousPeakTimestampNs,peakTimestampNs,intervalNs,heartRateBpm"),
+          paths.rppgPartialBeatFile(sessionId).readLines(),
+        )
         assertTrue(paths.rppgPartialSessionJsonFile(sessionId).readText().contains("\"source\":\"${source.wireValue}\""))
         assertTrue(paths.rppgPartialSessionJsonFile(sessionId).readText().contains("\"signalStatus\":\"no_waveform\""))
       }
@@ -174,6 +184,108 @@ class RPPGSessionOutputTest {
     }
     assertThrows(IllegalArgumentException::class.java) {
       RPPGHeartRateWindow(0L, SENSOR_TIME_ORIGIN, SENSOR_TIME_ORIGIN, 0.0, false, "LOW_SNR", null)
+    }
+    assertThrows(IllegalArgumentException::class.java) {
+      RPPGInstantHeartRate(0L, SENSOR_TIME_ORIGIN, SENSOR_TIME_ORIGIN + 1L, 2L, 60.0)
+    }
+    assertThrows(IllegalArgumentException::class.java) {
+      RPPGInstantHeartRate(0L, SENSOR_TIME_ORIGIN, SENSOR_TIME_ORIGIN + 1L, 1L, Double.NaN)
+    }
+  }
+
+  @Test
+  fun `duplicate beat fails output instead of persisting a repeated snapshot`() = runTest {
+    withRoot { root ->
+      val sessionId = "duplicate-beat"
+      val paths = AcquisitionPaths(root)
+      val output = RPPGSessionOutput(
+        root,
+        descriptor(sessionId, RPPGSessionSource.PASSIVE, SENSOR_TIME_ORIGIN),
+        ioDispatcher = Dispatchers.Unconfined,
+      )
+      val peakTime = SENSOR_TIME_ORIGIN + 1_000_000_000L
+      val beat = RPPGInstantHeartRate(0L, SENSOR_TIME_ORIGIN, peakTime, 1_000_000_000L, 60.0)
+      output.open()
+      output.writeBatch(
+        listOf(
+          RPPGPulseSample(0L, 0L, SENSOR_TIME_ORIGIN, 0.25),
+          RPPGPulseSample(0L, 1L, peakTime, 0.5),
+          beat,
+        ),
+      )
+      assertTrue(runCatching { output.writeBatch(listOf(beat)) }.exceptionOrNull() is IOException)
+      assertTrue(runCatching {
+        output.close(
+          RPPGSessionFinalization(
+            "2025-07-20T10:00:05Z",
+            RPPGTerminationReason.USER_STOP,
+            RPPGSignalStatus.NO_VALID_HEART_RATE,
+            cameraSummary(),
+          ),
+        )
+      }.exceptionOrNull() is IOException)
+      assertFalse(paths.rppgPartialSessionJsonFile(sessionId).exists())
+      assertEquals(2, paths.rppgPartialBeatFile(sessionId).readLines().size)
+    }
+  }
+
+  @Test
+  fun `beat close failure prevents complete metadata and publication`() = runTest {
+    withRoot { root ->
+      val sessionId = "beat-close-failure"
+      val closeFailure = IOException("逐搏文件关闭失败")
+      val output = RPPGSessionOutput(
+        root,
+        descriptor(sessionId, RPPGSessionSource.ACTIVE, SENSOR_TIME_ORIGIN),
+        ioDispatcher = Dispatchers.Unconfined,
+        beatWriterFactory = BatchWriterFactory { file ->
+          val delegate = CsvBatchWriter(AcquisitionFileStore().createNewOutput(file), RPPGBeatCsvEncoder)
+          object : BatchWriter<RPPGInstantHeartRate> {
+            override suspend fun writeBatch(records: List<RPPGInstantHeartRate>) = delegate.writeBatch(records)
+
+            override fun close() {
+              delegate.close()
+              throw closeFailure
+            }
+          }
+        },
+      )
+      output.open()
+      val result = runCatching {
+        output.close(
+          RPPGSessionFinalization(
+            "2025-07-20T10:00:05Z",
+            RPPGTerminationReason.USER_STOP,
+            RPPGSignalStatus.NO_WAVEFORM,
+            cameraSummary(),
+          ),
+        )
+      }
+      assertEquals(closeFailure, result.exceptionOrNull())
+      assertFalse(AcquisitionPaths(root).rppgPartialSessionJsonFile(sessionId).exists())
+      assertThrows(IOException::class.java) { RPPGArtifactStore(root).publish(sessionId) }
+      assertTrue(RPPGArtifactStore(root).listArtifacts().isEmpty())
+    }
+  }
+
+  @Test
+  fun `beat open failure closes earlier csv writers without completing session`() = runTest {
+    withRoot { root ->
+      val sessionId = "beat-open-failure"
+      val paths = AcquisitionPaths(root)
+      val openFailure = IOException("逐搏文件打开失败")
+      val output = RPPGSessionOutput(
+        root,
+        descriptor(sessionId, RPPGSessionSource.ACTIVE, SENSOR_TIME_ORIGIN),
+        ioDispatcher = Dispatchers.Unconfined,
+        beatWriterFactory = BatchWriterFactory { throw openFailure },
+      )
+      assertEquals(openFailure, runCatching { output.open() }.exceptionOrNull())
+      assertEquals(listOf("segmentIndex,sampleIndex,timeMs,value"), paths.rppgPartialPulseFile(sessionId).readLines())
+      assertEquals(listOf(RPPGHeartRateCsvEncoder.header), paths.rppgPartialHeartRateFile(sessionId).readLines())
+      assertFalse(paths.rppgPartialSessionJsonFile(sessionId).exists())
+      assertFalse(paths.rppgPartialBeatFile(sessionId).exists())
+      assertTrue(RPPGArtifactStore(root).listArtifacts().isEmpty())
     }
   }
 
@@ -216,13 +328,13 @@ class RPPGSessionOutputTest {
     source: RPPGSessionSource,
     origin: Long,
   ) = RPPGSessionDescriptor(
-    schemaVersion = "rppg-session-v1",
+    schemaVersion = "rppg-session-v2",
     algorithmVersion = "rppg-realtime-v1",
     sessionId = sessionId,
     source = source,
     sensorTimeOriginNanos = origin,
     startedAt = "2025-07-20T10:00:00Z",
-    config = RPPGConfig.EXPERIMENTAL_V1,
+    config = RPPGConfig.EXPERIMENTAL_V2,
   )
 
   /** 在真实临时根目录中运行用例并清理生成文件。 */

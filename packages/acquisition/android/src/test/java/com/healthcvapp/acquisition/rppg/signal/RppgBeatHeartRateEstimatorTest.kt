@@ -188,7 +188,7 @@ class RppgBeatHeartRateEstimatorTest {
   fun noBeatTimeoutClearsCurrentValueOnceAndDiscardsOldPeakHistory() {
     val harness = readyHarness()
     val lastPeak = requireNotNull(harness.estimator.latestHeartRate).peakTimestampNanos
-    val timeout = RPPGConfig.EXPERIMENTAL_V1.beatDetection.resultTimeoutNanos
+    val timeout = RPPGConfig.EXPERIMENTAL_V2.beatDetection.resultTimeoutNanos
     while (harness.timestamp <= lastPeak + timeout) {
       assertFalse(harness.feed(0.0))
       assertEquals(60.0, requireNotNull(harness.estimator.latestHeartRate).heartRateBpm, 1e-9)
@@ -243,7 +243,7 @@ class RppgBeatHeartRateEstimatorTest {
 
   /** 只推进传感器时间并复用一份输入；允许测试独立注入序号和时间缺口。 */
   private class Harness {
-    val estimator = RppgBeatHeartRateEstimator(RPPGConfig.EXPERIMENTAL_V1)
+    val estimator = RppgBeatHeartRateEstimator(RPPGConfig.EXPERIMENTAL_V2)
     private val input = RppgFilteredSample()
     var segment = 3L
     var sampleIndex = 0L

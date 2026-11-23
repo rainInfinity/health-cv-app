@@ -163,13 +163,21 @@ internal class RppgHeartRateEstimator(
   /** 相邻 HR 估计之间的规则样本数。 */
   val stepSampleCount: Int = calculateStepSampleCount(config)
 
-  private val minimumBin = ceil(
-    config.minimumHeartRateBpm / 60.0 * windowSampleCount / config.resamplingRateHz,
-  ).toInt()
-  private val maximumBin = floor(
-    config.maximumHeartRateBpm / 60.0 * windowSampleCount / config.resamplingRateHz,
-  ).toInt()
+  private val frequencyResolutionHz = config.resamplingRateHz / windowSampleCount
+  // 覆盖与搜索区间相交的边界 bin，再各计算一个相邻 bin，避免短窗离散化缩窄范围。
+  private val minimumSearchBin = floor(config.minimumHeartRateBpm / 60.0 / frequencyResolutionHz).toInt()
+  private val maximumSearchBin = ceil(config.maximumHeartRateBpm / 60.0 / frequencyResolutionHz).toInt()
+  private val minimumBin = minimumSearchBin - 1
+  private val maximumBin = maximumSearchBin + 1
   private val spectrumBinCount = maximumBin - minimumBin + 1
+  private val minimumSearchOffset = minimumSearchBin - minimumBin
+  private val maximumSearchOffset = maximumSearchBin - minimumBin
+  private val minimumPowerOffset =
+    ceil(config.minimumHeartRateBpm / 60.0 / frequencyResolutionHz).toInt() - minimumBin
+  private val maximumPowerOffset =
+    floor(config.maximumHeartRateBpm / 60.0 / frequencyResolutionHz).toInt() - minimumBin
+  private val snrPeakHalfWidthHz =
+    RPPGConfig.HANN_MAIN_LOBE_HALF_WIDTH_BINS * config.resamplingRateHz / (windowSampleCount - 1)
   private val values = DoubleArray(windowSampleCount)
   private val sampleIndices = LongArray(windowSampleCount)
   private val timestampsNanos = LongArray(windowSampleCount)
@@ -186,10 +194,12 @@ internal class RppgHeartRateEstimator(
   private var lastAcceptedTimestampNanos: Long? = null
 
   init {
-    require(minimumBin > 0 && maximumBin < windowSampleCount / 2) {
-      "heart-rate search range must stay below Nyquist"
+    require(minimumSearchBin > 0 && maximumSearchBin < windowSampleCount / 2) {
+      "heart-rate search range must leave neighboring bins below Nyquist"
     }
-    require(spectrumBinCount >= 3) { "heart-rate search range must contain at least three spectrum bins" }
+    require(maximumPowerOffset - minimumPowerOffset + 1 >= 3) {
+      "heart-rate search range must contain at least three spectrum bins"
+    }
     val tableElements = spectrumBinCount.toLong() * windowSampleCount
     require(tableElements <= Int.MAX_VALUE) { "heart-rate spectrum table is too large" }
     cosineTable = DoubleArray(tableElements.toInt())
@@ -308,11 +318,11 @@ internal class RppgHeartRateEstimator(
     }
 
     var totalBandPower = 0.0
-    var peakOffset = 0
+    for (offset in minimumPowerOffset..maximumPowerOffset) totalBandPower += powers[offset]
+    var peakOffset = minimumSearchOffset
     var maximumPower = -1.0
-    for (offset in 0 until spectrumBinCount) {
+    for (offset in minimumSearchOffset..maximumSearchOffset) {
       val power = powers[offset]
-      totalBandPower += power
       if (power > maximumPower) {
         maximumPower = power
         peakOffset = offset
@@ -326,8 +336,9 @@ internal class RppgHeartRateEstimator(
       output.reject(RppgHeartRateRejectionReason.ZERO_ENERGY)
       return
     }
-    if (peakOffset == 0 || peakOffset == spectrumBinCount - 1) {
-      output.setPeak((minimumBin + peakOffset) * config.resamplingRateHz / windowSampleCount)
+    // 边界候选也必须是真正的局部峰；带外斜坡不能被搜索端点冒充心率。
+    if (powers[peakOffset] < powers[peakOffset - 1] || powers[peakOffset] < powers[peakOffset + 1]) {
+      output.setPeak((minimumBin + peakOffset) * frequencyResolutionHz)
       output.reject(RppgHeartRateRejectionReason.BOUNDARY_PEAK)
       return
     }
@@ -347,14 +358,12 @@ internal class RppgHeartRateEstimator(
       output.reject(RppgHeartRateRejectionReason.DEGENERATE_PEAK)
       return
     }
-    val rawOffset = 0.5 * (leftLog - rightLog) / curvature
-    if (!rawOffset.isFinite()) {
+    val binOffset = 0.5 * (leftLog - rightLog) / curvature
+    if (!binOffset.isFinite() || abs(binOffset) > 0.5) {
       output.reject(RppgHeartRateRejectionReason.DEGENERATE_PEAK)
       return
     }
-    val binOffset = rawOffset.coerceIn(-0.5, 0.5)
-    val peakFrequencyHz = (minimumBin + peakOffset + binOffset) * config.resamplingRateHz /
-      windowSampleCount
+    val peakFrequencyHz = (minimumBin + peakOffset + binOffset) * frequencyResolutionHz
     if (!peakFrequencyHz.isFinite()) {
       output.reject(RppgHeartRateRejectionReason.NUMERIC_FAILURE)
       return
@@ -369,9 +378,11 @@ internal class RppgHeartRateEstimator(
 
     var peakBandPower = 0.0
     var remainingBandPower = 0.0
-    for (offset in 0 until spectrumBinCount) {
-      val frequencyHz = (minimumBin + offset) * config.resamplingRateHz / windowSampleCount
-      if (abs(frequencyHz - peakFrequencyHz) <= SNR_PEAK_HALF_WIDTH_HZ) {
+    // 仅统计心率搜索带内 bin 中心的功率；插值辅助 bin 不参与 SNR。
+    // 对称 Hann 的主瓣半宽由 fs/(N-1) 决定，不能固定为小于短窗分辨率的 0.1 Hz。
+    for (offset in minimumPowerOffset..maximumPowerOffset) {
+      val frequencyHz = (minimumBin + offset) * frequencyResolutionHz
+      if (abs(frequencyHz - peakFrequencyHz) <= snrPeakHalfWidthHz) {
         peakBandPower += powers[offset]
       } else {
         remainingBandPower += powers[offset]
@@ -425,7 +436,6 @@ internal class RppgHeartRateEstimator(
 
   private companion object {
     const val NANOS_PER_SECOND = 1_000_000_000.0
-    const val SNR_PEAK_HALF_WIDTH_HZ = 0.1
     const val MIN_PEAK_CURVATURE = 1e-12
 
     fun calculateWindowSampleCount(config: RPPGConfig): Int {

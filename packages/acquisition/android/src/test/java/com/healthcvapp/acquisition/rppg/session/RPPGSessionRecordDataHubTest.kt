@@ -15,6 +15,7 @@ import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceConfig
 import com.healthcvapp.acquisition.camera.model.CameraWhiteBalanceMode
 import com.healthcvapp.acquisition.pipeline.DataHubOfferResult
 import com.healthcvapp.acquisition.rppg.model.RPPGConfig
+import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGPulseSample
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionDescriptor
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionFinalization
@@ -166,6 +167,49 @@ class RPPGSessionRecordDataHubTest {
     }
   }
 
+  @Test
+  fun `ordered tail preserves every beat in a batch without promoting spectral status`() = runTest {
+    withRoot { root ->
+      val sessionId = "beat-tail-session"
+      val paths = AcquisitionPaths(root)
+      val output = output(root, sessionId)
+      output.open()
+      val pipeline = RPPGSessionRecordDataHub(
+        output = output,
+        capacity = 8,
+        batchSize = 8,
+        intervalMillis = 60_000,
+        consumerDispatcher = StandardTestDispatcher(testScheduler),
+      )
+      val secondPeak = SENSOR_TIME_ORIGIN + 1_000_000_000L
+      val thirdPeak = secondPeak + 1_000_000_000L
+      val records = listOf(
+        RPPGPulseSample(0L, 0L, SENSOR_TIME_ORIGIN, 0.25),
+        RPPGPulseSample(0L, 1L, secondPeak, 0.5),
+        RPPGInstantHeartRate(0L, SENSOR_TIME_ORIGIN, secondPeak, 1_000_000_000L, 60.0),
+        RPPGPulseSample(0L, 2L, thirdPeak, 0.75),
+        RPPGInstantHeartRate(0L, secondPeak, thirdPeak, 1_000_000_000L, 60.0),
+      )
+      records.forEach { assertEquals(DataHubOfferResult.ACCEPTED, pipeline.offer(it)) }
+      val draining = async { pipeline.closeAndDrain() }
+      runCurrent()
+      draining.await()
+      output.close(finalization())
+      assertEquals(
+        listOf(
+          "segmentIndex,previousPeakTimestampNs,peakTimestampNs,intervalNs,heartRateBpm",
+          "0,$SENSOR_TIME_ORIGIN,$secondPeak,1000000000,60.0",
+          "0,$secondPeak,$thirdPeak,1000000000,60.0",
+        ),
+        paths.rppgPartialBeatFile(sessionId).readLines(),
+      )
+      val metadata = paths.rppgPartialSessionJsonFile(sessionId).readText()
+      assertTrue(metadata.contains("\"schemaVersion\":\"rppg-session-v2\""))
+      assertTrue(metadata.contains("\"signalStatus\":\"no_valid_heart_rate\""))
+      assertTrue(metadata.contains("\"heartRateWindows\":0,\"validHeartRateWindows\":0"))
+    }
+  }
+
   /** 构造带可替换脉搏 writer 的输出器。 */
   private fun output(
     root: File,
@@ -183,13 +227,13 @@ class RPPGSessionRecordDataHubTest {
   ): RPPGSessionOutput = RPPGSessionOutput(
     filesDirectory = root,
     session = RPPGSessionDescriptor(
-      schemaVersion = "rppg-session-v1",
+      schemaVersion = "rppg-session-v2",
       algorithmVersion = "rppg-realtime-v1",
       sessionId = sessionId,
       source = RPPGSessionSource.ACTIVE,
       sensorTimeOriginNanos = SENSOR_TIME_ORIGIN,
       startedAt = "2025-07-20T10:00:00Z",
-      config = RPPGConfig.EXPERIMENTAL_V1,
+      config = RPPGConfig.EXPERIMENTAL_V2,
     ),
     pulseWriterFactory = BatchWriterFactory(pulseWriter),
     ioDispatcher = Dispatchers.Unconfined,

@@ -1,8 +1,9 @@
-/** 管理 RPPG 三件套的打开、顺序写入、关闭与元信息定稿。 */
+/** 管理 RPPG 结果文件的打开、顺序写入、关闭与元信息定稿。 */
 
 package com.healthcvapp.acquisition.rppg.output
 
 import com.healthcvapp.acquisition.rppg.model.RPPGHeartRateWindow
+import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGPulseSample
 import com.healthcvapp.acquisition.rppg.model.RPPGSegmentRange
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionDescriptor
@@ -33,6 +34,8 @@ internal class RPPGSessionOutput(
   private val heartRateWriterFactory: BatchWriterFactory<RPPGHeartRateWindow> =
     CsvBatchWriterFactory(fileStore, RPPGHeartRateCsvEncoder),
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+  private val beatWriterFactory: BatchWriterFactory<RPPGInstantHeartRate> =
+    CsvBatchWriterFactory(fileStore, RPPGBeatCsvEncoder),
 ) {
   private val paths = AcquisitionPaths(filesDirectory)
   private val openStarted = AtomicBoolean(false)
@@ -40,6 +43,7 @@ internal class RPPGSessionOutput(
   private val segmentRanges = ArrayList<SegmentRangeAccumulator>()
   private var pulseWriter: BatchWriter<RPPGPulseSample>? = null
   private var heartRateWriter: BatchWriter<RPPGHeartRateWindow>? = null
+  private var beatWriter: BatchWriter<RPPGInstantHeartRate>? = null
   private val writeFailure = AtomicReference<Throwable?>(null)
   private var pulseSampleCount = 0L
   private var heartRateWindowCount = 0L
@@ -50,34 +54,42 @@ internal class RPPGSessionOutput(
   private var lastHeartRateSegmentIndex: Long? = null
   private var lastHeartRateStartNanos: Long? = null
   private var lastHeartRateEndNanos: Long? = null
+  private var lastBeatSegmentIndex: Long? = null
+  private var lastBeatPeakTimestampNanos: Long? = null
+  private val beatRecords = ArrayList<RPPGInstantHeartRate>()
 
   init {
+    require(session.schemaVersion == "rppg-session-v1" || session.schemaVersion == "rppg-session-v2") {
+      "不支持的 RPPG 会话格式版本。"
+    }
     paths.rppgPartialSessionDirectory(session.sessionId)
   }
 
-  /** 创建临时会话目录并依次打开两份 CSV。 */
+  /** 创建临时会话目录并打开当前 schema 要求的全部 CSV。 */
   suspend fun open() = withContext(ioDispatcher) {
     check(openStarted.compareAndSet(false, true) && !closed.get()) {
       "RPPG session output can only be opened once"
     }
     try {
       fileStore.ensureDirectory(paths.rppgPartialSessionDirectory(session.sessionId))
-      val openedPulseWriter = pulseWriterFactory.open(paths.rppgPartialPulseFile(session.sessionId))
-      pulseWriter = openedPulseWriter
-      try {
-        heartRateWriter = heartRateWriterFactory.open(paths.rppgPartialHeartRateFile(session.sessionId))
-      } catch (error: Throwable) {
-        pulseWriter = null
-        closeAfterOpenFailure(openedPulseWriter, error)
-        throw error
+      pulseWriter = pulseWriterFactory.open(paths.rppgPartialPulseFile(session.sessionId))
+      heartRateWriter = heartRateWriterFactory.open(paths.rppgPartialHeartRateFile(session.sessionId))
+      if (session.schemaVersion == "rppg-session-v2") {
+        beatWriter = beatWriterFactory.open(paths.rppgPartialBeatFile(session.sessionId))
       }
     } catch (error: Throwable) {
+      closeWriter(pulseWriter, error)
+      closeWriter(heartRateWriter, error)
+      closeWriter(beatWriter, error)
+      pulseWriter = null
+      heartRateWriter = null
+      beatWriter = null
       closed.set(true)
       throw error
     }
   }
 
-  /** 按单一消费者顺序拆分批次，分别追加到波形和心率文件。 */
+  /** 按单一消费者顺序拆分批次，分别追加到波形、频谱和逐搏文件。 */
   suspend fun writeBatch(records: List<RPPGSessionRecord>) {
     if (records.isEmpty()) return
     check(openStarted.get() && !closed.get()) { "RPPG session output 尚未打开或已关闭。" }
@@ -85,16 +97,19 @@ internal class RPPGSessionOutput(
 
     val pulseRecords = ArrayList<RPPGPulseSample>()
     val heartRateRecords = ArrayList<RPPGHeartRateWindow>()
+    beatRecords.clear()
     records.forEach { record ->
       when (record) {
         is RPPGPulseSample -> pulseRecords.add(record)
         is RPPGHeartRateWindow -> heartRateRecords.add(record)
+        is RPPGInstantHeartRate -> beatRecords.add(record)
       }
     }
 
     try {
       if (pulseRecords.isNotEmpty()) writePulseBatch(pulseRecords)
       if (heartRateRecords.isNotEmpty()) writeHeartRateBatch(heartRateRecords)
+      if (beatRecords.isNotEmpty()) writeBeatBatch(beatRecords)
     } catch (error: Throwable) {
       writeFailure.compareAndSet(null, error)
       throw error
@@ -107,17 +122,20 @@ internal class RPPGSessionOutput(
   }
 
 
-  /** 关闭两份 CSV 并将完整会话元信息写为最后一份文件。 */
+  /** 关闭全部 CSV 后，才将完整会话元信息写为最后一份文件。 */
   suspend fun close(finalization: RPPGSessionFinalization) = withContext(ioDispatcher) {
     if (!openStarted.get() || !closed.compareAndSet(false, true)) return@withContext
     val activePulseWriter = pulseWriter
     val activeHeartRateWriter = heartRateWriter
+    val activeBeatWriter = beatWriter
     pulseWriter = null
     heartRateWriter = null
+    beatWriter = null
 
     var closeFailure = writeFailure.get()
     closeFailure = closeWriter(activePulseWriter, closeFailure)
     closeFailure = closeWriter(activeHeartRateWriter, closeFailure)
+    closeFailure = closeWriter(activeBeatWriter, closeFailure)
     closeFailure?.let { throw it }
 
     validateSignalStatus(finalization.signalStatus)
@@ -209,6 +227,39 @@ internal class RPPGSessionOutput(
     )
   }
 
+  /** 校验逐搏时间与已落盘波形一致，并拒绝重复快照或回退的峰。 */
+  private suspend fun writeBeatBatch(records: List<RPPGInstantHeartRate>) {
+    val writer = beatWriter ?: throw IOException("RPPG beat.csv writer 尚未打开或已关闭。")
+    var segmentIndex = lastBeatSegmentIndex
+    var peakTimestampNanos = lastBeatPeakTimestampNanos
+    records.forEach { record ->
+      if (record.previousPeakTimestampNanos < session.sensorTimeOriginNanos) {
+        throw IOException("逐搏峰早于会话时间原点。")
+      }
+      if (segmentIndex != null && record.segmentIndex < segmentIndex) {
+        throw IOException("逐搏片段序号不能回退。")
+      }
+      if (peakTimestampNanos != null &&
+        (record.peakTimestampNanos <= peakTimestampNanos ||
+          record.previousPeakTimestampNanos < peakTimestampNanos)
+      ) {
+        throw IOException("逐搏峰时间必须递增，不能重复或跨越已记录的间隔。")
+      }
+      val range = segmentRanges.firstOrNull { it.segmentIndex == record.segmentIndex }
+        ?: throw IOException("逐搏读数没有对应的已落盘脉搏片段。")
+      if (record.previousPeakTimestampNanos < range.firstTimestampNanos ||
+        record.peakTimestampNanos > range.lastTimestampNanos
+      ) {
+        throw IOException("逐搏读数超出其脉搏片段的已落盘范围。")
+      }
+      segmentIndex = record.segmentIndex
+      peakTimestampNanos = record.peakTimestampNanos
+    }
+    writer.writeBatch(records)
+    lastBeatSegmentIndex = segmentIndex
+    lastBeatPeakTimestampNanos = peakTimestampNanos
+  }
+
   /** 累积一个片段的首末样本与实际采集时间。 */
   private fun updateSegmentRange(sample: RPPGPulseSample) {
     val current = segmentRanges.lastOrNull()
@@ -261,14 +312,6 @@ internal class RPPGSessionOutput(
     }
   }
 
-  /** 在打开第二份 CSV 失败时关闭已经打开的第一份 writer。 */
-  private fun closeAfterOpenFailure(writer: BatchWriter<*>, openFailure: Throwable) {
-    try {
-      writer.close()
-    } catch (closeFailure: Throwable) {
-      if (closeFailure !== openFailure) openFailure.addSuppressed(closeFailure)
-    }
-  }
 
   /** 将打开后的片段统计冻结为可序列化范围。 */
   private class SegmentRangeAccumulator(

@@ -161,7 +161,7 @@ class FaceReadinessTrackerTest {
     )
   }
 
-  private fun limits() = RPPGConfig.EXPERIMENTAL_V1.faceReadiness
+  private fun limits() = RPPGConfig.EXPERIMENTAL_V2.faceReadiness
 
   private fun identityMatrix() = floatArrayOf(
     1f, 0f, 0f, 0f,

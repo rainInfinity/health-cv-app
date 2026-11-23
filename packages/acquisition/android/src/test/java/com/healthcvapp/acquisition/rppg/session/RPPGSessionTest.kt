@@ -36,6 +36,7 @@ import com.healthcvapp.acquisition.rppg.roi.RppgRgbMean
 import com.healthcvapp.acquisition.rppg.runtime.RPPGActiveRuntime
 import com.healthcvapp.acquisition.rppg.runtime.RPPGActiveSessionFactory
 import com.healthcvapp.acquisition.storage.csv.BatchWriterFactory
+import com.healthcvapp.acquisition.storage.csv.BatchWriter
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -101,6 +102,49 @@ class RPPGSessionTest {
     }
   }
 
+  /** 批内所有逐搏走原生记录队列，低频快照为空也不会漏掉历史。 */
+  @Test
+  fun persistsEveryBeatFromOneFrameWithoutUsingSnapshotHistory() = runTest {
+    withFixture(
+      backgroundScope,
+      testScheduler,
+      updates = listOf(readyFace()),
+      sessionSource = RPPGSessionSource.PASSIVE,
+    ) { fixture ->
+      fixture.session.openPreview()
+      fixture.session.start()
+      val origin = 10_000_000_000L
+      fixture.camera.emit(origin)
+      runCurrent()
+      val secondPeak = origin + 1_000_000_000L
+      val thirdPeak = secondPeak + 1_000_000_000L
+      fixture.processor.pendingRecords.addAll(
+        listOf(
+          RPPGPulseSample(0L, 0L, origin, 0.25),
+          RPPGPulseSample(0L, 1L, secondPeak, 0.5),
+          RPPGInstantHeartRate(0L, origin, secondPeak, 1_000_000_000L, 60.0),
+          RPPGPulseSample(0L, 2L, thirdPeak, 0.75),
+          RPPGInstantHeartRate(0L, secondPeak, thirdPeak, 1_000_000_000L, 60.0),
+        ),
+      )
+      fixture.camera.emit(thirdPeak + 50_000_000L)
+      runCurrent()
+      assertTrue(fixture.session.snapshot.latestInstantHeartRate == null)
+      val result = fixture.session.stop(RPPGTerminationReason.USER_STOP)
+      assertTrue(result.accepted)
+      assertEquals(RPPGSignalStatus.NO_VALID_HEART_RATE, result.snapshot.signalStatus)
+      assertEquals(
+        listOf(
+          "segmentIndex,previousPeakTimestampNs,peakTimestampNs,intervalNs,heartRateBpm",
+          "0,$origin,$secondPeak,1000000000,60.0",
+          "0,$secondPeak,$thirdPeak,1000000000,60.0",
+        ),
+        artifactFile(result.snapshot.artifact, RPPGArtifactFileKind.INSTANT_HEART_RATE).readLines(),
+      )
+      assertPublishedArtifacts(result.snapshot.artifact, fixture.root, "user_stop", RPPGSessionSource.PASSIVE)
+    }
+  }
+
   @Test
   fun keepsAutoFocusWhenFrontCameraSupportsIt() = runTest {
     withFixture(backgroundScope, testScheduler) { fixture ->
@@ -160,7 +204,7 @@ class RPPGSessionTest {
       assertEquals(RPPGSessionPhase.COMPLETED, stopped.snapshot.phase)
       assertEquals(RPPGTerminationReason.INTERRUPTED, stopped.snapshot.termination)
       assertTrue(fixture.session.resourcesReleased)
-      assertPublishedTriplet(
+      assertPublishedArtifacts(
         stopped.snapshot.artifact,
         fixture.root,
         RPPGTerminationReason.INTERRUPTED.wireValue,
@@ -236,7 +280,7 @@ class RPPGSessionTest {
       val metadata = artifactFile(result.snapshot.artifact, RPPGArtifactFileKind.SESSION_JSON).readText()
       assertTrue(metadata.contains("\"sensorTimeOriginNs\":\"7000000000\""))
 
-      assertPublishedTriplet(result.snapshot.artifact, fixture.root, RPPGTerminationReason.USER_STOP.wireValue)
+      assertPublishedArtifacts(result.snapshot.artifact, fixture.root, RPPGTerminationReason.USER_STOP.wireValue)
     }
   }
   @Test
@@ -282,7 +326,7 @@ class RPPGSessionTest {
       assertEquals(RPPGSessionPhase.CLOSED, runtime.snapshot.phase)
       assertEquals(RPPGTerminationReason.PAGE_LEFT, runtime.snapshot.termination)
       assertNotNull(runtime.snapshot.artifact)
-      assertPublishedTriplet(
+      assertPublishedArtifacts(
         runtime.snapshot.artifact,
         root,
         RPPGTerminationReason.PAGE_LEFT.wireValue,
@@ -375,7 +419,7 @@ class RPPGSessionTest {
         assertEquals(RPPGSessionPhase.COMPLETED, runtime.snapshot.phase)
         assertEquals(RPPGTerminationReason.APP_BACKGROUND, runtime.snapshot.termination)
         assertTrue(fixture.session.resourcesReleased)
-        assertPublishedTriplet(runtime.snapshot.artifact, fixture.root, RPPGTerminationReason.APP_BACKGROUND.wireValue)
+        assertPublishedArtifacts(runtime.snapshot.artifact, fixture.root, RPPGTerminationReason.APP_BACKGROUND.wireValue)
         val lease = checkNotNull(CameraUseGuard.tryAcquire("after-host-pause"))
         lease.close()
       } finally {
@@ -405,7 +449,7 @@ class RPPGSessionTest {
         assertEquals(RPPGTerminationReason.PAGE_LEFT, runtime.snapshot.termination)
         assertTrue(fixture.session.resourcesReleased)
         assertFalse(runtime.start().accepted)
-        assertPublishedTriplet(runtime.snapshot.artifact, fixture.root, RPPGTerminationReason.PAGE_LEFT.wireValue)
+        assertPublishedArtifacts(runtime.snapshot.artifact, fixture.root, RPPGTerminationReason.PAGE_LEFT.wireValue)
         val lease = checkNotNull(CameraUseGuard.tryAcquire("after-host-destroy"))
         lease.close()
       } finally {
@@ -472,7 +516,7 @@ class RPPGSessionTest {
       val heartRateFile = artifactFile(state.artifact, RPPGArtifactFileKind.HEART_RATE)
       assertEquals(1, pulseFile.readLines().size)
       assertEquals(1, heartRateFile.readLines().size)
-      assertPublishedTriplet(
+      assertPublishedArtifacts(
         state.artifact,
         fixture.root,
         RPPGTerminationReason.OBSERVATION_TIMEOUT.wireValue,
@@ -544,7 +588,7 @@ class RPPGSessionTest {
         reason == RPPGTerminationReason.USER_STOP ||
           reason == RPPGTerminationReason.PAGE_LEFT,
       )
-      assertPublishedTriplet(fixture.session.snapshot.artifact, fixture.root, reason.wireValue)
+      assertPublishedArtifacts(fixture.session.snapshot.artifact, fixture.root, reason.wireValue)
     }
   }
 
@@ -591,7 +635,7 @@ class RPPGSessionTest {
       assertEquals(RPPGTerminationReason.TARGET_DURATION, fixture.session.snapshot.termination)
       assertEquals(1, fixture.camera.closeCalls)
       assertEquals(2, fixture.processor.observedTimestamps.size)
-      assertPublishedTriplet(
+      assertPublishedArtifacts(
         fixture.session.snapshot.artifact,
         fixture.root,
         RPPGTerminationReason.TARGET_DURATION.wireValue,
@@ -603,7 +647,7 @@ class RPPGSessionTest {
   }
 
 
-  /** 宿主后台沿用合法中断收尾并发布三件套。 */
+  /** 宿主后台沿用合法中断收尾并发布完整结果。 */
   @Test
   fun hostBackgroundPublishesInterruptedTriplet() = runTest {
     withFixture(backgroundScope, testScheduler) { fixture ->
@@ -617,7 +661,7 @@ class RPPGSessionTest {
 
       assertEquals(RPPGSessionPhase.COMPLETED, fixture.session.snapshot.phase)
       assertEquals(RPPGTerminationReason.APP_BACKGROUND, fixture.session.snapshot.termination)
-      assertPublishedTriplet(
+      assertPublishedArtifacts(
         fixture.session.snapshot.artifact,
         fixture.root,
         RPPGTerminationReason.APP_BACKGROUND.wireValue,
@@ -750,7 +794,7 @@ class RPPGSessionTest {
     }
   }
 
-  /** 人脸算法异常须成为技术失败，不能发布成功三件套。 */
+  /** 人脸算法异常须成为技术失败，不能发布成功结果。 */
   @Test
   fun algorithmFailureNeverPublishesCompleteArtifact() = runTest {
     withFixture(
@@ -802,15 +846,51 @@ class RPPGSessionTest {
     }
   }
 
+  /** 第四文件的关闭失败必须是技术失败，不能伪装为合法无信号成功。 */
+  @Test
+  fun beatCloseFailureNeverCompletesAsNoWaveform() = runTest {
+    withFixture(
+      backgroundScope,
+      testScheduler,
+      outputFactory = { directory, descriptor, dispatcher ->
+        RPPGSessionOutput(
+          directory,
+          descriptor,
+          ioDispatcher = dispatcher,
+          beatWriterFactory = BatchWriterFactory {
+            object : BatchWriter<RPPGInstantHeartRate> {
+              override suspend fun writeBatch(records: List<RPPGInstantHeartRate>) = Unit
+
+              override fun close() {
+                throw IOException("逐搏文件关闭失败")
+              }
+            }
+          },
+        )
+      },
+    ) { fixture ->
+      fixture.session.openPreview()
+      fixture.session.start()
+      fixture.camera.emit(16_000_000_000L)
+      runCurrent()
+      val result = fixture.session.stop(RPPGTerminationReason.USER_STOP)
+      assertFalse(result.accepted)
+      assertEquals(RPPGSessionPhase.FAILED, result.snapshot.phase)
+      assertTrue(result.snapshot.artifact == null)
+      assertTrue(result.snapshot.signalStatus == null)
+      assertTrue(RPPGArtifactStore(fixture.root).listArtifacts().isEmpty())
+    }
+  }
+
 
   /** 构造短时测试参数，算法边界仍沿用版本化实验基线。 */
   private fun fastConfig(
     observationTimeoutNanos: Long = 5_000_000_000L,
     targetDurationNanos: Long = 30_000_000_000L,
-  ) = RPPGConfig.EXPERIMENTAL_V1.copy(
+  ) = RPPGConfig.EXPERIMENTAL_V2.copy(
     observationTimeoutNanos = observationTimeoutNanos,
     targetMeasurementDurationNanos = targetDurationNanos,
-    faceReadiness = RPPGConfig.EXPERIMENTAL_V1.faceReadiness.copy(
+    faceReadiness = RPPGConfig.EXPERIMENTAL_V2.faceReadiness.copy(
       requiredContinuousNanos = 50_000_000L,
     ),
   )
@@ -847,8 +927,8 @@ class RPPGSessionTest {
     return File(checkNotNull(path))
   }
 
-  /** 核验完整三件套、结束原因及按来源过滤的本地查询。 */
-  private suspend fun assertPublishedTriplet(
+  /** 核验完整四件套、结束原因及按来源过滤的本地查询。 */
+  private suspend fun assertPublishedArtifacts(
     artifact: RPPGArtifact?,
     root: File,
     termination: String,
@@ -861,6 +941,7 @@ class RPPGSessionTest {
         RPPGArtifactFileKind.SESSION_JSON,
         RPPGArtifactFileKind.PULSE,
         RPPGArtifactFileKind.HEART_RATE,
+        RPPGArtifactFileKind.INSTANT_HEART_RATE,
       ),
       published.files.map { it.kind }.toSet(),
     )
@@ -1072,6 +1153,7 @@ class RPPGSessionTest {
     private var lastUpdate = updates.last()
     val observedTimestamps = mutableListOf<Long>()
     val acceptedTimestamps = mutableListOf<Long>()
+    val pendingRecords = mutableListOf<RPPGSessionRecord>()
     var closed = false
       private set
     override var latestInstantHeartRate: RPPGInstantHeartRate? = null
@@ -1112,6 +1194,8 @@ class RPPGSessionTest {
           ),
         )
       }
+      pendingRecords.forEach(emit)
+      pendingRecords.clear()
     }
 
     override fun finishMeasurement() = Unit

@@ -13,4 +13,15 @@ internal data class RPPGInstantHeartRate(
   val intervalNanos: Long,
   /** 最新一个合格间隔对应的初步心率，单位 bpm。 */
   val heartRateBpm: Double,
-)
+) : RPPGSessionRecord() {
+  init {
+    require(segmentIndex >= 0L) { "逐搏片段序号不能为负。" }
+    require(previousPeakTimestampNanos >= 0L && peakTimestampNanos > previousPeakTimestampNanos) {
+      "逐搏峰时间必须为递增的绝对传感器纳秒。"
+    }
+    require(intervalNanos == peakTimestampNanos - previousPeakTimestampNanos) {
+      "逐搏间隔必须等于两峰时间差。"
+    }
+    require(heartRateBpm.isFinite() && heartRateBpm > 0.0) { "逐搏心率必须是有限正数。" }
+  }
+}

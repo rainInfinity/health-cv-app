@@ -132,7 +132,7 @@ class RppgPosProcessorTest {
   }
 
   /** 使用 200 ms POS 窗口的版本化参数构造四点参考窗口。 */
-  private fun shortWindowConfig() = RPPGConfig.EXPERIMENTAL_V1.copy(posWindowNanos = 200_000_000L)
+  private fun shortWindowConfig() = RPPGConfig.EXPERIMENTAL_V2.copy(posWindowNanos = 200_000_000L)
 
   /** 独立实现单窗归一化、POS 投影与去均值，作为生产算法的数值 oracle。 */
   private fun referencePosWindow(

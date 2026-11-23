@@ -22,7 +22,7 @@ internal class AndroidRPPGActiveSessionFactory(
   private val previewViewProvider: () -> PreviewView?,
   private val lifecycleOwnerProvider: () -> LifecycleOwner?,
   private val filesDirectory: File,
-  private val config: RPPGConfig = RPPGConfig.EXPERIMENTAL_V1,
+  private val config: RPPGConfig = RPPGConfig.EXPERIMENTAL_V2,
 ) : RPPGActiveSessionFactory {
   private val applicationContext = context.applicationContext
 

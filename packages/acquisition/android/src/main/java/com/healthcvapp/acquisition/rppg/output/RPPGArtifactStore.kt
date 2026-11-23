@@ -1,4 +1,4 @@
-/** 原子发布 RPPG 三件套，并从最终目录重建本地产物列表。 */
+/** 原子发布 RPPG 结果文件集合，并从最终目录重建本地产物列表。 */
 
 package com.healthcvapp.acquisition.rppg.output
 
@@ -18,7 +18,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 只把元信息完整且三份文件齐全的目录发布或列为完成结果。 */
+/** 按 schema 校验完整文件集合；旧三件套与新四件套可同时查询。 */
 internal class RPPGArtifactStore(
   filesDirectory: File,
   private val fileStore: AcquisitionFileStore = AcquisitionFileStore(),
@@ -27,6 +27,10 @@ internal class RPPGArtifactStore(
   private val paths = AcquisitionPaths(filesDirectory)
   /** 从已写入的 session.json 读取可展示的来源、结束、质量和计数摘要。 */
   private data class SessionMetadata(
+    /** 决定必须具备三份还是四份文件。 */
+    val schemaVersion: String,
+    /** session.json 中原样保留的 UTC ISO 开始时间。 */
+    val startedAt: String,
     /** 本地结果所属采集流程。 */
     val source: RPPGSessionSource,
     /** 正常结束原因。 */
@@ -37,7 +41,7 @@ internal class RPPGArtifactStore(
     val sampleCounts: RPPGSessionSampleCounts,
   )
 
-  /** 校验临时三件套后，以同文件系统目录重命名一次性发布。 */
+  /** 校验临时文件集合后，以同文件系统目录重命名一次性发布。 */
   fun publish(
     sessionId: String,
     claimPublication: () -> Boolean = { true },
@@ -47,23 +51,23 @@ internal class RPPGArtifactStore(
     if (completedDirectory.exists()) {
       throw IOException("RPPG 最终会话目录已存在，拒绝覆盖：${completedDirectory.absolutePath}")
     }
-    val temporaryFiles = sessionFiles(sessionId, partial = true)
-    if (!temporaryDirectory.isDirectory || temporaryFiles.any { !it.isFile || it.length() <= 0L }) {
-      throw IOException("RPPG 临时会话缺少完整三件套。")
-    }
-    val metadata = readMetadata(temporaryFiles[0], sessionId)
+    val metadata = readMetadata(paths.rppgPartialSessionJsonFile(sessionId), sessionId)
       ?: throw IOException("RPPG session.json 缺失完整标记、质量摘要或会话身份不匹配。")
+    val temporaryFiles = sessionFiles(sessionId, partial = true, schemaVersion = metadata.schemaVersion)
+    if (!temporaryDirectory.isDirectory || temporaryFiles.any { !it.isFile || it.length() <= 0L }) {
+      throw IOException("RPPG 临时会话缺少当前格式要求的完整文件集合。")
+    }
     if (!claimPublication()) throw CancellationException("RPPG 会话关闭先于完整产物发布。")
 
     fileStore.promoteDirectory(temporaryDirectory, completedDirectory)
-    val completedFiles = sessionFiles(sessionId, partial = false)
+    val completedFiles = sessionFiles(sessionId, partial = false, schemaVersion = metadata.schemaVersion)
     if (!completedDirectory.isDirectory || completedFiles.any { !it.isFile || it.length() <= 0L }) {
-      throw IOException("RPPG 三件套目录提升后不完整。")
+      throw IOException("RPPG 结果目录提升后不完整。")
     }
     return toArtifact(sessionId, metadata, completedFiles)
   }
 
-  /** 从最终目录扫描完整三件套；默认仅列出主动来源，可显式查询被动或全部来源。 */
+  /** 扫描完整的 v1／v2 结果；默认仅列出主动来源，可查询被动或全部来源。 */
   suspend fun listArtifacts(source: RPPGSessionSource? = RPPGSessionSource.ACTIVE): List<RPPGArtifact> =
     withContext(ioDispatcher) {
       val root = paths.rppgRootDirectory()
@@ -78,38 +82,39 @@ internal class RPPGArtifactStore(
           val expectedDirectory = runCatching { paths.rppgSessionDirectory(sessionId) }.getOrNull()
             ?: return@mapNotNull null
           if (expectedDirectory.canonicalFile != directory.canonicalFile) return@mapNotNull null
-          val files = sessionFiles(sessionId, partial = false)
+          val metadata = readMetadata(paths.rppgSessionJsonFile(sessionId), sessionId)
+            ?: return@mapNotNull null
+          val files = sessionFiles(sessionId, partial = false, schemaVersion = metadata.schemaVersion)
           if (files.any { !it.isFile || it.length() <= 0L }) return@mapNotNull null
-          val metadata = readMetadata(files[0], sessionId) ?: return@mapNotNull null
           if (source != null && metadata.source != source) return@mapNotNull null
           toArtifact(sessionId, metadata, files)
         }
-        .sortedBy(RPPGArtifact::sessionId)
+        .sortedWith(compareBy<RPPGArtifact> { it.startedAtSortKey }.thenBy { it.sessionId })
         .toList()
     }
 
-  /** 按稳定顺序返回临时或最终会话目录中的三份文件。 */
-  private fun sessionFiles(sessionId: String, partial: Boolean): List<File> = if (partial) {
-    listOf(
-      paths.rppgPartialSessionJsonFile(sessionId),
-      paths.rppgPartialPulseFile(sessionId),
-      paths.rppgPartialHeartRateFile(sessionId),
-    )
-  } else {
-    listOf(
-      paths.rppgSessionJsonFile(sessionId),
-      paths.rppgPulseFile(sessionId),
-      paths.rppgHeartRateFile(sessionId),
-    )
+  /** v1 只返回原有三件套；v2 逐搏文件即使只有表头也必须存在。 */
+  private fun sessionFiles(sessionId: String, partial: Boolean, schemaVersion: String): List<File> = buildList {
+    if (partial) {
+      add(paths.rppgPartialSessionJsonFile(sessionId))
+      add(paths.rppgPartialPulseFile(sessionId))
+      add(paths.rppgPartialHeartRateFile(sessionId))
+      if (schemaVersion == "rppg-session-v2") add(paths.rppgPartialBeatFile(sessionId))
+    } else {
+      add(paths.rppgSessionJsonFile(sessionId))
+      add(paths.rppgPulseFile(sessionId))
+      add(paths.rppgHeartRateFile(sessionId))
+      if (schemaVersion == "rppg-session-v2") add(paths.rppgBeatFile(sessionId))
+    }
   }
 
-  /** 只接受当前 schema、匹配目录标识且包含有效结束、质量和计数信息的完整元数据。 */
+  /** 接受 v1／v2、匹配目录身份且包含有效结束、质量和计数信息的完整元数据。 */
   private fun readMetadata(file: File, expectedSessionId: String): SessionMetadata? {
     val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return null
     if (!text.trimEnd().endsWith(COMPLETE_MARKER_SUFFIX)) return null
     val identity = METADATA_IDENTITY_PATTERN.find(text) ?: return null
-    if (identity.groupValues[1] != expectedSessionId) return null
-    val source = RPPGSessionSource.entries.firstOrNull { it.wireValue == identity.groupValues[2] }
+    if (identity.groupValues[2] != expectedSessionId) return null
+    val source = RPPGSessionSource.entries.firstOrNull { it.wireValue == identity.groupValues[3] }
       ?: return null
     val terminationValue = TERMINATION_PATTERN.find(text)?.groupValues?.get(1) ?: return null
     val termination = RPPGTerminationReason.entries.firstOrNull { it.wireValue == terminationValue }
@@ -131,6 +136,8 @@ internal class RPPGArtifactStore(
       return null
     }
     return SessionMetadata(
+      schemaVersion = identity.groupValues[1],
+      startedAt = identity.groupValues[4],
       source = source,
       termination = termination,
       signalStatus = signalStatus,
@@ -159,15 +166,19 @@ internal class RPPGArtifactStore(
   private fun toArtifact(sessionId: String, metadata: SessionMetadata, files: List<File>) =
     RPPGArtifact(
       sessionId = sessionId,
+      startedAt = metadata.startedAt,
       source = metadata.source,
       termination = metadata.termination,
       signalStatus = metadata.signalStatus,
       sampleCounts = metadata.sampleCounts,
-      files = listOf(
-        artifactFile(RPPGArtifactFileKind.SESSION_JSON, files[0]),
-        artifactFile(RPPGArtifactFileKind.PULSE, files[1]),
-        artifactFile(RPPGArtifactFileKind.HEART_RATE, files[2]),
-      ),
+      files = buildList {
+        add(artifactFile(RPPGArtifactFileKind.SESSION_JSON, files[0]))
+        add(artifactFile(RPPGArtifactFileKind.PULSE, files[1]))
+        add(artifactFile(RPPGArtifactFileKind.HEART_RATE, files[2]))
+        if (metadata.schemaVersion == "rppg-session-v2") {
+          add(artifactFile(RPPGArtifactFileKind.INSTANT_HEART_RATE, files[3]))
+        }
+      },
     )
 
   /** 构造一份已关闭文件的绝对路径及字节数。 */
@@ -180,7 +191,7 @@ internal class RPPGArtifactStore(
   private companion object {
     const val COMPLETE_MARKER_SUFFIX = ",\"complete\":true}"
     val METADATA_IDENTITY_PATTERN = Regex(
-      """^\{"schemaVersion":"rppg-session-v1","algorithmVersion":"(?:\\.|[^"\\])*","sessionId":"([A-Za-z0-9_-]+)","source":"(active|passive)","sensorTimeOriginNs":"[0-9]+","startedAt":"(?:\\.|[^"\\])*","finishedAt":""",
+      """^\{"schemaVersion":"(rppg-session-v[12])","algorithmVersion":"(?:\\.|[^"\\])*","sessionId":"([A-Za-z0-9_-]+)","source":"(active|passive)","sensorTimeOriginNs":"[0-9]+","startedAt":"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z)","finishedAt":""",
     )
     val TERMINATION_PATTERN = Regex(""""termination":"([a-z_]+)"""")
     val SIGNAL_STATUS_PATTERN = Regex(""""signalStatus":"([a-z_]+)"""")

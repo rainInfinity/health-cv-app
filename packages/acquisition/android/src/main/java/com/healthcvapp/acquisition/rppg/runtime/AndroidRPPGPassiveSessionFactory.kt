@@ -30,7 +30,7 @@ internal class AndroidRPPGPassiveSessionFactory(
     onFirstFrame: (sessionId: String, elapsedRealtimeNanos: Long) -> Unit,
     onSnapshot: (RPPGSessionSnapshot) -> Unit,
   ): RPPGSession {
-    val config = RPPGConfig.EXPERIMENTAL_V1.copy(
+    val config = RPPGConfig.EXPERIMENTAL_V2.copy(
       targetMeasurementDurationNanos = measurementDurationNanos,
     )
     val processorFactory = RPPGSessionProcessorFactory { sessionId, sessionConfig ->

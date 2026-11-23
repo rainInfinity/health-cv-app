@@ -1,13 +1,16 @@
-/** 验证旧版测量时长升级保留配置但不启用服务，并拒绝不可表示的输入。 */
+/** 验证默认配置迁移、显式保存及运行态隔离，不启动相机会话。 */
 package com.healthcvapp.acquisition.passive.runtime
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.test.platform.app.InstrumentationRegistry
 import com.healthcvapp.acquisition.camera.ownership.CameraUseGuard
 import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
+import com.margelo.nitro.acquisition.BuildConfig
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -43,58 +46,46 @@ class PassiveCaptureRuntimeInstrumentedTest {
   }
 
   @Test
-  fun preservesLegacyDurationWithoutEnablingServiceOrAcquiringCamera() {
-    val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
-    val preferences = context.getSharedPreferences("passive_capture", Context.MODE_PRIVATE)
-    val hadDuration = preferences.contains("duration_millis")
-    val previousDuration = preferences.getLong("duration_millis", 0L)
-    try {
-      preferences.edit().putLong("duration_millis", 9_000L).commit()
+  fun preservesLegacyDurationWithoutEnablingServiceOrAcquiringCamera() = withIsolatedConfig { context, preferences ->
+    preferences.edit()
+      .putLong("interval_millis", 7_200_000L)
+      .putLong("duration_millis", 9_000L)
+      .commit()
 
-      val snapshot = PassiveCaptureRuntime(context).getSnapshot()
+    val snapshot = PassiveCaptureRuntime(context).getSnapshot()
 
-      assertEquals(PassiveCaptureState.DISABLED, snapshot.state)
-      assertEquals(9.0, snapshot.config.measurementDurationSeconds, 0.0)
-      val cameraProbe = CameraUseGuard.tryAcquire("legacy-config-probe")
-      assertNotNull("旧配置读取不应启动相机会话", cameraProbe)
-      cameraProbe?.close()
-    } finally {
-      val editor = preferences.edit()
-      if (hadDuration) editor.putLong("duration_millis", previousDuration)
-      else editor.remove("duration_millis")
-      editor.commit()
-    }
+    assertEquals(PassiveCaptureState.DISABLED, snapshot.state)
+    assertEquals(defaultIntervalSeconds(), snapshot.config.intervalSeconds, 0.0)
+    assertEquals(9.0, snapshot.config.measurementDurationSeconds, 0.0)
+    assertFalse(preferences.contains("interval_millis"))
+    val cameraProbe = CameraUseGuard.tryAcquire("legacy-config-probe")
+    assertNotNull("旧配置读取不应启动相机会话", cameraProbe)
+    cameraProbe?.close()
   }
 
   @Test
-  fun reconstructedRuntimeKeepsSavedConfigButDoesNotRestoreRunningState() {
-    val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
-    val preferences = context.getSharedPreferences("passive_capture", Context.MODE_PRIVATE)
-    val hadInterval = preferences.contains("interval_millis")
-    val previousInterval = preferences.getLong("interval_millis", 0L)
-    val hadDuration = preferences.contains("duration_millis")
-    val previousDuration = preferences.getLong("duration_millis", 0L)
-    try {
-      val configured = PassiveCaptureConfig(intervalSeconds = 120.0, measurementDurationSeconds = 35.0)
-      val configurationResult = PassiveCaptureRuntime(context).setConfig(configured)
-      assertNull(configurationResult.errorCode?.asSecondOrNull())
+  fun reconstructedRuntimeKeepsSavedConfigButDoesNotRestoreRunningState() = withIsolatedConfig { context, _ ->
+    val configured = PassiveCaptureConfig(intervalSeconds = 120.0, measurementDurationSeconds = 35.0)
+    val runtime = PassiveCaptureRuntime(context)
+    val configurationResult = runtime.setConfig(configured)
+    assertNull(configurationResult.errorCode?.asSecondOrNull())
 
-      val reconstructed = PassiveCaptureRuntime(context).getSnapshot()
+    val reconstructed = PassiveCaptureRuntime(context).getSnapshot()
 
-      assertEquals(PassiveCaptureState.DISABLED, reconstructed.state)
-      assertEquals(120.0, reconstructed.config.intervalSeconds, 0.0)
-      assertEquals(35.0, reconstructed.config.measurementDurationSeconds, 0.0)
-      val cameraProbe = CameraUseGuard.tryAcquire("runtime-reconstruction-probe")
-      assertNotNull("新运行时实例不应从保存配置重启相机会话", cameraProbe)
-      cameraProbe?.close()
-    } finally {
-      val editor = preferences.edit()
-      if (hadInterval) editor.putLong("interval_millis", previousInterval)
-      else editor.remove("interval_millis")
-      if (hadDuration) editor.putLong("duration_millis", previousDuration)
-      else editor.remove("duration_millis")
-      editor.commit()
-    }
+    assertEquals(PassiveCaptureState.DISABLED, reconstructed.state)
+    assertEquals(120.0, reconstructed.config.intervalSeconds, 0.0)
+    assertEquals(35.0, reconstructed.config.measurementDurationSeconds, 0.0)
+    val cameraProbe = CameraUseGuard.tryAcquire("runtime-reconstruction-probe")
+    assertNotNull("新运行时实例不应从保存配置重启相机会话", cameraProbe)
+    cameraProbe?.close()
+
+    // 迁移之后用户明确保存的旧默认数值不应再次被覆盖。
+    assertNull(runtime.setConfig(
+      PassiveCaptureConfig(intervalSeconds = 7_200.0, measurementDurationSeconds = 30.0),
+    ).errorCode?.asSecondOrNull())
+    val explicitlySaved = PassiveCaptureRuntime(context).getSnapshot()
+    assertEquals(7_200.0, explicitlySaved.config.intervalSeconds, 0.0)
+    assertEquals(30.0, explicitlySaved.config.measurementDurationSeconds, 0.0)
   }
 
   @Test
@@ -118,4 +109,68 @@ class PassiveCaptureRuntimeInstrumentedTest {
     assertNotNull("非法配置不应启动相机会话", cameraProbe)
     cameraProbe?.close()
   }
+
+  @Test
+  fun migratesOnlyLegacyDefaultsAndKeepsDefaultIntervalVariantLocal() = withIsolatedConfig { context, preferences ->
+    preferences.edit()
+      .putLong("interval_millis", 7_200_000L)
+      .putLong("duration_millis", 30_000L)
+      .commit()
+
+    val migrated = PassiveCaptureRuntime(context).getSnapshot()
+    assertEquals(defaultIntervalSeconds(), migrated.config.intervalSeconds, 0.0)
+    assertEquals(12.0, migrated.config.measurementDurationSeconds, 0.0)
+    assertEquals(6.5, migrated.minimumHeartRateMeasurementSeconds, 0.0)
+    assertFalse(preferences.contains("interval_millis"))
+    assertFalse(preferences.contains("duration_millis"))
+    assertEquals(2, preferences.getInt("defaults_version", 0))
+
+    // 周期自定义与时长旧默认按字段独立迁移。
+    preferences.edit()
+      .remove("defaults_version")
+      .putLong("interval_millis", 120_000L)
+      .putLong("duration_millis", 30_000L)
+      .commit()
+    val customized = PassiveCaptureRuntime(context).getSnapshot()
+    assertEquals(120.0, customized.config.intervalSeconds, 0.0)
+    assertEquals(12.0, customized.config.measurementDurationSeconds, 0.0)
+  }
+
+  @Test
+  fun freshInstallUsesDefaultsWithoutPersistingAnEnvironmentSpecificInterval() = withIsolatedConfig { context, preferences ->
+    val snapshot = PassiveCaptureRuntime(context).getSnapshot()
+    assertEquals(defaultIntervalSeconds(), snapshot.config.intervalSeconds, 0.0)
+    assertEquals(12.0, snapshot.config.measurementDurationSeconds, 0.0)
+    assertFalse(preferences.contains("interval_millis"))
+    assertFalse(preferences.contains("duration_millis"))
+  }
+
+  /** 只隔离本组测试涉及的配置键，不改动设备上的其它偏好。 */
+  private fun withIsolatedConfig(block: (Context, SharedPreferences) -> Unit) {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+    val preferences = context.getSharedPreferences("passive_capture", Context.MODE_PRIVATE)
+    val previous = preferences.all
+    preferences.edit()
+      .remove("interval_millis")
+      .remove("duration_millis")
+      .remove("defaults_version")
+      .commit()
+    try {
+      block(context, preferences)
+    } finally {
+      val editor = preferences.edit()
+      for (key in listOf("interval_millis", "duration_millis", "defaults_version")) {
+        when (val value = previous[key]) {
+          null -> editor.remove(key)
+          is Long -> editor.putLong(key, value)
+          is Int -> editor.putInt(key, value)
+          else -> error("Unexpected preference type for $key")
+        }
+      }
+      editor.commit()
+    }
+  }
+
+  /** 库的 debug/release 变体决定默认周期，不读取 JS 或运行时环境变量。 */
+  private fun defaultIntervalSeconds(): Double = if (BuildConfig.DEBUG) 30.0 else 600.0
 }

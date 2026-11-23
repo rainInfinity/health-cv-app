@@ -16,6 +16,7 @@ import com.healthcvapp.acquisition.rppg.model.RPPGInstantHeartRate
 import com.healthcvapp.acquisition.rppg.model.RPPGSessionSource
 import com.healthcvapp.acquisition.rppg.output.RPPGArtifactStore
 import com.healthcvapp.acquisition.storage.acquisitionFilesDirectory
+import com.margelo.nitro.acquisition.BuildConfig
 import com.margelo.nitro.acquisition.PassiveCaptureCommandResult
 import com.margelo.nitro.acquisition.PassiveCaptureConfig
 import com.margelo.nitro.acquisition.PassiveCaptureSnapshot
@@ -87,6 +88,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
       preferences.edit()
         .putLong(KEY_INTERVAL_MILLIS, secondsToMillis(value.intervalSeconds))
         .putLong(KEY_MEASUREMENT_DURATION_MILLIS, secondsToMillis(value.measurementDurationSeconds))
+        .putInt(KEY_DEFAULTS_VERSION, DEFAULTS_VERSION)
         .apply()
       state = PassiveCaptureState.DISABLED
       sessionId = null
@@ -189,11 +191,11 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     }
   }
 
-  /** 从外部新结果与内部已有结果中查询完整的被动 RPPG 三件套。 */
+  /** 合并新旧目录，按真实开始时间查询已发布的被动会话。 */
   suspend fun listArtifacts(): List<RPPGArtifact> = buildList {
     addAll(RPPGArtifactStore(applicationContext.acquisitionFilesDirectory()).listArtifacts(RPPGSessionSource.PASSIVE))
     addAll(RPPGArtifactStore(applicationContext.filesDir).listArtifacts(RPPGSessionSource.PASSIVE))
-    sortBy(RPPGArtifact::sessionId)
+    sortWith(compareBy<RPPGArtifact> { it.startedAtSortKey }.thenBy { it.sessionId })
   }
 
   /** 从旧视频目录扫描完整且媒体可读的历史录像。 */
@@ -302,7 +304,7 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     state = state,
     config = config,
     minimumHeartRateMeasurementSeconds =
-      RPPGConfig.EXPERIMENTAL_V1.minimumSpectralMeasurementNanos.toDouble() / NANOS_PER_SECOND,
+      RPPGConfig.EXPERIMENTAL_V2.minimumSpectralMeasurementNanos.toDouble() / NANOS_PER_SECOND,
     sessionId = nullableString(sessionId),
     latestInstantHeartRate = RPPGInstantHeartRateNitroMapper.toNitro(latestInstantHeartRate),
     lastReason = nullableString(lastReason),
@@ -329,10 +331,21 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
   }
 
   private fun loadConfig(): PassiveCaptureConfig {
+    if (preferences.getInt(KEY_DEFAULTS_VERSION, 0) < DEFAULTS_VERSION) {
+      val editor = preferences.edit().putInt(KEY_DEFAULTS_VERSION, DEFAULTS_VERSION)
+      // 旧版没有记录配置来源，只迁移与旧默认相等的字段；其余自定义值独立保留。
+      // 删除默认键而非写入 debug 数值，确保后续 release 仍按自己的默认周期读取。
+      if (preferences.getLong(KEY_INTERVAL_MILLIS, -1L) == LEGACY_DEFAULT_INTERVAL_MILLIS) {
+        editor.remove(KEY_INTERVAL_MILLIS)
+      }
+      if (preferences.getLong(KEY_MEASUREMENT_DURATION_MILLIS, -1L) == LEGACY_DEFAULT_DURATION_MILLIS) {
+        editor.remove(KEY_MEASUREMENT_DURATION_MILLIS)
+      }
+      editor.apply()
+    }
     val defaultIntervalMillis = secondsToMillis(DEFAULT_INTERVAL_SECONDS.toDouble())
     val defaultDurationMillis = secondsToMillis(DEFAULT_MEASUREMENT_DURATION_SECONDS.toDouble())
     val intervalMillis = preferences.getLong(KEY_INTERVAL_MILLIS, defaultIntervalMillis)
-    // 旧 duration_millis 保存的是合法配置值，迁移时保留原数值且不恢复启用状态。
     val measurementDurationMillis = preferences.getLong(KEY_MEASUREMENT_DURATION_MILLIS, defaultDurationMillis)
     return PassiveCaptureConfig(
       intervalSeconds = intervalMillis.toDouble() / MILLIS_PER_SECOND,
@@ -372,8 +385,12 @@ internal class PassiveCaptureRuntime internal constructor(context: Context) {
     const val PREFERENCES_NAME = "passive_capture"
     const val KEY_INTERVAL_MILLIS = "interval_millis"
     const val KEY_MEASUREMENT_DURATION_MILLIS = "duration_millis"
-    const val DEFAULT_INTERVAL_SECONDS = 7_200
-    const val DEFAULT_MEASUREMENT_DURATION_SECONDS = 30
+    const val KEY_DEFAULTS_VERSION = "defaults_version"
+    const val DEFAULTS_VERSION = 2
+    const val LEGACY_DEFAULT_INTERVAL_MILLIS = 7_200_000L
+    const val LEGACY_DEFAULT_DURATION_MILLIS = 30_000L
+    val DEFAULT_INTERVAL_SECONDS = if (BuildConfig.DEBUG) 30 else 600
+    const val DEFAULT_MEASUREMENT_DURATION_SECONDS = 12
     const val MILLIS_PER_SECOND = 1_000.0
     const val NANOS_PER_SECOND = 1_000_000_000.0
     const val SERVICE_START_TIMEOUT_MILLIS = 8_000L

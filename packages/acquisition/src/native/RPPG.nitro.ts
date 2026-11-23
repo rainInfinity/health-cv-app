@@ -28,8 +28,8 @@ export type RPPGSignalStatus = 'valid_heart_rate' | 'no_valid_heart_rate' | 'no_
 /** 标记已发布 RPPG 结果的采集来源。 */
 export type RPPGSource = 'active' | 'passive'
 
-/** 三件套中的文件类型。 */
-export type RPPGArtifactFileKind = 'session' | 'pulse' | 'heart-rate'
+/** v1 含前三种文件；v2 另含逐搏文件，旧结果不迁移或补造。 */
+export type RPPGArtifactFileKind = 'session' | 'pulse' | 'heart-rate' | 'instant-heart-rate'
 
 /** 引用已关闭并发布的会话文件。 */
 export interface RPPGArtifactFile {
@@ -72,7 +72,7 @@ export interface RPPGArtifact {
   signalStatus: RPPGSignalStatus
   /** 文件中实际写入的波形与心率窗口数量。 */
   sampleCounts: RPPGSampleCounts
-  /** 按元信息、脉搏和心率顺序排列的文件。 */
+  /** 元信息、脉搏、频谱心率；v2 另含逐搏心率，v1 不补造第四项。 */
   files: RPPGArtifactFile[]
 }
 
@@ -148,7 +148,7 @@ export interface RPPGSnapshot {
   signalStatus: RPPGSignalStatus | null
   /** 正常结束原因；技术失败时为空。 */
   termination: RPPGTerminationReason | null
-  /** 成功原子发布的三件套；未发布时为空。 */
+  /** 成功原子发布的完整文件集合；未发布时为空。 */
   artifact: RPPGArtifact | null
   /** 最近一次会话级技术错误；正常状态为空。 */
   error: RPPGFailure | null
@@ -180,7 +180,7 @@ export interface RPPG extends HybridObject<{ android: 'kotlin' }> {
   stop(): Promise<RPPGCommandResult>
   /** 页面离开时收尾并关闭本 runtime。 */
   close(): Promise<RPPGCommandResult>
-  /** 查询外部及已有内部目录中已发布的主动 RPPG 三件套。 */
+  /** 查询外部及已有内部目录中已发布的主动 RPPG 结果（v1／v2）。 */
   listArtifacts(): Promise<RPPGArtifact[]>
   /** 订阅低频状态快照并返回独立监听标识。 */
   addListener(listener: (snapshot: RPPGSnapshot) => void): number

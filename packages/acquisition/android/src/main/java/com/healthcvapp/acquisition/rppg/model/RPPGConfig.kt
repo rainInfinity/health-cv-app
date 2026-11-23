@@ -197,6 +197,14 @@ internal data class RPPGConfig(
     "heartRateWindowNanos" to heartRateWindowNanos,
     "heartRateStepNanos" to heartRateStepNanos,
     "minimumHeartRateSnrDb" to minimumHeartRateSnrDb,
+    "heartRateQuality" to mapOf(
+      "version" to HEART_RATE_QUALITY_VERSION,
+      "windowFunction" to "symmetric-hann",
+      "snrPowerBand" to "search-range-bin-centers",
+      "snrMainLobeHalfWidthBins" to HANN_MAIN_LOBE_HALF_WIDTH_BINS,
+      "snrMainLobeHalfWidthHz" to HANN_MAIN_LOBE_HALF_WIDTH_BINS * resamplingRateHz /
+        (ceil(heartRateWindowNanos * resamplingRateHz / 1_000_000_000.0) - 1.0),
+    ),
     "beatDetection" to mapOf(
       "version" to beatDetection.version,
       "prominenceWindowNanos" to beatDetection.prominenceWindowNanos,
@@ -216,10 +224,14 @@ internal data class RPPGConfig(
   companion object {
     /** 唯一颜色转换假设；修改公式或范围必须使用新标识。 */
     const val COLOR_ASSUMPTION_BT601_LIMITED_V1 = "BT601_LIMITED_V1"
+    /** 对称 Hann 主瓣首个零点为峰两侧各 2 个 fs/(N-1) 频率单位。 */
+    const val HANN_MAIN_LOBE_HALF_WIDTH_BINS = 2.0
+    /** 同时冻结频谱主瓣统计与使用带外相邻 bin 的插值规则。 */
+    const val HEART_RATE_QUALITY_VERSION = "hann-main-lobe-log-parabolic-v1"
 
     /** 当前推荐试验基线；所有参数均待评审，不是医学阈值。 */
-    val EXPERIMENTAL_V1 = RPPGConfig(
-      version = "rppg-experiment-v1",
+    val EXPERIMENTAL_V2 = RPPGConfig(
+      version = "rppg-experiment-v2-3s",
       reviewStatus = RPPGConfigReviewStatus.PENDING_REVIEW,
       colorAssumptionId = COLOR_ASSUMPTION_BT601_LIMITED_V1,
       preferredCameraWidthPx = 640,
@@ -253,7 +265,7 @@ internal data class RPPGConfig(
       filterStartupExclusionNanos = 2_000_000_000L,
       bandpassLowHz = 0.75,
       bandpassHighHz = 3.0,
-      heartRateWindowNanos = 12_000_000_000L,
+      heartRateWindowNanos = 3_000_000_000L,
       heartRateStepNanos = 1_000_000_000L,
       minimumHeartRateBpm = 45.0,
       maximumHeartRateBpm = 180.0,

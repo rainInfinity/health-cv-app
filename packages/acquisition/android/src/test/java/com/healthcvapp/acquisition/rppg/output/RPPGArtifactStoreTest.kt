@@ -46,7 +46,12 @@ class RPPGArtifactStoreTest {
       assertFalse(paths.rppgPartialSessionDirectory("active-session").exists())
       assertTrue(paths.rppgSessionDirectory("active-session").isDirectory)
       assertEquals(
-        listOf(RPPGArtifactFileKind.SESSION_JSON, RPPGArtifactFileKind.PULSE, RPPGArtifactFileKind.HEART_RATE),
+        listOf(
+          RPPGArtifactFileKind.SESSION_JSON,
+          RPPGArtifactFileKind.PULSE,
+          RPPGArtifactFileKind.HEART_RATE,
+          RPPGArtifactFileKind.INSTANT_HEART_RATE,
+        ),
         active.files.map { it.kind },
       )
       assertTrue(active.files.all { File(it.path).isFile && it.sizeBytes > 0L })
@@ -111,22 +116,77 @@ class RPPGArtifactStoreTest {
     }
   }
 
-  /** 打开并定稿无波形会话，保留仅含表头的两份 CSV。 */
+  @Test
+  fun `legacy v1 triplet stays queryable without fabricating beat file`() = runTest {
+    withRoot { root ->
+      val paths = AcquisitionPaths(root)
+      val sessionId = "legacy-v1"
+      writeCompleteOutput(root, sessionId, RPPGSessionSource.PASSIVE, schemaVersion = "rppg-session-v1")
+      val artifact = RPPGArtifactStore(root).publish(sessionId)
+      assertEquals("2025-07-20T10:00:00Z", artifact.startedAt)
+      assertEquals(
+        listOf(RPPGArtifactFileKind.SESSION_JSON, RPPGArtifactFileKind.PULSE, RPPGArtifactFileKind.HEART_RATE),
+        artifact.files.map { it.kind },
+      )
+      assertFalse(paths.rppgBeatFile(sessionId).exists())
+      assertEquals(listOf(artifact), RPPGArtifactStore(root).listArtifacts(RPPGSessionSource.PASSIVE))
+    }
+  }
+
+  @Test
+  fun `v2 missing beat file cannot publish and becomes invisible after loss`() = runTest {
+    withRoot { root ->
+      val paths = AcquisitionPaths(root)
+      val store = RPPGArtifactStore(root)
+      val incomplete = "missing-beat-before-publish"
+      writeCompleteOutput(root, incomplete, RPPGSessionSource.ACTIVE)
+      assertTrue(paths.rppgPartialBeatFile(incomplete).delete())
+      assertThrows(IOException::class.java) { store.publish(incomplete) }
+      assertFalse(paths.rppgSessionDirectory(incomplete).exists())
+      assertTrue(paths.rppgPartialSessionDirectory(incomplete).isDirectory)
+
+      val published = "missing-beat-after-publish"
+      writeCompleteOutput(root, published, RPPGSessionSource.ACTIVE)
+      store.publish(published)
+      assertTrue(paths.rppgBeatFile(published).delete())
+      assertTrue(RPPGArtifactStore(root).listArtifacts().isEmpty())
+    }
+  }
+
+  @Test
+  fun `history sorts by session start rather than identifier with stable ties`() = runTest {
+    withRoot { root ->
+      val store = RPPGArtifactStore(root)
+      writeCompleteOutput(root, "z-oldest", RPPGSessionSource.PASSIVE, startedAt = "2025-07-20T10:00:00Z")
+      writeCompleteOutput(root, "a-latest", RPPGSessionSource.PASSIVE, startedAt = "2025-07-20T10:00:01.000Z")
+      writeCompleteOutput(root, "m-same-time-b", RPPGSessionSource.PASSIVE, startedAt = "2025-07-20T10:00:00.100Z")
+      writeCompleteOutput(root, "m-same-time-a", RPPGSessionSource.PASSIVE, startedAt = "2025-07-20T10:00:00.1Z")
+      listOf("a-latest", "m-same-time-b", "z-oldest", "m-same-time-a").forEach { store.publish(it) }
+      assertEquals(
+        listOf("z-oldest", "m-same-time-a", "m-same-time-b", "a-latest"),
+        RPPGArtifactStore(root).listArtifacts(RPPGSessionSource.PASSIVE).map { it.sessionId },
+      )
+    }
+  }
+
+  /** 打开并定稿无波形会话，保留当前格式要求的仅含表头 CSV。 */
   private suspend fun writeCompleteOutput(
     root: File,
     sessionId: String,
     source: RPPGSessionSource,
+    schemaVersion: String = "rppg-session-v2",
+    startedAt: String = "2025-07-20T10:00:00Z",
   ) {
     val output = RPPGSessionOutput(
       filesDirectory = root,
       session = RPPGSessionDescriptor(
-        schemaVersion = "rppg-session-v1",
+        schemaVersion = schemaVersion,
         algorithmVersion = "rppg-realtime-v1",
         sessionId = sessionId,
         source = source,
         sensorTimeOriginNanos = SENSOR_TIME_ORIGIN,
-        startedAt = "2025-07-20T10:00:00Z",
-        config = RPPGConfig.EXPERIMENTAL_V1,
+        startedAt = startedAt,
+        config = RPPGConfig.EXPERIMENTAL_V2,
       ),
       ioDispatcher = Dispatchers.Unconfined,
     )

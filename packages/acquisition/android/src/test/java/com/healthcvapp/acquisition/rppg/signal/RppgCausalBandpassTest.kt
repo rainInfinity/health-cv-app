@@ -16,7 +16,7 @@ import org.junit.Test
 class RppgCausalBandpassTest {
   @Test
   fun filtersStepAndMultipleFrequenciesOnlyAfterConfiguredStartupAndResetsPerSegment() {
-    val config = RPPGConfig.EXPERIMENTAL_V1
+    val config = RPPGConfig.EXPERIMENTAL_V2
     val filter = RppgCausalBandpass(config)
     val input = RppgPosOutput()
     val output = RppgFilteredSample()
@@ -78,7 +78,7 @@ class RppgCausalBandpassTest {
 
   @Test
   fun acceptsSampleIndexGapsOnlyAcrossSegmentBoundaries() {
-    val filter = RppgCausalBandpass(RPPGConfig.EXPERIMENTAL_V1)
+    val filter = RppgCausalBandpass(RPPGConfig.EXPERIMENTAL_V2)
     val input = RppgPosOutput()
     val output = RppgFilteredSample()
 
@@ -94,7 +94,7 @@ class RppgCausalBandpassTest {
 
   @Test
   fun invalidPulseResetsFilterStartupInsteadOfInjectingZero() {
-    val filter = RppgCausalBandpass(RPPGConfig.EXPERIMENTAL_V1)
+    val filter = RppgCausalBandpass(RPPGConfig.EXPERIMENTAL_V2)
     val input = RppgPosOutput()
     val output = RppgFilteredSample()
 

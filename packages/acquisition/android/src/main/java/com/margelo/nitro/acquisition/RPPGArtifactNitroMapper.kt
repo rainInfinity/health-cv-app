@@ -10,7 +10,7 @@ import com.healthcvapp.acquisition.rppg.model.RPPGTerminationReason as ModelRPPG
 
 /** 集中映射主动与被动查询共享的完成产物。 */
 internal object RPPGArtifactNitroMapper {
-  /** 保留会话结束、信号质量、实际计数及三份文件的来源数据。 */
+  /** 保留会话结束、信号质量、实际计数及已发布文件的来源数据。 */
   fun toNitro(artifact: ModelRPPGArtifact) = RPPGArtifact(
     sessionId = artifact.sessionId,
     source = artifact.source.toNitro(),
@@ -54,10 +54,11 @@ internal object RPPGArtifactNitroMapper {
     ModelRPPGSignalStatus.NO_WAVEFORM -> RPPGSignalStatus.NO_WAVEFORM
   }
 
-  /** 映射三件套中文件用途。 */
+  /** 映射已发布文件用途，包括仅新会话具备的逐搏文件。 */
   private fun ModelRPPGArtifactFileKind.toNitro(): RPPGArtifactFileKind = when (this) {
     ModelRPPGArtifactFileKind.SESSION_JSON -> RPPGArtifactFileKind.SESSION
     ModelRPPGArtifactFileKind.PULSE -> RPPGArtifactFileKind.PULSE
     ModelRPPGArtifactFileKind.HEART_RATE -> RPPGArtifactFileKind.HEART_RATE
+    ModelRPPGArtifactFileKind.INSTANT_HEART_RATE -> RPPGArtifactFileKind.INSTANT_HEART_RATE
   }
 }

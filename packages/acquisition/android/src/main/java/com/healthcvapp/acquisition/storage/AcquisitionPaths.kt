@@ -45,6 +45,10 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
   fun rppgPartialHeartRateFile(sessionId: String): File =
     File(rppgPartialSessionDirectory(sessionId), RPPG_HEART_RATE_FILE)
 
+  /** 返回临时会话中的逐搏初步心率 CSV。 */
+  fun rppgPartialBeatFile(sessionId: String): File =
+    File(rppgPartialSessionDirectory(sessionId), RPPG_BEAT_FILE)
+
   /** 返回临时会话中的元信息 JSON。 */
   fun rppgPartialSessionJsonFile(sessionId: String): File =
     File(rppgPartialSessionDirectory(sessionId), RPPG_SESSION_JSON_FILE)
@@ -56,6 +60,10 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
   /** 返回已发布会话中的心率 CSV。 */
   fun rppgHeartRateFile(sessionId: String): File =
     File(rppgSessionDirectory(sessionId), RPPG_HEART_RATE_FILE)
+
+  /** 返回已发布会话中的逐搏初步心率 CSV。 */
+  fun rppgBeatFile(sessionId: String): File =
+    File(rppgSessionDirectory(sessionId), RPPG_BEAT_FILE)
 
   /** 返回已发布会话中的元信息 JSON。 */
   fun rppgSessionJsonFile(sessionId: String): File =
@@ -117,6 +125,7 @@ internal class AcquisitionPaths(private val filesDirectory: File) {
     const val RPPG_DIRECTORY = "rppg"
     const val RPPG_PULSE_FILE = "pulse.csv"
     const val RPPG_HEART_RATE_FILE = "hr.csv"
+    const val RPPG_BEAT_FILE = "beat.csv"
     const val RPPG_SESSION_JSON_FILE = "session.json"
     const val PASSIVE_CAPTURE_DIRECTORY = "passive-capture"
     const val PPG_PARTIAL_FILE = "ppg.csv.part"

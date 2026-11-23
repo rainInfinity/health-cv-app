@@ -78,7 +78,7 @@ export class RPPGClient {
     return this.unwrap(await this.native.close()).artifact
   }
 
-  /** 查询外部及已有内部目录中的已发布完整三件套。 */
+  /** 查询外部及已有内部目录中的完整 RPPG 结果，保留历史 v1 三件套。 */
   async listArtifacts(): Promise<RPPGArtifact[]> {
     this.ensureAndroid()
     return this.native.listArtifacts()

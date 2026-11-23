@@ -85,7 +85,7 @@ export interface PassiveCapture extends HybridObject<{ android: 'kotlin' }> {
   setConfig(config: PassiveCaptureConfig): Promise<PassiveCaptureCommandResult>
   enable(): Promise<PassiveCaptureCommandResult>
   disable(): Promise<PassiveCaptureCommandResult>
-  /** 查询已发布的被动 RPPG 三件套。 */
+  /** 查询已发布的被动 RPPG 结果（v1 三件套或 v2 四件套）。 */
   listArtifacts(): Promise<RPPGArtifact[]>
   /** 查询升级前的历史视频及其真实媒体元数据。 */
   listVideoArtifacts(): Promise<PassiveVideoArtifact[]>
