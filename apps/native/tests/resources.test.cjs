@@ -383,7 +383,7 @@ function measurement(taskId, metric = 'heartRate') {
     captureMethod: 'fingertip', captureMode: 'active', durationMs: 30001,
     readings: [{ code: 'hr', value: 79, unit: 'beats_per_minute' }],
     quality: { score: 88.5, threshold: 70 }, riskLevel: null,
-    modelId: 7, versionId: 12, version: '1.0.0', algorithmKey: 'ppg.active.offline.hr_br.v1',
+    modelId: 7, versionId: 12, version: '1.0.0', algorithmKey: 'ppg.active.offline.hr.v1',
   };
 }
 

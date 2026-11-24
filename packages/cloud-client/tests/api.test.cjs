@@ -458,6 +458,55 @@ test('任务详情保留实际采集属性和原始场景结果', async (t) => {
   assert.equal(Object.hasOwn(returned.measurement, 'capturedAt'), false);
 });
 
+test('指尖四成员和独立HR及BR原样保留各自状态、质量和处理后文件', async (t) => {
+  const values = {
+    hr: { hr: 79.25, quality: { score: 88.5, threshold: 70 } },
+    br: { br: 15.125, quality: { score: 81.125, threshold: 72 } },
+    spo2: { spo2: 98.5, quality: { score: 85, threshold: 70 } },
+    diabetes: { prob: .55, risk_level: 0, quality: { score: 84, threshold: 70 } },
+  };
+  const cases = [[], ['hr'], ['br'], ['hr', 'br', 'spo2', 'diabetes']].map((failedKeys) => ({
+    modelCode: 'ppg.active.offline.all',
+    result: {
+      outcome: failedKeys.length === 0 ? 'ALL_SUCCEEDED' : failedKeys.length === 4 ? 'ALL_FAILED' : 'PARTIALLY_SUCCEEDED',
+      results: Object.fromEntries(Object.entries(values).map(([key, result]) => [key, {
+        algorithmKey: `ppg.active.offline.${key}.v1`,
+        status: failedKeys.includes(key) ? 'FAILED' : 'SUCCEEDED',
+        result: failedKeys.includes(key) ? null : result,
+        failureCode: failedKeys.includes(key) ? 'INFERENCE.QUALITY_REJECTED' : null,
+        failureMessage: failedKeys.includes(key) ? '本项信号质量不足' : null,
+        qualityFailure: failedKeys.includes(key) ? { reason: 'LOW_SCORE', details: { score: key === 'br' ? 51 : 55, threshold: 75 } } : null,
+      }])),
+      output_files: { hr_processed_ppg: 'opaque:hr', br_processed_rsp: 'opaque:br' },
+    },
+  }));
+  cases.push(
+    { modelCode: 'ppg.active.offline.hr', result: { ...values.hr, output_files: { processed_ppg: 'opaque:timestamp,ppg' } } },
+    { modelCode: 'ppg.active.offline.br', result: { ...values.br, output_files: { processed_rsp: 'opaque:timestamp,rsp' } } },
+  );
+  const details = cases.map((item, index) => ({
+    taskId: 101 + index, modelId: 7, modelName: '正式模型', versionId: 12, version: 'catalog-version',
+    status: 'SUCCEEDED', isExample: false, createdAt: '2026-11-22 08:29:00',
+    submittedAt: '2026-11-22 08:30:00', startedAt: null, finishedAt: null,
+    measurement: null, qualityFailure: null, failureCode: null, failureMessage: null, ...item,
+  }));
+  const { server, baseUrl } = await startServer((request, response) => {
+    request.resume();
+    assert.equal(request.method, 'GET');
+    const detail = details.find((item) => request.url === `/api/v1/android-cn/tasks/${item.taskId}`);
+    assert.ok(detail);
+    sendJson(response, 200, { code: 'OK', data: detail });
+  });
+  t.after(() => closeServer(server));
+  const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'access-token' });
+  for (const detail of details) {
+    const returned = await client.tasks.getById(detail.taskId);
+    assert.deepEqual(returned, detail);
+    assert.equal(returned.status, 'SUCCEEDED');
+    assert.deepEqual(returned.result, detail.result);
+  }
+});
+
 test('最新健康结果保留五键 null 并读取当前渠道的实时 Bearer', async (t) => {
   const latest = {
     bloodPressure: null, heartRate: null, respirationRate: null,
@@ -487,7 +536,7 @@ test('健康查询保留原时间、未知来源、读数、质量、风险及�
     submittedAt: '2026-11-22 08:30:00', captureMethod: 'fingertip', captureMode: 'active',
     durationMs: 30001, readings: [{ code: 'hr', value: 79.123456, unit: 'beats_per_minute' }],
     quality: { score: 88.65866718458382, threshold: 70 }, riskLevel: null,
-    modelId: 7, versionId: 12, version: '1.0.0-rc.2', algorithmKey: 'ppg.active.offline.hr_br.v1',
+    modelId: 7, versionId: 12, version: '1.0.0-rc.2', algorithmKey: 'ppg.active.offline.hr.v1',
   };
   const oldHeartRate = {
     ...heartRate, recordId: '99:heartRate', taskId: 99, submittedAt: '2026-11-01 00:00:00',
@@ -499,13 +548,18 @@ test('健康查询保留原时间、未知来源、读数、质量、风险及�
     readings: [{ code: 'diabetes_probability', value: 0.123456789, unit: 'ratio' }],
     riskLevel: 2, algorithmKey: 'ppg.active.offline.diabetes.v1',
   };
+  const respirationRate = {
+    ...heartRate, recordId: '101:respirationRate', metric: 'respirationRate',
+    readings: [{ code: 'br', value: 15.125, unit: 'breaths_per_minute' }],
+    quality: { score: 81.125, threshold: 72 }, algorithmKey: 'ppg.active.offline.br.v1',
+  };
   const bloodPressure = {
     ...heartRate, recordId: '102:bloodPressure', taskId: 102, metric: 'bloodPressure',
     captureMethod: 'fingertip_chest',
     readings: [{ code: 'sbp', value: 123.456, unit: 'mmHg' }, { code: 'dbp', value: 78.9, unit: 'mmHg' }],
     algorithmKey: 'ppg_acc.active.offline.bp.v1',
   };
-  const latest = { bloodPressure, heartRate, respirationRate: null, oxygenSaturation: null, diabetesRisk };
+  const latest = { bloodPressure, heartRate, respirationRate, oxygenSaturation: null, diabetesRisk };
   const page = { items: [heartRate, oldHeartRate], total: 9, offset: 2, limit: 2 };
   const emptyPage = { items: [], total: 9, offset: 99, limit: 20 };
   const requests = [];
@@ -524,7 +578,10 @@ test('健康查询保留原时间、未知来源、读数、质量、风险及�
   const client = createCloudClient({ baseUrl, channel: 'android-cn', getAccessToken: () => 'access-token' });
   const query = { metric: 'heartRate', from: '2026-11-01', to: '2026-11-22', offset: 2, limit: 2 };
 
-  assert.deepEqual(await client.measurements.latest(), latest);
+  const returnedLatest = await client.measurements.latest();
+  assert.deepEqual(returnedLatest, latest);
+  assert.deepEqual(returnedLatest.heartRate.quality, { score: 88.65866718458382, threshold: 70 });
+  assert.deepEqual(returnedLatest.respirationRate.quality, { score: 81.125, threshold: 72 });
   const returnedPage = await client.measurements.list(query);
   assert.deepEqual(returnedPage, page);
   assert.equal(Object.hasOwn(returnedPage.items[1], 'capturedAt'), false);

@@ -2,7 +2,7 @@
 import type { Rsp } from '@health-cv-app/cloud-client'
 import { formatBeijingDateTime, parseSubmittedAt } from '../../shared/dateTime'
 
-export type ReportMemberKey = 'hr_br' | 'spo2' | 'diabetes' | 'bp'
+export type ReportMemberKey = 'hr' | 'br' | 'spo2' | 'diabetes' | 'bp'
 export type ReportMetricKey = 'heartRate' | 'respirationRate' | 'oxygenSaturation' | 'diabetesRisk' | 'bloodPressure'
 export interface ReportQuality { score: number; threshold: number }
 export interface ReportReading { code: string; value: number; unit: string }
@@ -35,21 +35,23 @@ export interface MeasurementReport {
 }
 
 const algorithms: Record<ReportMemberKey, string> = {
-  hr_br: 'ppg.active.offline.hr_br.v1',
+  hr: 'ppg.active.offline.hr.v1',
+  br: 'ppg.active.offline.br.v1',
   spo2: 'ppg.active.offline.spo2.v1',
   diabetes: 'ppg.active.offline.diabetes.v1',
   bp: 'ppg_acc.active.offline.bp.v1',
 }
 const models: Record<string, readonly ReportMemberKey[]> = {
-  'ppg.active.offline.all': ['hr_br', 'spo2', 'diabetes'],
+  'ppg.active.offline.all': ['hr', 'br', 'spo2', 'diabetes'],
   'ppg_acc.active.offline.all': ['bp'],
-  'ppg.active.offline.hr_br': ['hr_br'],
+  'ppg.active.offline.hr': ['hr'],
+  'ppg.active.offline.br': ['br'],
   'ppg.active.offline.spo2': ['spo2'],
   'ppg.active.offline.diabetes': ['diabetes'],
   'ppg_acc.active.offline.bp': ['bp'],
 }
 const memberMetrics: Record<ReportMemberKey, readonly ReportMetricKey[]> = {
-  hr_br: ['heartRate', 'respirationRate'], spo2: ['oxygenSaturation'], diabetes: ['diabetesRisk'], bp: ['bloodPressure'],
+  hr: ['heartRate'], br: ['respirationRate'], spo2: ['oxygenSaturation'], diabetes: ['diabetesRisk'], bp: ['bloodPressure'],
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -74,8 +76,10 @@ function unavailable(message = '本任务未提供此项结果'): ReportMetric {
 }
 function validReadings(key: ReportMemberKey, result: Record<string, unknown>): ReportReading[][] | null {
   switch (key) {
-    case 'hr_br': return finite(result.hr) && finite(result.br)
-      ? [[{ code: 'hr', value: result.hr, unit: '次/分' }], [{ code: 'br', value: result.br, unit: '次/分' }]] : null
+    case 'hr': return finite(result.hr)
+      ? [[{ code: 'hr', value: result.hr, unit: '次/分' }]] : null
+    case 'br': return finite(result.br) && result.br >= 8 && result.br <= 20
+      ? [[{ code: 'br', value: result.br, unit: '次/分' }]] : null
     case 'spo2': return finite(result.spo2) && result.spo2 >= 90 && result.spo2 <= 100
       ? [[{ code: 'spo2', value: result.spo2, unit: '%' }]] : null
     case 'diabetes': return finite(result.prob) && result.prob >= 0 && result.prob <= 1 && (result.risk_level === 0 || result.risk_level === 1 || result.risk_level === 2)

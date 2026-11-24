@@ -50,7 +50,7 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
-/** 显式识别两个场景和四种独立历史任务，绝不借用其他成员输出。 */
+/** 显式识别场景及具有 PPG／SCG 输出的独立任务，绝不借用其他成员输出。 */
 export function selectReportWaveSource(task: Rsp.Tasks.TaskDetail, kind: ReportWaveKind): ReportWaveSource | null {
   if (task.status !== 'SUCCEEDED' || task.isExample) return null
   const result = record(task.result)
@@ -64,12 +64,12 @@ export function selectReportWaveSource(task: Rsp.Tasks.TaskDetail, kind: ReportW
       if (!bp && kind !== 'ppg') return null
       if (result.outcome !== 'ALL_SUCCEEDED' && result.outcome !== 'PARTIALLY_SUCCEEDED') return null
       if (bp && result.outcome !== 'ALL_SUCCEEDED') return null
-      const member = record(record(result.results)?.[bp ? 'bp' : 'hr_br'])
-      if (member?.status !== 'SUCCEEDED' || member.algorithmKey !== (bp ? 'ppg_acc.active.offline.bp.v1' : 'ppg.active.offline.hr_br.v1') || !record(member.result)) return null
-      logicalName = bp ? `bp_processed_${kind}` : 'hr_br_processed_ppg'
+      const member = record(record(result.results)?.[bp ? 'bp' : 'hr'])
+      if (member?.status !== 'SUCCEEDED' || member.algorithmKey !== (bp ? 'ppg_acc.active.offline.bp.v1' : 'ppg.active.offline.hr.v1') || !record(member.result)) return null
+      logicalName = bp ? `bp_processed_${kind}` : 'hr_processed_ppg'
       break
     }
-    case 'ppg.active.offline.hr_br':
+    case 'ppg.active.offline.hr':
       if (kind !== 'ppg') return null
       logicalName = 'processed_ppg'
       break

@@ -13,7 +13,7 @@ const record = (metric, code, value, submittedAt) => ({
   captureMethod: null, captureMode: null, durationMs: null,
   readings: [{ code, value, unit: 'beats_per_minute' }],
   quality: null, riskLevel: null, modelId: 3, versionId: 9,
-  version: '2.1', algorithmKey: 'ppg.active.offline.hr_br.v1',
+  version: '2.1', algorithmKey: metric === 'bloodPressure' ? 'ppg_acc.active.offline.bp.v1' : `ppg.active.offline.${{ heartRate: 'hr', respirationRate: 'br', oxygenSaturation: 'spo2', diabetesRisk: 'diabetes' }[metric]}.v1`,
 });
 const latest = {
   bloodPressure: { ...record('bloodPressure', 'dbp', 81.3, '2026-11-22 23:59:00'), readings: [

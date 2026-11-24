@@ -59,10 +59,11 @@ function component(file, name, props = {}) {
 }
 const text = (nodes) => nodes.filter((node) => node.text).map((node) => node.text).join(' ');
 const { adaptMeasurementResult } = require(path.join(root, 'app/measurement/resultAdapter.js'));
-function report(allFailed = false) {
+function report(allFailed = false, failedKey = null) {
   const failed = { status: 'FAILED', result: null, failureCode: 'INFERENCE.QUALITY_REJECTED', qualityFailure: { reason: 'LOW_SCORE', details: { score: 61.25, threshold: 70 } } };
   return adaptMeasurementResult({ taskId: 42, status: 'SUCCEEDED', modelCode: 'ppg.active.offline.all', isExample: false, submittedAt: '2026-11-23 08:30:00', result: { outcome: allFailed ? 'ALL_FAILED' : 'PARTIALLY_SUCCEEDED', results: {
-    hr_br: { algorithmKey: 'ppg.active.offline.hr_br.v1', ...(allFailed ? failed : { status: 'SUCCEEDED', result: { hr: 79.5, br: 15.2 } }) },
+    hr: { algorithmKey: 'ppg.active.offline.hr.v1', ...(allFailed || failedKey === 'hr' ? failed : { status: 'SUCCEEDED', result: { hr: 79.5, quality: { score: 88, threshold: 70 } } }) },
+    br: { algorithmKey: 'ppg.active.offline.br.v1', ...(allFailed || failedKey === 'br' ? failed : { status: 'SUCCEEDED', result: { br: 15.2, quality: { score: 81, threshold: 72 } } }) },
     spo2: { algorithmKey: 'ppg.active.offline.spo2.v1', ...failed },
     diabetes: { algorithmKey: 'ppg.active.offline.diabetes.v1', ...failed },
   } } });
@@ -78,6 +79,18 @@ test('指尖部分成功保留完成标题和有效值，质量拒绝仅改失�
   assert.equal(content.includes('98'), false);
   assert.equal(nodes.filter((node) => node.type === 'Line' && node.props.stroke === theme.colors.border.default).length, 15);
   assert.equal(nodes.filter((node) => node.text === copy.fingertipResults.summaryDisclaimer).length, 1);
+}));
+
+test('HR与BR任一失败只隐藏该项读数，摘要仍展示另一项真实结果', () => withNativeHost(() => {
+  for (const [failedKey, visibleValue, hiddenValue] of [['hr', '15', '79'], ['br', '79', '15']]) {
+    const current = report(false, failedKey);
+    const nodes = component('pages/measurement/FingertipResults/FingertipResultSummary/FingertipResultSummary.js', 'FingertipResultSummary', { report: current });
+    const content = text(nodes);
+    assert.ok(content.includes('检测完成'));
+    assert.ok(content.includes(visibleValue));
+    assert.equal(content.includes(hiddenValue), false);
+    assert.ok(content.includes('信号质量过低'));
+  }
 }));
 
 test('失败分类仅提供对应重取或重测，不显示声明和详情操作', () => withNativeHost(() => {
@@ -134,7 +147,7 @@ test('同一风险结果在简要面板保持两行，详细看板和解读完�
 }));
 
 test('波形首次加载与缺文件仅替换原画布，范围不伪造且没有重试操作', () => withNativeHost(() => {
-  const base = { taskId: 42, status: 'SUCCEEDED', isExample: false, modelCode: 'ppg.active.offline.hr_br' };
+  const base = { taskId: 42, status: 'SUCCEEDED', isExample: false, modelCode: 'ppg.active.offline.hr' };
   for (const available of [true, false]) {
     const task = { ...base, result: { output_files: available ? { processed_ppg: 'opaque' } : {} } };
     const nodes = component('pages/measurement/ReportWaveform/ReportWaveform.js', 'ReportWaveform', { task, kind: 'ppg', title: '脉搏波', labels: messages('fingertipResults') });

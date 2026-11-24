@@ -9,7 +9,8 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a, b)
 const model = { modelId: 7, modelCode: 'ppg.active.offline.all', requiredInputs: ['ppg'], isExample: false, versionId: 8, version: 'catalog' }
 const task = (status = 'SUCCEEDED') => ({ taskId: 42, modelId: 7, modelCode: model.modelCode, modelName: '统一场景', versionId: 9, version: 'fixed', status, isExample: false, createdAt: '2026-11-23 08:30:00', submittedAt: '2026-11-23 08:31:00', startedAt: null, finishedAt: null, measurement: null, qualityFailure: null, result: {
   outcome: 'ALL_SUCCEEDED', results: {
-    hr_br: { algorithmKey: 'ppg.active.offline.hr_br.v1', status: 'SUCCEEDED', result: { hr: 72, br: 16, quality: { score: 88, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
+    hr: { algorithmKey: 'ppg.active.offline.hr.v1', status: 'SUCCEEDED', result: { hr: 72, quality: { score: 88, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
+    br: { algorithmKey: 'ppg.active.offline.br.v1', status: 'SUCCEEDED', result: { br: 16, quality: { score: 81, threshold: 72 } }, failureCode: null, failureMessage: null, qualityFailure: null },
     spo2: { algorithmKey: 'ppg.active.offline.spo2.v1', status: 'SUCCEEDED', result: { spo2: 98, quality: { score: 82, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
     diabetes: { algorithmKey: 'ppg.active.offline.diabetes.v1', status: 'SUCCEEDED', result: { prob: .55, risk_level: 0, quality: { score: 81, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
   },
@@ -151,17 +152,54 @@ test('仅可见SUBMITTED/RUNNING非重叠两秒查询，失败停循环且保留
 })
 
 test('任务失败或ALL_FAILED不会失效健康记录而覆盖此前有效结果', async () => {
-  const h = harness({ async getById() { return task('FAILED') } })
-  h.workflow.update(completed()); await flush(); assert.deepEqual(h.invalidations, []); h.workflow.dispose()
+  const allFailed = task()
+  allFailed.result.outcome = 'ALL_FAILED'
+  for (const member of Object.values(allFailed.result.results)) {
+    Object.assign(member, { status: 'FAILED', result: null, failureCode: 'INFERENCE.QUALITY_REJECTED', qualityFailure: { reason: 'NO_VALID_SIGNAL', details: null } })
+  }
+  for (const detail of [task('FAILED'), allFailed]) {
+    const h = harness({ async getById() { return detail } })
+    h.workflow.update(completed()); await flush()
+    assert.deepEqual(h.invalidations, [])
+    assert.equal(h.workflow.getSnapshot().phase, 'terminal')
+    h.workflow.dispose()
+  }
+})
+
+test('HR或BR单项失败的有效部分结果仍失效健康查询且保留另一项', async () => {
+  for (const [key, value] of [
+    ['hr', 16],
+    ['br', 72],
+  ]) {
+    const detail = task()
+    detail.result.outcome = 'PARTIALLY_SUCCEEDED'
+    Object.assign(detail.result.results[key], {
+      status: 'FAILED', result: null, failureCode: 'INFERENCE.QUALITY_REJECTED',
+      qualityFailure: { reason: 'LOW_SCORE', details: { score: 55, threshold: 75 } },
+    })
+    const h = harness({ async getById() { return detail } })
+    h.workflow.update(completed()); await flush()
+    const snapshot = h.workflow.getSnapshot()
+    assert.equal(snapshot.phase, 'terminal')
+    assert.equal(snapshot.task.result.outcome, 'PARTIALLY_SUCCEEDED')
+    const successfulKey = key === 'hr' ? 'br' : 'hr'
+    assert.equal(snapshot.task.result.results[successfulKey].result[successfulKey], value)
+    assert.deepEqual(snapshot.task.result.results[successfulKey].result.quality, key === 'hr' ? { score: 81, threshold: 72 } : { score: 88, threshold: 70 })
+    assert.equal(snapshot.task.result.results[key].status, 'FAILED')
+    assert.equal(snapshot.task.result.results[key].result, null)
+    assert.deepEqual(snapshot.task.result.results[key].qualityFailure.details, { score: 55, threshold: 75 })
+    assert.deepEqual(h.invalidations, [1])
+    h.workflow.dispose()
+  }
 })
 
 test('显式场景遍历目录分页，只接受精确编码、非示例及正确输入', async () => {
   const offsets = []
   const auth = { runProtected: (action, options) => action(options) }
-  const client = { models: { async list({ offset }) { offsets.push(offset); return offset === 0 ? { items: [{ ...model, modelCode: 'ppg.active.offline.hr_br' }], offset: 0, limit: 1, total: 2 } : { items: [model], offset: 1, limit: 1, total: 2 } } } }
+  const client = { models: { async list({ offset }) { offsets.push(offset); return offset === 0 ? { items: [{ ...model, modelCode: 'ppg.active.offline.hr' }], offset: 0, limit: 1, total: 2 } : { items: [model], offset: 1, limit: 1, total: 2 } } } }
   assert.equal((await findCloudMeasurementPlan(client, auth, 'fingertip', 1)).modelId, 7)
   assert.deepEqual(offsets, [0, 1])
-  for (const invalid of [{ ...model, isExample: true }, { ...model, requiredInputs: ['ppg', 'acc'] }, { ...model, modelCode: 'ppg.active.offline.hr_br' }]) {
+  for (const invalid of [{ ...model, isExample: true }, { ...model, requiredInputs: ['ppg', 'acc'] }, { ...model, modelCode: 'ppg.active.offline.hr' }, { ...model, modelCode: 'ppg.active.offline.br' }]) {
     await assert.rejects(findCloudMeasurementPlan({ models: { list: async () => ({ items: [invalid], offset: 0, limit: 100, total: 1 }) } }, auth, 'fingertip', 1))
   }
 })

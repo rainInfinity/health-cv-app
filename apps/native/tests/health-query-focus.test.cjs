@@ -201,7 +201,7 @@ test('不支持报告或草稿可重新获取原任务，等待期间不继续�
   assert.equal(page.value.error, false);
   release(); await page.mount();
   assert.equal(page.value.error, true);
-  await page.task({ taskId: 42, status: 'SUCCEEDED', submittedAt: '2026-11-23 08:30:00', modelCode: 'ppg.active.offline.hr_br', isExample: false, result: { hr: 78, br: 15 } });
+  await page.task({ taskId: 42, status: 'SUCCEEDED', submittedAt: '2026-11-23 08:30:00', modelCode: 'ppg.active.offline.hr', isExample: false, result: { hr: 78, quality: { score: 88, threshold: 70 } } });
   assert.equal(page.value.error, false);
   assert.equal(page.value.report.metrics.heartRate.readings[0].value, 78);
   assert.equal(page.calls, 3);

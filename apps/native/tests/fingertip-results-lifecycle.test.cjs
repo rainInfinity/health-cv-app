@@ -11,7 +11,8 @@ function cloudDependencies(overrides = {}) {
   const calls = [], listeners = new Set()
   let generation = 1, taskStatus = 'SUCCEEDED'
   const result = { outcome: 'ALL_SUCCEEDED', results: {
-    hr_br: { algorithmKey: 'ppg.active.offline.hr_br.v1', status: 'SUCCEEDED', result: { hr: 73, br: 15, quality: { score: 88, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
+    hr: { algorithmKey: 'ppg.active.offline.hr.v1', status: 'SUCCEEDED', result: { hr: 73, quality: { score: 88, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
+    br: { algorithmKey: 'ppg.active.offline.br.v1', status: 'SUCCEEDED', result: { br: 15, quality: { score: 81, threshold: 72 } }, failureCode: null, failureMessage: null, qualityFailure: null },
     spo2: { algorithmKey: 'ppg.active.offline.spo2.v1', status: 'SUCCEEDED', result: { spo2: 98, quality: { score: 82, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
     diabetes: { algorithmKey: 'ppg.active.offline.diabetes.v1', status: 'SUCCEEDED', result: { prob: .52, risk_level: 0, quality: { score: 81, threshold: 70 } }, failureCode: null, failureMessage: null, qualityFailure: null },
   } }

@@ -35,12 +35,14 @@ function task(modelCode = 'ppg.active.offline.all', result) {
     result: result ?? {
       outcome: 'PARTIALLY_SUCCEEDED',
       results: {
-        hr_br: { status: 'SUCCEEDED', algorithmKey: 'ppg.active.offline.hr_br.v1', result: { hr: 72, br: 16 } },
+        hr: { status: 'SUCCEEDED', algorithmKey: 'ppg.active.offline.hr.v1', result: { hr: 72, quality: { score: 88, threshold: 70 } } },
+        br: { status: 'SUCCEEDED', algorithmKey: 'ppg.active.offline.br.v1', result: { br: 16, quality: { score: 81, threshold: 72 } } },
         spo2: { status: 'SUCCEEDED', algorithmKey: 'ppg.active.offline.spo2.v1', result: { spo2: 98 } },
-        diabetes: { status: 'FAILED', result: null },
+        diabetes: { status: 'FAILED', algorithmKey: 'ppg.active.offline.diabetes.v1', result: null },
       },
       output_files: {
-        hr_br_processed_ppg: 'opaque:不能作为路径',
+        hr_processed_ppg: 'opaque:不能作为路径',
+        br_processed_rsp: 'opaque:不能借用呼吸波',
         spo2_processed_ppg: 'https://不能作为下载地址.example',
       },
     },
@@ -71,19 +73,40 @@ const ppg = { kind: 'ppg', logicalName: 'processed_ppg', timestampColumn: 'times
 const scg = { kind: 'scg', logicalName: 'processed_scg', timestampColumn: 'timestamp' };
 const hasCode = (code) => (error) => error instanceof ReportWaveformError && error.code === code;
 
-test('统一指尖只下载 hr_br 顶层键，不发送引用或借用其他成员文件', async () => {
+test('统一指尖只下载成功HR的顶层键，不发送引用或借用BR和血氧文件', async () => {
   const current = task();
   const original = structuredClone(current);
-  assert.deepEqual(selectReportWaveSource(current, 'ppg'), { ...ppg, logicalName: 'hr_br_processed_ppg' });
+  assert.deepEqual(selectReportWaveSource(current, 'ppg'), { ...ppg, logicalName: 'hr_processed_ppg' });
   const h = harness();
   const data = await downloadReportWaveform(h.services, current, 'ppg', 4, new AbortController().signal);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].taskId, 73);
-  assert.equal(h.calls[0].logicalName, 'hr_br_processed_ppg');
+  assert.equal(h.calls[0].logicalName, 'hr_processed_ppg');
   assert.deepEqual(data.samples, [[0, -2], [41, 3]]);
   assert.deepEqual(current, original, '下载不得修改已有读数或任务');
-  current.result.results.hr_br.status = 'FAILED';
-  current.result.results.hr_br.result = null;
+  current.result.results.hr.status = 'FAILED';
+  current.result.results.hr.result = null;
+  assert.equal(selectReportWaveSource(current, 'ppg'), null);
+  assert.equal(selectReportWaveSource(current, 'scg'), null);
+});
+
+test('HR成功且BR失败仍可读PPG，缺失HR顶层文件不借用成员内或其他输出', () => {
+  const current = task();
+  current.result.results.br.status = 'FAILED';
+  current.result.results.br.result = null;
+  assert.deepEqual(selectReportWaveSource(current, 'ppg'), { ...ppg, logicalName: 'hr_processed_ppg' });
+  current.result.results.hr.result.output_files = { processed_ppg: 'opaque:成员内不可借用' };
+  delete current.result.output_files.hr_processed_ppg;
+  assert.equal(selectReportWaveSource(current, 'ppg'), null);
+});
+
+test('全部失败的指尖任务即使遗留输出也不提供波形', () => {
+  const current = task();
+  current.result.outcome = 'ALL_FAILED';
+  for (const member of Object.values(current.result.results)) {
+    member.status = 'FAILED';
+    member.result = null;
+  }
   assert.equal(selectReportWaveSource(current, 'ppg'), null);
   assert.equal(selectReportWaveSource(current, 'scg'), null);
 });
@@ -104,8 +127,8 @@ test('血压使用 bp 顶层 PPG 和 SCG，失败成员及全部失败没有波�
   assert.equal(selectReportWaveSource(current, 'scg'), null);
 });
 
-test('四种独立历史按各自无前缀输出及时间戳合同读取', () => {
-  for (const modelCode of ['ppg.active.offline.hr_br', 'ppg.active.offline.spo2', 'ppg.active.offline.diabetes', 'ppg_acc.active.offline.bp']) {
+test('有PPG的独立历史按各自无前缀输出及时间戳合同读取', () => {
+  for (const modelCode of ['ppg.active.offline.hr', 'ppg.active.offline.spo2', 'ppg.active.offline.diabetes', 'ppg_acc.active.offline.bp']) {
     const current = task(modelCode, { output_files: { processed_ppg: 'opaque', processed_scg: 'opaque-z' } });
     const timestampColumn = ['ppg.active.offline.spo2', 'ppg.active.offline.diabetes'].includes(modelCode) ? 'timestampFrame' : 'timestamp';
     const source = selectReportWaveSource(current, 'ppg');
@@ -118,7 +141,17 @@ test('四种独立历史按各自无前缀输出及时间戳合同读取', () =>
   assert.equal(selectReportWaveSource(task('未支持模型'), 'ppg'), null);
   assert.equal(selectReportWaveSource({ ...task(), status: 'FAILED' }, 'ppg'), null);
   assert.equal(selectReportWaveSource({ ...task(), isExample: true }, 'ppg'), null);
-  assert.equal(selectReportWaveSource(task('ppg.active.offline.hr_br', { output_files: {} }), 'ppg'), null);
+  assert.equal(selectReportWaveSource(task('ppg.active.offline.hr', { output_files: {} }), 'ppg'), null);
+});
+
+test('独立BR仅有timestamp与rsp呼吸输出，不提供PPG或SCG来源', () => {
+  const current = task('ppg.active.offline.br', {
+    br: 16, quality: { score: 81, threshold: 72 }, output_files: { processed_rsp: 'opaque:呼吸波' },
+  });
+  assert.equal(selectReportWaveSource(current, 'ppg'), null);
+  assert.equal(selectReportWaveSource(current, 'scg'), null);
+  current.result.output_files.processed_ppg = 'opaque:不能借用';
+  assert.equal(selectReportWaveSource(current, 'ppg'), null);
 });
 
 test('CSV 保留不等间隔真实毫秒轴及原始值，支持 BOM、CRLF、标准引号与列顺序', () => {
