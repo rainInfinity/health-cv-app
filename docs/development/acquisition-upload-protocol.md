@@ -42,16 +42,16 @@ ACC 必需列为 `timestampEvent,accX,accY,accZ`，时间单位为毫秒，轴�
 
 | 后端合同 | 算法标识 | 必需输入 | 结果组织 |
 | --- | --- | --- | --- |
-| 统一 PPG 场景 | `ppg.active.offline.all.v1` | 一份 `ppg` | 固定成员 `hr_br`、`spo2`、`diabetes`，可部分成功。 |
+| 统一 PPG 场景 | `ppg.active.offline.all.v2` | 一份 `ppg` | 固定成员 `hr`、`br`、`spo2`、`diabetes`，可部分成功。 |
 | 统一 PPG＋ACC 场景 | `ppg_acc.active.offline.all.v1` | `ppg`、`acc` | 当前只有 `bp` 成员，不同时产生其他指标。 |
 
-统一 PPG 的三个成员读取同一份原始文件，不上传三份副本，也不上传其他成员的处理后文件。场景固定成员及实现修订，不通过请求参数选择子集，也不自动包含未来算法。
+统一 PPG 的四个成员读取同一份原始文件，不上传四份副本，也不上传其他成员的处理后文件。固定算法依次为 `ppg.active.offline.hr.v1`、`ppg.active.offline.br.v1`、`ppg.active.offline.spo2.v1`、`ppg.active.offline.diabetes.v1`。场景固定成员及实现修订，不通过请求参数选择子集，也不自动包含未来算法。
 
-独立 HR／BR、血氧、血压及糖尿病风险算法仍保留各自历史结果合同；报告按实际任务解释，不把独立结果强制包装为场景，也不回退为独立模型启动新产品检测。
+独立 HR、BR、血氧、血压及糖尿病风险算法按各自结果合同读取，不把独立结果强制包装为场景，也不回退为独立模型启动新产品检测。独立 HR 的模型编码为 `ppg.active.offline.hr`，成功载荷只含 `hr`、`quality` 及服务端追加的 `output_files.processed_ppg`（CSV 表头 `timestamp,ppg`）；独立 BR 的模型编码为 `ppg.active.offline.br`，成功载荷只含 `br`、`quality` 及 `output_files.processed_rsp`（`timestamp,rsp`）。两者分别判断任务状态和质量，不读取另一指标。
 
 普通渠道模型目录不公开 `algorithmKey`。指尖显式绑定 `modelCode=ppg.active.offline.all`，血压绑定 `ppg_acc.active.offline.all`，必要时继续读取目录分页，核对非示例标记及准确的必需输入。缺失或不符在设备启动前反馈不可用，不按名称、输入或截断算法标识猜测模型。
 
-创建任务使用目录实际返回的 `modelId`，不硬编码示例 ID。创建响应中的固定模型版本是本次任务依据，不能继续以目录缓存版本代替。合同已定义不表示目标渠道已经配置相应场景或制品。
+创建任务使用目录实际返回的 `modelId`，不硬编码示例 ID。统一 PPG 新发布版本为 `2.0.0`，但客户端不硬编码或用此版本门控；创建响应中的固定模型版本是本次任务依据，不能继续以目录缓存版本代替。合同已定义不表示目标渠道已经配置相应场景或制品。
 
 ## 自动对接顺序
 
@@ -73,7 +73,7 @@ ACC 必需列为 `timestampEvent,accX,accY,accZ`，时间单位为毫秒，轴�
 | --- | --- |
 | 任务 `status=FAILED` | 场景自身失败，`result=null`；不展示中间结果或部分指标。 |
 | 任务 `status=SUCCEEDED` | 场景执行及合法汇总完成，仍须读取 `result.outcome`。 |
-| `result.outcome` | `ALL_SUCCEEDED`、`PARTIALLY_SUCCEEDED` 或 `ALL_FAILED`；统一 PPG＋ACC 当前只有一个成员，不产生部分成功。 |
+| `result.outcome` | 统一 PPG 四成员成功数为 4／1–3／0 时分别为 `ALL_SUCCEEDED`／`PARTIALLY_SUCCEEDED`／`ALL_FAILED`；统一 PPG＋ACC 当前只有一个成员，不产生部分成功。 |
 | `result.results.<成员>.status` | 决定该成员是否可读取数值；失败信息和质量拒绝留在对应成员内。 |
 
 `SUCCEEDED / ALL_FAILED` 是合法汇总：顶层失败字段为空，但没有可展示指标或输出文件。各成员有独立质量结论，不存在通用的场景总质量分数。
@@ -82,14 +82,15 @@ ACC 必需列为 `timestampEvent,accX,accY,accZ`，时间单位为毫秒，轴�
 
 | 成员 | 数值路径 | 解释 |
 | --- | --- | --- |
-| `hr_br` | `result.results.hr_br.result.hr`、`.br` | 心率与呼吸率；该成员为原子结果，不展示失败成员的部分数值。 |
+| `hr` | `result.results.hr.result.hr` | 心率，只读取该成功成员的数值与 `quality`。 |
+| `br` | `result.results.br.result.br` | 呼吸率，只读取该成功成员的数值与 `quality`，合法范围 `[8,20]`。 |
 | `spo2` | `result.results.spo2.result.spo2` | 血氧百分数。 |
 | `diabetes` | `result.results.diabetes.result.prob`、`.risk_level` | 概率及后端编码；不重算档位，不解释为血糖浓度或医学诊断。 |
 | `bp` | `result.results.bp.result.sbp`、`.dbp` | 收缩压与舒张压，单位 `mmHg`。 |
 
-失败成员不补零、不沿用上次测量值，也不使其他成功成员失效。质量拒绝使用其公开的 `qualityFailure`，区分 `LOW_SCORE` 与 `NO_VALID_SIGNAL`；不自行重算分数或把技术失败解释成低质量。
+HR 与 BR 分别判断 `status`、`result.quality` 或公开 `qualityFailure`，不共享质量或成败；任一失败不抹去另一成功读数。BR 在独立任务和场景中的合法结果均须为有限数且在 `[8,20]` 内，前端只校验，不补默认值、不限幅修正。失败成员不补零、不沿用上次测量值，也不使其他成功成员失效。质量拒绝使用其公开的 `qualityFailure`，区分 `LOW_SCORE` 与 `NO_VALID_SIGNAL`；不自行重算分数或把技术失败解释成低质量。
 
-场景输出只登记在顶层 `result.output_files`，逻辑名带成员前缀，如 `hr_br_processed_ppg`、`spo2_processed_ppg`、`bp_processed_scg`。下载使用对象键，不使用不透明引用值作为 URL 或路径；不把场景逻辑名套用于独立算法输出。
+场景输出只登记在顶层 `result.output_files`，逻辑名带成员前缀：`hr_processed_ppg`、`br_processed_rsp`、`spo2_processed_ppg`、`diabetes_processed_ppg`，血压仍为 `bp_processed_ppg/bp_processed_scg`。下载使用对象键，不使用不透明引用值作为 URL 或路径；不把场景逻辑名套用于独立算法输出。
 
 ## 上传回执与恢复边界
 
@@ -103,7 +104,7 @@ SDK 每次只执行一个请求，不内置业务轮询或重试。取消本地�
 
 ## 报告与健康记录
 
-报告通过关联 `taskId` 鉴权读取，不要求历史报告仍存在原生采集轮次。只使用顶层 `result.output_files` 的逻辑名键：指尖取 `hr_br_processed_ppg`，血压取 `bp_processed_ppg/bp_processed_scg`；独立算法使用其无前缀逻辑名。失败成员不借用其他成员文件。
+报告通过关联 `taskId` 鉴权读取，不要求历史报告仍存在原生采集轮次。只使用顶层 `result.output_files` 的逻辑名键：指尖只取成功 `hr` 的 `hr_processed_ppg`，血压取成功 `bp` 的 `bp_processed_ppg/bp_processed_scg`。独立 HR 使用 `processed_ppg`（`timestamp,ppg`）；独立 BR 的 `processed_rsp`（`timestamp,rsp`）不作为 PPG，不新增呼吸波形展示。HR 失败或文件缺失时不借用 BR、血氧、风险等其他成员文件。
 
 处理后文件每个最多 5 MiB、20,000 行样本；使用真实毫秒时标建立相对轴，报告 PPG 已由后端翻转方向，前端曲线及纵轴直接使用后端幅值，不再次取负；SCG 保留处理后 Z 方向。短文件不补点，两图独立六秒回看；读取失败只影响对应波形，不隐藏有效读数或重新推理。
 

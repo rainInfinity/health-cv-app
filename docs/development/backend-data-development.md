@@ -23,9 +23,11 @@
 | 最新健康结果 | `GET /measurements/latest` |
 | 按指标日期读取记录 | `GET /measurements` |
 
-指尖入口统一绑定 `ppg.active.offline.all` 场景，上传一份 `ppg`，产生心率、呼吸率、血氧及糖尿病模型结果；入口目标不切换独立算法。血压绑定 `ppg_acc.active.offline.all`，上传同轮 `ppg` 和 `acc`，当前只有 `bp` 成员。目录实际返回的 `modelId` 才能用于创建，不能硬编码示例 ID，不能按名称或输入要求猜模型。
+指尖入口统一绑定 `modelCode=ppg.active.offline.all`，新算法为 `ppg.active.offline.all.v2`、发布版本为 `2.0.0`；客户端仍使用目录实际返回的 `modelId` 与创建响应固定版本，不硬编码版本。上传一份 `ppg`，固定 `hr`、`br`、`spo2`、`diabetes` 四成员，算法分别为 `ppg.active.offline.hr.v1`、`ppg.active.offline.br.v1`、`ppg.active.offline.spo2.v1`、`ppg.active.offline.diabetes.v1`；入口目标不切换独立算法。血压绑定 `ppg_acc.active.offline.all`，上传同轮 `ppg` 和 `acc`，当前只有 `bp` 成员。不能硬编码示例 ID，不能按名称或输入要求猜模型。
 
-旧独立算法任务仍按其原结果结构读取。场景结果须检查任务状态、`outcome` 和各成员状态，部分成功只展示有效成员，`ALL_FAILED` 不生成健康读数。处理后文件使用顶层 `output_files` 的逻辑名键，不将不透明引用当作 URL。
+独立 HR（`modelCode=ppg.active.offline.hr`）仅读取 `result.hr` 和自身 `quality`，独立 BR（`ppg.active.offline.br`）仅读取 `result.br` 和自身 `quality`，分别判断任务成败。场景须检查任务状态、`outcome` 和各成员状态；HR／BR 分别读取成功 `results.hr.result.hr`、`results.br.result.br` 及各自 `result.quality`，不再同成同败。部分成功只展示有效成员；合法 `ALL_FAILED` 仍是任务 `SUCCEEDED`，但不生成健康读数和输出文件。旧融合与旧 PPG 场景 v1 不属于现行支持映射。
+
+处理后文件使用顶层 `result.output_files` 的逻辑名键，不将不透明引用当作 URL。指尖报告只取成功 `hr` 的 `hr_processed_ppg`，不得借其他成员文件。独立 HR 输出为 `processed_ppg`（`timestamp,ppg`），独立 BR 输出为 `processed_rsp`（`timestamp,rsp`）；BR 文件不是 PPG，不增加呼吸波形 UI。血压仍使用成功 `bp` 的 `bp_processed_ppg/bp_processed_scg`。
 
 ## 3. 提交属性与产品检测时间
 
@@ -92,7 +94,8 @@ SDK 保留不传请求体及已有 `clientMetadata` 的能力；旧任务的采�
 - `readings` 按代码识别，不依赖数组位置。原值保留精度，展示时才格式化，不补零。
 - `versionId/version` 为任务固定模型版本；场景时是场景版本，`algorithmKey` 是实际成功成员算法，不是独立成员模型发布版本。
 - `captureMethod/captureMode/durationMs` 可空；未知来源保持未知，不能从模型或文件存在推断。
-- `quality` 使用实际分数与阈值，缺失为 null；心率和呼吸率共享同轮 `hr_br` 成员质量，不补不同默认分数。
+- `quality` 使用实际分数与阈值，缺失为 null；心率、呼吸率分别使用成功 `hr`、`br` 成员或各自独立任务的质量，失败及质量拒绝也只影响对应指标，不共享或补造分数。
+- BR 成功值必须为有限数且在 `[8,20]` 内，独立任务和场景规则相同；前端只校验，不补默认值、不限幅，原始读数精度与展示截断约定不变。
 - `riskLevel` 保留原 `risk_level` 整数编码。概率不是血糖值或临床患病概率，编码不作为医学风险分层，不重算档位。
 
 只有已支持正式独立算法及场景的有效成功结果生成记录；失败成员、`ALL_FAILED`、示例和未知算法不进入摘要。任务或最近一次采集失败不覆盖此前有效结果。旧任务只要具有已保存 `submittedAt` 和有效权威结果即可参与查询，不要求回填采集属性或重跑推理。
