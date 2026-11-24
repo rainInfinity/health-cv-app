@@ -59,7 +59,7 @@ export function FingertipResultsScreen() {
         </ReportBackground>
         <OverviewHeading><AppText variant="section" accessibilityRole="header">{messages.overview}</AppText><AppText variant="caption" tone="muted">{report?.measurementTime ?? '--'}</AppText></OverviewHeading>
         <Disclaimer variant="caption" tone="muted">{messages.disclaimer}</Disclaimer>
-        <FingertipResultDashboard report={report} detailed />
+        <FingertipResultDashboard report={report} />
         <QualityNote variant="caption" tone="muted">{messages.qualityNote}</QualityNote>
         {task && report?.hasValidMembers && <ReportWaveform task={task} kind="ppg" title={messages.pulseWave} labels={messages} />}
         <FingertipResultInterpretations report={report} />

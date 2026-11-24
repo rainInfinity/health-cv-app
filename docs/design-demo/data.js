@@ -19,7 +19,7 @@ export const routes = {
   'blood-pressure-results': '血压详细结果',
 };
 
-/** 只映射既有档位；默认两行，详细结果使用单行，不由概率推算或补造评估。 */
+/** 只映射既有档位；默认两行，指标解读使用单行，不由概率推算或补造评估。 */
 export function formatRiskLevel(level, stacked = true) {
   switch (level) {
     case 0: return stacked ? '较低\n风险' : '较低风险';

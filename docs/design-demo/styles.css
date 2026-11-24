@@ -704,9 +704,7 @@ button:active:not(:disabled) { opacity: .78; }
 .result-card-art .icon { width: 56px; height: 56px; stroke: none; }
 .result-card-risk, .result-risk-reading { color: var(--ink); font-size: 20px; line-height: 26px; font-weight: 600; white-space: pre-line; text-align: center; }
 .result-card-risk { min-width: 0; }
-.fingertip-results .result-card-risk, .fingertip-results .result-risk-reading { white-space: nowrap; }
-.fingertip-results .result-card-body:has(> .result-card-risk) { gap: 0; margin-inline: -1px; }
-.fingertip-results .result-card-risk { flex-shrink: 0; }
+.fingertip-results .result-risk-reading { white-space: nowrap; }
 .result-card-dial { display: grid; flex: 1; place-items: center; margin-top: 8px; }
 .result-card-dial > .oxygen-dial { width: 126px; height: 76px; max-width: 100%; }
 .result-card-reference { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; margin-top: 12px; font-size: 12px; line-height: 18px; color: var(--muted); }

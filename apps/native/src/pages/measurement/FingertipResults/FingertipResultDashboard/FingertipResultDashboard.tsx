@@ -12,11 +12,9 @@ import { SignalQualityBadge } from '../SignalQualityBadge'
 import { Dashboard, DashboardRow, DialFrame, MetricBody, MetricCard, MetricReading, Reference, RiskReading } from './styles'
 
 /** 读数中性展示，静态参考信息不驱动分级，缺失项仅占位。 */
-export function FingertipResultDashboard({ report, detailed = false }: {
+export function FingertipResultDashboard({ report }: {
   /** 当前轮的真实成员结果。 */
   report?: MeasurementReport | null
-  /** 详细报告的风险等级单行展示，简要面板仍为两行。 */
-  detailed?: boolean
 }) {
   const messages = useStore(fingertipResultsMessages)
   const [dialWidth, setDialWidth] = useState(126)
@@ -33,7 +31,7 @@ export function FingertipResultDashboard({ report, detailed = false }: {
       <MetricCard key={kind}>
         {item?.quality && <SignalQualityBadge score={item.quality.score} accessibilityLabel={`${messages[`${kind}Name`]}${messages.qualityLabel({ score: formatHealthNumber(item.quality.score) })}`} />}
         <AppText variant="label">{messages[`${kind}Name`]}</AppText>
-        <MetricBody style={risk && detailed ? { gap: 0, marginHorizontal: -1 } : undefined}>
+        <MetricBody>
           {kind === 'oxygenSaturation' ? (
             <DialFrame onLayout={measureDial} accessible accessibilityLabel={`${messages.oxygenSaturationName} ${value === undefined ? '--' : `${formatHealthNumber(value)}%`}`}>
               <HealthIndicatorArtwork kind={kind} presentation="result" value={value ?? null} emptyLabel="--" width={dialWidth} height={dialWidth * 76 / 126} />
@@ -41,7 +39,7 @@ export function FingertipResultDashboard({ report, detailed = false }: {
           ) : (
             <>
               <MetricReading>
-                {risk ? <RiskReading variant="section" numberOfLines={detailed ? 1 : 2}>{item?.status === 'succeeded' ? formatRiskLevel(item.riskLevel, !detailed) : '--'}</RiskReading> : (
+                {risk ? <RiskReading variant="section" numberOfLines={2}>{item?.status === 'succeeded' ? formatRiskLevel(item.riskLevel) : '--'}</RiskReading> : (
                   <>
                     <AppText variant="display">{value === undefined ? '--' : formatHealthNumber(value)}</AppText>
                     <AppText variant="caption" tone="muted">{messages[`${kind}Unit`]}</AppText>

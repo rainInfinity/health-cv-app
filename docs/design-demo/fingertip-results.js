@@ -28,11 +28,11 @@ function metricIcon(key) {
 
 
 /** 简要结果与报告共用首页式四卡看板，读数与图形只维护一套。 */
-function metricDashboard(singleLine = false) {
+function metricDashboard() {
   return `<section class="result-dashboard" aria-label="本次检测结果">
     ${result.vitals.slice(0, 2).map((item) => `<div class="revised-metric result-metric-card">${qualityBadge(item.qualityScore)}<h3>${item.label}</h3><div class="result-card-body"><div class="result-card-reading"><strong>${item.value}</strong><span>${item.unit}</span></div><span class="result-card-art ${item.key}" aria-hidden="true">${metricIcon(item.key)}</span></div><div class="result-card-reference"><span>参考区间</span><span>${item.reference}</span></div></div>`).join('')}
     <div class="revised-metric result-metric-card">${qualityBadge(result.vitals[2].qualityScore)}<h3>血氧饱和度</h3><div class="result-card-dial" data-result-dial aria-label="血氧饱和度 ${result.vitals[2].value}%" role="img"></div><div class="result-card-reference"><span>参考区间</span><span>${result.vitals[2].reference}</span></div></div>
-    <div class="revised-metric result-metric-card">${qualityBadge(result.riskQualityScore)}<h3>糖尿病风险</h3><div class="result-card-body"><strong class="result-card-risk">${formatRiskLevel(result.riskLevel, !singleLine)}</strong><span class="result-card-art risk" aria-hidden="true">${metricIcon('risk')}</span></div><div class="result-card-reference"><span>仅供参考</span></div></div>
+    <div class="revised-metric result-metric-card">${qualityBadge(result.riskQualityScore)}<h3>糖尿病风险</h3><div class="result-card-body"><strong class="result-card-risk">${formatRiskLevel(result.riskLevel)}</strong><span class="result-card-art risk" aria-hidden="true">${metricIcon('risk')}</span></div><div class="result-card-reference"><span>仅供参考</span></div></div>
   </section>`;
 }
 
@@ -55,7 +55,7 @@ export const fingertipResultsPage = `<div class="phone fingertip-results">
   <main class="result-report">
     <header class="result-report-heading result-section-heading"><h2>结果总览</h2><time>${result.time}</time></header>
     <p class="result-disclaimer">检测结果仅供健康管理参考，不能替代医学诊断。如有持续不适，请及时就医。</p>
-    ${metricDashboard(true)}
+    ${metricDashboard()}
     <p class="result-quality-note">指标右上角信号质量评分，满分100，分数越高，代表本次检测结果相对较准确。</p>
     ${resultWaveCard('result-wave', '脉搏波')}
     <section class="result-interpretations" aria-labelledby="result-interpretation-title"><div class="result-section-heading"><h2 id="result-interpretation-title">指标解读</h2><span>结合静息状态参考</span></div>
@@ -66,9 +66,9 @@ export const fingertipResultsPage = `<div class="phone fingertip-results">
 </div>`;
 
 /** 失败指标只清空结果；低质量变体保留固定质量样例，不推导拒绝阈值。 */
-function stateDashboard(previewState, singleLine = false) {
+function stateDashboard(previewState) {
   const template = document.createElement('template');
-  template.innerHTML = metricDashboard(singleLine);
+  template.innerHTML = metricDashboard();
   const partial = previewState === 'partial' || previewState === 'partial-quality';
   const qualityFailed = previewState === 'partial-quality' || previewState === 'failed-quality';
   const cards = [...template.content.querySelectorAll('.result-metric-card')];
@@ -105,7 +105,7 @@ export function fingertipResultsForState(previewState = 'success') {
   if (previewState === 'success') return fingertipResultsPage;
   return resultReportForState(fingertipResultsPage, previewState, {
     measurementRoute: 'fingertip-measurement',
-    overview: ['partial', 'partial-quality'].includes(previewState) ? stateDashboard(previewState, true) : '',
+    overview: ['partial', 'partial-quality'].includes(previewState) ? stateDashboard(previewState) : '',
     interpretations: ['partial', 'partial-quality'].includes(previewState) ? stateInterpretations(previewState) : '',
   });
 }

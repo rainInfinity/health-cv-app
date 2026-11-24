@@ -131,18 +131,16 @@ test('有效指尖部分报告只保留一次声明，失败项解读不附成�
   assert.equal(text(nodes).includes(copy.fingertipResults.riskGuidance), false);
 }));
 
-test('同一风险结果在简要面板保持两行，详细看板和解读完整显示单行等级', () => withNativeHost(() => {
+test('风险在简要面板和详细总览卡分两行，指标解读保持完整单行等级', () => withNativeHost(() => {
   for (const [level, stacked, inline] of [[0, '较低\n风险', '较低风险'], [1, '中\n风险', '中风险'], [2, '较高\n风险', '较高风险']]) {
     const current = report();
     current.metrics.diabetesRisk = { ...current.metrics.diabetesRisk, status: 'succeeded', riskLevel: level, readings: [{ code: 'diabetes_probability', value: .3, unit: 'ratio' }], quality: null, failureReason: undefined };
     const summary = component('pages/measurement/FingertipResults/FingertipResultSummary/FingertipResultSummary.js', 'FingertipResultSummary', { report: current });
-    const dashboard = component('pages/measurement/FingertipResults/FingertipResultDashboard/FingertipResultDashboard.js', 'FingertipResultDashboard', { report: current, detailed: true });
-    const interpretations = component('pages/measurement/FingertipResults/FingertipResultInterpretations/FingertipResultInterpretations.js', 'FingertipResultInterpretations', { report: current });
+    reportState = { task: undefined, report: current, error: false, refresh() {} };
+    const detail = component('pages/measurement/FingertipResults/FingertipResultsScreen.js', 'FingertipResultsScreen');
     assert.ok(summary.some((node) => node.text === stacked));
-    assert.ok(dashboard.some((node) => node.text === inline));
-    assert.ok(interpretations.some((node) => node.text === inline));
-    assert.equal(dashboard.some((node) => node.text === stacked), false);
-    assert.equal(interpretations.some((node) => node.text === stacked), false);
+    assert.ok(detail.some((node) => node.type === 'RiskReading' && node.props.children === stacked && node.props.numberOfLines === 2));
+    assert.ok(detail.some((node) => node.type === 'AppText' && node.props.children === inline && node.props.numberOfLines === 1));
   }
 }));
 
